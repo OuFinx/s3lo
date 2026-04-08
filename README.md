@@ -1,61 +1,92 @@
 # s3lo
 
-Store and retrieve OCI container images on AWS S3.
+[![CI](https://github.com/OuFinx/s3lo/actions/workflows/ci.yml/badge.svg)](https://github.com/OuFinx/s3lo/actions/workflows/ci.yml)
+[![Release](https://github.com/OuFinx/s3lo/actions/workflows/release.yml/badge.svg)](https://github.com/OuFinx/s3lo/releases)
+[![Go Report Card](https://goreportcard.com/badge/github.com/finx/s3lo)](https://goreportcard.com/report/github.com/finx/s3lo)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## Why?
+Use AWS S3 as a container image registry. Faster pulls, cheaper storage, no registry to manage.
 
-- **Faster pulls**: S3 throughput on EC2 reaches 100 Gbps — much faster than ECR
-- **Cheaper storage**: S3 costs less than ECR for image storage
-- **Simple**: No registry to manage, just an S3 bucket
+## Why s3lo?
 
-## Install
+| | ECR | s3lo + S3 |
+|---|---|---|
+| **Pull speed** | ~1-5 Gbps | Up to 100 Gbps on EC2 |
+| **Storage cost** | $0.10/GB/month | $0.023/GB/month (S3 Standard) |
+| **Registry management** | Lifecycle policies, permissions | Just an S3 bucket |
+| **Multi-region** | Replicate per region | S3 Cross-Region Replication |
 
-### Binary (recommended)
+## Quick Start
 
-Download the latest release:
+### Install
 
+**macOS (Apple Silicon):**
 ```bash
-# Linux amd64
-curl -Lo s3lo https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_linux_amd64.tar.gz
-tar xzf s3lo_linux_amd64.tar.gz
-sudo mv s3lo /usr/local/bin/
-
-# macOS Apple Silicon
 curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_darwin_arm64.tar.gz
-tar xzf s3lo.tar.gz
-sudo mv s3lo /usr/local/bin/
-
-# macOS Intel
-curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_darwin_amd64.tar.gz
-tar xzf s3lo.tar.gz
-sudo mv s3lo /usr/local/bin/
+tar xzf s3lo.tar.gz && sudo mv s3lo /usr/local/bin/
 ```
 
-### From source
+**macOS (Intel):**
+```bash
+curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_darwin_amd64.tar.gz
+tar xzf s3lo.tar.gz && sudo mv s3lo /usr/local/bin/
+```
 
+**Linux (amd64):**
+```bash
+curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_linux_amd64.tar.gz
+tar xzf s3lo.tar.gz && sudo mv s3lo /usr/local/bin/
+```
+
+**Linux (arm64):**
+```bash
+curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_linux_arm64.tar.gz
+tar xzf s3lo.tar.gz && sudo mv s3lo /usr/local/bin/
+```
+
+**From source:**
 ```bash
 go install github.com/finx/s3lo/cmd/s3lo@latest
 ```
 
-## Usage
+### Usage
 
 ```bash
-# Push a local image to S3
+# Push a local Docker image to S3
 s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0
 
-# Pull from S3
-s3lo pull s3://my-bucket/myapp:v1.0 ./output
+# Pull from S3 into local Docker
+s3lo pull s3://my-bucket/myapp:v1.0
 
-# List images
+# List images in a bucket
 s3lo list s3://my-bucket/
 
-# Inspect image
+# Inspect image metadata
 s3lo inspect s3://my-bucket/myapp:v1.0
 ```
 
+## How It Works
+
+s3lo stores container images on S3 using the [OCI Image Layout](https://github.com/opencontainers/image-spec/blob/main/image-layout.md) format. Each layer is stored as a separate S3 object, enabling parallel downloads and cross-image deduplication.
+
+```
+s3://my-bucket/myapp/v1.0/
+├── index.json              # OCI Image Index
+├── manifest.json           # OCI Manifest
+├── config.json             # Image Config
+└── blobs/sha256/
+    ├── a1b2c3d4...         # Layer 1 (shared with other images)
+    ├── e5f6g7h8...         # Layer 2
+    └── i9j0k1l2...         # Layer 3
+```
+
+**Push** exports a Docker image, splits it into content-addressable layers, and uploads them to S3 in parallel. Existing layers are skipped (deduplication via SHA256).
+
+**Pull** downloads layers from S3 in parallel and imports the image into the local Docker daemon.
+
 ## Authentication
 
-Uses standard AWS credentials chain. Set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, use `~/.aws/credentials`, or IAM instance profiles.
+s3lo uses the standard AWS credentials chain — environment variables, `~/.aws/credentials`, IAM instance profiles, SSO, etc.
 
 ### Minimum IAM Policy
 
@@ -65,31 +96,74 @@ Uses standard AWS credentials chain. Set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCES
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": ["s3:GetObject", "s3:PutObject", "s3:HeadObject", "s3:ListBucket", "s3:GetBucketLocation"],
-      "Resource": ["arn:aws:s3:::YOUR-BUCKET", "arn:aws:s3:::YOUR-BUCKET/*"]
+      "Action": [
+        "s3:GetObject",
+        "s3:PutObject",
+        "s3:HeadObject",
+        "s3:ListBucket",
+        "s3:GetBucketLocation"
+      ],
+      "Resource": [
+        "arn:aws:s3:::YOUR-BUCKET",
+        "arn:aws:s3:::YOUR-BUCKET/*"
+      ]
     }
   ]
 }
 ```
 
-## S3 Storage Layout
+For read-only access (pull only), remove `s3:PutObject`.
 
-Images are stored in OCI Image Layout format:
+## CI Integration
 
+### GitHub Actions
+
+```yaml
+- name: Push image to S3
+  run: |
+    curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_linux_amd64.tar.gz
+    tar xzf s3lo.tar.gz && chmod +x s3lo
+    ./s3lo push myapp:${{ github.sha }} s3://my-bucket/myapp:${{ github.sha }}
 ```
-s3://bucket/image/tag/
-├── index.json
-├── manifest.json
-├── config.json
-└── blobs/
-    ├── sha256:abc...
-    └── sha256:def...
+
+### GitLab CI
+
+```yaml
+push-image:
+  script:
+    - curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_linux_amd64.tar.gz
+    - tar xzf s3lo.tar.gz && chmod +x s3lo
+    - ./s3lo push myapp:${CI_COMMIT_SHA} s3://my-bucket/myapp:${CI_COMMIT_SHA}
 ```
 
-## See Also
+## Use as a Go Library
 
-- [s3lo-operator](https://github.com/finx/s3lo-operator) — Kubernetes DaemonSet for pulling S3 images natively in containerd
+s3lo exposes its core packages for use in other tools:
+
+```go
+import (
+    "github.com/finx/s3lo/pkg/ref"   // Parse s3://bucket/image:tag references
+    "github.com/finx/s3lo/pkg/oci"   // OCI manifest parsing, Docker export/import
+    "github.com/finx/s3lo/pkg/s3"    // S3 client with region auto-detection
+    "github.com/finx/s3lo/pkg/image" // High-level push/pull/list/inspect
+)
+```
+
+All public APIs accept `context.Context` for cancellation and timeout support.
+
+## Kubernetes Integration
+
+For pulling S3 images directly in Kubernetes (without a registry), see [s3lo-operator](https://github.com/OuFinx/s3lo-operator) — a DaemonSet that integrates with containerd as a remote snapshotter.
+
+```yaml
+# With s3lo-operator installed, just use:
+image: s3/my-bucket/myapp:v1.0
+```
+
+## Contributing
+
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 
-MIT
+[MIT](LICENSE)
