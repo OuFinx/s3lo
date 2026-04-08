@@ -10,8 +10,31 @@ Store and retrieve OCI container images on AWS S3.
 
 ## Install
 
+### Binary (recommended)
+
+Download the latest release:
+
 ```bash
-go install github.com/finx/s3lo@latest
+# Linux amd64
+curl -Lo s3lo https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_linux_amd64.tar.gz
+tar xzf s3lo_linux_amd64.tar.gz
+sudo mv s3lo /usr/local/bin/
+
+# macOS Apple Silicon
+curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_darwin_arm64.tar.gz
+tar xzf s3lo.tar.gz
+sudo mv s3lo /usr/local/bin/
+
+# macOS Intel
+curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_darwin_amd64.tar.gz
+tar xzf s3lo.tar.gz
+sudo mv s3lo /usr/local/bin/
+```
+
+### From source
+
+```bash
+go install github.com/finx/s3lo/cmd/s3lo@latest
 ```
 
 ## Usage
