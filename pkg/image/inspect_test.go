@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"os"
 	"testing"
 )
@@ -11,7 +12,7 @@ func TestInspect_Integration(t *testing.T) {
 		t.Skip("set S3LO_TEST_BUCKET to run integration tests")
 	}
 
-	info, err := Inspect("s3://" + bucket + "/test-alpine:latest")
+	info, err := Inspect(context.Background(), "s3://"+bucket+"/test-alpine:latest")
 	if err != nil {
 		t.Fatalf("Inspect failed: %v", err)
 	}
@@ -24,7 +25,7 @@ func TestInspect_Integration(t *testing.T) {
 }
 
 func TestInspect_InvalidRef(t *testing.T) {
-	_, err := Inspect("http://not-s3/image:tag")
+	_, err := Inspect(context.Background(), "http://not-s3/image:tag")
 	if err == nil {
 		t.Fatal("expected error for invalid ref")
 	}

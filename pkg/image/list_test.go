@@ -1,6 +1,7 @@
 package image
 
 import (
+	"context"
 	"os"
 	"testing"
 )
@@ -11,7 +12,7 @@ func TestList_Integration(t *testing.T) {
 		t.Skip("set S3LO_TEST_BUCKET to run integration tests")
 	}
 
-	entries, err := List("s3://" + bucket + "/")
+	entries, err := List(context.Background(), "s3://"+bucket+"/")
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -22,7 +23,7 @@ func TestList_Integration(t *testing.T) {
 }
 
 func TestList_InvalidRef(t *testing.T) {
-	_, err := List("http://not-s3/bucket/")
+	_, err := List(context.Background(), "http://not-s3/bucket/")
 	if err == nil {
 		t.Fatal("expected error for invalid ref")
 	}

@@ -13,7 +13,7 @@ var inspectCmd = &cobra.Command{
 	Example: `  s3lo inspect s3://my-bucket/myapp:v1.0`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		info, err := image.Inspect(args[0])
+		info, err := image.Inspect(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}

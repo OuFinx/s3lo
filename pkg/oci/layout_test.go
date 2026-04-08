@@ -1,6 +1,7 @@
 package oci
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -16,7 +17,7 @@ func TestExportDockerImage(t *testing.T) {
 	}
 
 	destDir := t.TempDir()
-	layerDescs, manifestBytes, configBytes, err := ExportImage("alpine:latest", destDir)
+	layerDescs, manifestBytes, configBytes, err := ExportImage(context.Background(), "alpine:latest", destDir)
 	if err != nil {
 		t.Fatalf("ExportImage: %v", err)
 	}

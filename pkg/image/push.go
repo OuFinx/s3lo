@@ -11,7 +11,7 @@ import (
 )
 
 // Push exports a local Docker image and uploads it to S3.
-func Push(imageRef, s3Ref string) error {
+func Push(ctx context.Context, imageRef, s3Ref string) error {
 	parsed, err := ref.Parse(s3Ref)
 	if err != nil {
 		return fmt.Errorf("invalid S3 reference: %w", err)
@@ -23,7 +23,7 @@ func Push(imageRef, s3Ref string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	_, manifestData, configData, err := oci.ExportImage(imageRef, tmpDir)
+	_, manifestData, configData, err := oci.ExportImage(ctx, imageRef, tmpDir)
 	if err != nil {
 		return fmt.Errorf("export image: %w", err)
 	}
@@ -32,12 +32,12 @@ func Push(imageRef, s3Ref string) error {
 		return fmt.Errorf("write OCI layout: %w", err)
 	}
 
-	client, err := s3client.NewClient(context.Background())
+	client, err := s3client.NewClient(ctx)
 	if err != nil {
 		return fmt.Errorf("create S3 client: %w", err)
 	}
 
-	if err := client.UploadDirectory(context.Background(), tmpDir, parsed.Bucket, parsed.S3Prefix()); err != nil {
+	if err := client.UploadDirectory(ctx, tmpDir, parsed.Bucket, parsed.S3Prefix()); err != nil {
 		return fmt.Errorf("upload to S3: %w", err)
 	}
 

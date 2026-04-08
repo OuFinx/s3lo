@@ -17,7 +17,7 @@ type ImageEntry struct {
 
 // List lists all images in an S3 bucket path.
 // s3Ref should be like "s3://my-bucket/" or "s3://my-bucket/prefix/".
-func List(s3Ref string) ([]ImageEntry, error) {
+func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 	if !strings.HasPrefix(s3Ref, "s3://") {
 		return nil, fmt.Errorf("invalid s3 reference %q: must start with s3://", s3Ref)
 	}
@@ -37,7 +37,6 @@ func List(s3Ref string) ([]ImageEntry, error) {
 		return nil, fmt.Errorf("invalid s3 reference %q: empty bucket", s3Ref)
 	}
 
-	ctx := context.Background()
 	client, err := s3client.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create S3 client: %w", err)

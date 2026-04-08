@@ -19,7 +19,7 @@ var pullCmd = &cobra.Command{
 			destDir = args[1]
 		}
 		fmt.Printf("Pulling %s...\n", args[0])
-		if err := image.Pull(args[0], destDir); err != nil {
+		if err := image.Pull(cmd.Context(), args[0], destDir); err != nil {
 			return err
 		}
 		fmt.Printf("Done. Image saved to %s\n", destDir)

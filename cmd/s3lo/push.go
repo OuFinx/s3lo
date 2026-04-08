@@ -14,7 +14,7 @@ var pushCmd = &cobra.Command{
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Pushing %s to %s...\n", args[0], args[1])
-		if err := image.Push(args[0], args[1]); err != nil {
+		if err := image.Push(cmd.Context(), args[0], args[1]); err != nil {
 			return err
 		}
 		fmt.Println("Done.")

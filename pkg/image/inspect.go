@@ -29,13 +29,12 @@ type LayerDetail struct {
 }
 
 // Inspect fetches and returns metadata about an image on S3.
-func Inspect(s3Ref string) (*ImageInfo, error) {
+func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 	parsed, err := ref.Parse(s3Ref)
 	if err != nil {
 		return nil, fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	ctx := context.Background()
 	client, err := s3client.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create S3 client: %w", err)

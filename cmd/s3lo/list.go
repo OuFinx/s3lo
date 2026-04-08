@@ -13,7 +13,7 @@ var listCmd = &cobra.Command{
 	Example: `  s3lo list s3://my-bucket/`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		entries, err := image.List(args[0])
+		entries, err := image.List(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}

@@ -26,14 +26,13 @@ type dockerManifestEntry struct {
 
 // ExportImage exports a Docker image to an OCI layout directory.
 // Returns layer descriptors, manifest bytes, and config bytes.
-func ExportImage(imageRef string, destDir string) ([]ocispec.Descriptor, []byte, []byte, error) {
+func ExportImage(ctx context.Context, imageRef string, destDir string) ([]ocispec.Descriptor, []byte, []byte, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("create docker client: %w", err)
 	}
 	defer cli.Close()
 
-	ctx := context.Background()
 	rc, err := cli.ImageSave(ctx, []string{imageRef})
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("image save %q: %w", imageRef, err)
