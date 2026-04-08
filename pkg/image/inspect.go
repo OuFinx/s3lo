@@ -7,9 +7,9 @@ import (
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/finx/s3lo/pkg/oci"
-	"github.com/finx/s3lo/pkg/ref"
-	s3client "github.com/finx/s3lo/pkg/s3"
+	"github.com/OuFinx/s3lo/pkg/oci"
+	"github.com/OuFinx/s3lo/pkg/ref"
+	s3client "github.com/OuFinx/s3lo/pkg/s3"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 

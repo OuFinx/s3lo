@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3client "github.com/finx/s3lo/pkg/s3"
+	s3client "github.com/OuFinx/s3lo/pkg/s3"
 )
 
 // ImageEntry represents an image and its available tags in the registry.

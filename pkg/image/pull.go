@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/finx/s3lo/pkg/oci"
-	"github.com/finx/s3lo/pkg/ref"
-	s3client "github.com/finx/s3lo/pkg/s3"
+	"github.com/OuFinx/s3lo/pkg/oci"
+	"github.com/OuFinx/s3lo/pkg/ref"
+	s3client "github.com/OuFinx/s3lo/pkg/s3"
 )
 
 // Pull downloads an OCI image from S3 and imports it into the local Docker daemon.
