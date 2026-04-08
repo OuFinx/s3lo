@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/docker/docker/client"
 	digest "github.com/opencontainers/go-digest"
@@ -91,21 +92,17 @@ func ExportImage(imageRef string, destDir string) ([]ocispec.Descriptor, []byte,
 	// Process layers
 	var layerDescs []ocispec.Descriptor
 	for _, layerPath := range entry.Layers {
-		layerBytes, err := os.ReadFile(filepath.Join(tmpDir, layerPath))
+		srcPath := filepath.Join(tmpDir, layerPath)
+		layerDigest, layerSize, err := copyWithHash(srcPath, blobsDir)
 		if err != nil {
-			return nil, nil, nil, fmt.Errorf("read layer %q: %w", layerPath, err)
+			return nil, nil, nil, fmt.Errorf("process layer %q: %w", layerPath, err)
 		}
-		layerDigest := sha256Hex(layerBytes)
 		desc := ocispec.Descriptor{
 			MediaType: ocispec.MediaTypeImageLayer,
 			Digest:    digest.Digest("sha256:" + layerDigest),
-			Size:      int64(len(layerBytes)),
+			Size:      layerSize,
 		}
 		layerDescs = append(layerDescs, desc)
-
-		if err := os.WriteFile(filepath.Join(blobsDir, layerDigest), layerBytes, 0o644); err != nil {
-			return nil, nil, nil, fmt.Errorf("write layer blob: %w", err)
-		}
 	}
 
 	// Build OCI manifest
@@ -184,6 +181,9 @@ func extractTar(r io.Reader, dir string) error {
 		}
 
 		target := filepath.Join(dir, filepath.Clean(hdr.Name))
+		if !strings.HasPrefix(filepath.Clean(target)+string(os.PathSeparator), filepath.Clean(dir)+string(os.PathSeparator)) {
+			return fmt.Errorf("tar entry %q escapes destination directory", hdr.Name)
+		}
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
@@ -206,6 +206,37 @@ func extractTar(r io.Reader, dir string) error {
 		}
 	}
 	return nil
+}
+
+// copyWithHash copies a file to blobsDir named by its SHA256 digest, streaming to avoid OOM.
+func copyWithHash(srcPath, blobsDir string) (string, int64, error) {
+	src, err := os.Open(srcPath)
+	if err != nil {
+		return "", 0, err
+	}
+	defer src.Close()
+
+	tmpFile, err := os.CreateTemp(blobsDir, "blob-*")
+	if err != nil {
+		return "", 0, err
+	}
+
+	h := sha256.New()
+	size, err := io.Copy(tmpFile, io.TeeReader(src, h))
+	if err != nil {
+		tmpFile.Close()
+		os.Remove(tmpFile.Name())
+		return "", 0, err
+	}
+	tmpFile.Close()
+
+	hexDigest := fmt.Sprintf("%x", h.Sum(nil))
+	finalPath := filepath.Join(blobsDir, hexDigest)
+	if err := os.Rename(tmpFile.Name(), finalPath); err != nil {
+		os.Remove(tmpFile.Name())
+		return "", 0, err
+	}
+	return hexDigest, size, nil
 }
 
 // sha256Hex returns the hex-encoded SHA256 digest of data.
