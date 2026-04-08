@@ -23,8 +23,7 @@ func Push(imageRef, s3Ref string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	fmt.Printf("Exporting %s...\n", imageRef)
-	layers, manifestData, configData, err := oci.ExportImage(imageRef, tmpDir)
+	_, manifestData, configData, err := oci.ExportImage(imageRef, tmpDir)
 	if err != nil {
 		return fmt.Errorf("export image: %w", err)
 	}
@@ -32,8 +31,6 @@ func Push(imageRef, s3Ref string) error {
 	if err := oci.WriteOCILayout(tmpDir, manifestData, configData); err != nil {
 		return fmt.Errorf("write OCI layout: %w", err)
 	}
-
-	fmt.Printf("Uploading to s3://%s/%s (%d layers)...\n", parsed.Bucket, parsed.S3Prefix(), len(layers))
 
 	client, err := s3client.NewClient()
 	if err != nil {
@@ -44,6 +41,5 @@ func Push(imageRef, s3Ref string) error {
 		return fmt.Errorf("upload to S3: %w", err)
 	}
 
-	fmt.Printf("Done. Image available at s3://%s/%s\n", parsed.Bucket, parsed.S3Prefix())
 	return nil
 }

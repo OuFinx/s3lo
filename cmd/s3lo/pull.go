@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/finx/s3lo/pkg/image"
 	"github.com/spf13/cobra"
 )
@@ -16,7 +18,12 @@ var pullCmd = &cobra.Command{
 		if len(args) > 1 {
 			destDir = args[1]
 		}
-		return image.Pull(args[0], destDir)
+		fmt.Printf("Pulling %s...\n", args[0])
+		if err := image.Pull(args[0], destDir); err != nil {
+			return err
+		}
+		fmt.Printf("Done. Image saved to %s\n", destDir)
+		return nil
 	},
 }
 

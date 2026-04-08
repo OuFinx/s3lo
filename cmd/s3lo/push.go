@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+
 	"github.com/finx/s3lo/pkg/image"
 	"github.com/spf13/cobra"
 )
@@ -11,7 +13,12 @@ var pushCmd = &cobra.Command{
 	Example: `  s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return image.Push(args[0], args[1])
+		fmt.Printf("Pushing %s to %s...\n", args[0], args[1])
+		if err := image.Push(args[0], args[1]); err != nil {
+			return err
+		}
+		fmt.Println("Done.")
+		return nil
 	},
 }
 

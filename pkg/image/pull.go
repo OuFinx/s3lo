@@ -15,8 +15,6 @@ func Pull(s3Ref, destDir string) error {
 		return fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	fmt.Printf("Pulling s3://%s/%s...\n", parsed.Bucket, parsed.S3Prefix())
-
 	client, err := s3client.NewClient()
 	if err != nil {
 		return fmt.Errorf("create S3 client: %w", err)
@@ -26,6 +24,5 @@ func Pull(s3Ref, destDir string) error {
 		return fmt.Errorf("download from S3: %w", err)
 	}
 
-	fmt.Printf("Done. Image saved to %s\n", destDir)
 	return nil
 }
