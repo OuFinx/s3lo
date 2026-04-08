@@ -34,6 +34,18 @@ changelog:
       - "^docs:"
       - "^test:"
 
+brews:
+  - repository:
+      owner: OuFinx
+      name: homebrew-tap
+      token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
+    directory: Formula
+    homepage: "https://github.com/OuFinx/s3lo"
+    description: "Use AWS S3 as a container image registry"
+    license: "MIT"
+    test: |
+      system "#{bin}/s3lo", "version"
+
 release:
   github:
     owner: OuFinx
