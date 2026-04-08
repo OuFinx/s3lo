@@ -1,10 +1,13 @@
 package oci
 
 import (
+	"archive/tar"
+	"bytes"
 	"context"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	digest "github.com/opencontainers/go-digest"
@@ -105,5 +108,35 @@ func TestWriteOCILayout(t *testing.T) {
 	}
 	if layout.Version != ocispec.ImageLayoutVersion {
 		t.Errorf("expected layout version %s, got %s", ocispec.ImageLayoutVersion, layout.Version)
+	}
+}
+
+func TestExtractTar_PathTraversal(t *testing.T) {
+	// Create a tar with a malicious entry that tries to escape the directory
+	var buf bytes.Buffer
+	tw := tar.NewWriter(&buf)
+
+	// Add a file that tries to escape via ../
+	hdr := &tar.Header{
+		Name:     "../../etc/malicious",
+		Mode:     0o644,
+		Size:     int64(len("evil content")),
+		Typeflag: tar.TypeReg,
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tw.Write([]byte("evil content")); err != nil {
+		t.Fatal(err)
+	}
+	tw.Close()
+
+	tmpDir := t.TempDir()
+	err := extractTar(&buf, tmpDir)
+	if err == nil {
+		t.Fatal("expected error for path traversal, got nil")
+	}
+	if !strings.Contains(err.Error(), "escapes destination") {
+		t.Errorf("expected 'escapes destination' error, got: %v", err)
 	}
 }

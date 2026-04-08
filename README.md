@@ -42,7 +42,7 @@ Uses standard AWS credentials chain. Set `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCES
   "Statement": [
     {
       "Effect": "Allow",
-      "Action": ["s3:GetObject", "s3:PutObject", "s3:ListBucket", "s3:GetBucketLocation"],
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:HeadObject", "s3:ListBucket", "s3:GetBucketLocation"],
       "Resource": ["arn:aws:s3:::YOUR-BUCKET", "arn:aws:s3:::YOUR-BUCKET/*"]
     }
   ]

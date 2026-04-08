@@ -57,7 +57,9 @@ func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath s
 		Key:    &key,
 	})
 	if err == nil && head.ContentLength != nil && *head.ContentLength == info.Size() {
-		// Object exists with same size, skip upload
+		// Deduplication: skip upload if object exists with same size.
+		// This is safe because blob files are named by their SHA256 digest
+		// (content-addressable), so same key = same content by definition.
 		return nil
 	}
 	// If HeadObject fails (404), proceed with upload
