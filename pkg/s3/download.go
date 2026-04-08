@@ -7,9 +7,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"golang.org/x/sync/errgroup"
 )
 
 func (c *Client) DownloadDirectory(ctx context.Context, bucket, prefix, destDir string) error {
@@ -23,27 +23,18 @@ func (c *Client) DownloadDirectory(ctx context.Context, bucket, prefix, destDir 
 		return err
 	}
 
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(keys))
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
 
 	for _, key := range keys {
-		wg.Add(1)
-		go func(k string) {
-			defer wg.Done()
-			localPath := buildLocalPath(destDir, prefix, k)
-			if err := downloadObject(ctx, s3Client, bucket, k, localPath); err != nil {
-				errCh <- fmt.Errorf("download %s: %w", k, err)
-			}
-		}(key)
+		key := key
+		g.Go(func() error {
+			localPath := buildLocalPath(destDir, prefix, key)
+			return downloadObject(ctx, s3Client, bucket, key, localPath)
+		})
 	}
 
-	wg.Wait()
-	close(errCh)
-
-	for err := range errCh {
-		return err
-	}
-	return nil
+	return g.Wait()
 }
 
 func listKeys(ctx context.Context, client *s3.Client, bucket, prefix string) ([]string, error) {

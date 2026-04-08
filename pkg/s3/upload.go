@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"golang.org/x/sync/errgroup"
 )
 
 func (c *Client) UploadDirectory(ctx context.Context, localDir, bucket, prefix string) error {
@@ -31,27 +31,18 @@ func (c *Client) UploadDirectory(ctx context.Context, localDir, bucket, prefix s
 		return fmt.Errorf("walk directory %s: %w", localDir, err)
 	}
 
-	var wg sync.WaitGroup
-	errCh := make(chan error, len(files))
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
 
 	for _, file := range files {
-		wg.Add(1)
-		go func(filePath string) {
-			defer wg.Done()
-			key := buildS3Key(prefix, localDir, filePath)
-			if err := uploadFile(ctx, s3Client, bucket, key, filePath); err != nil {
-				errCh <- fmt.Errorf("upload %s: %w", filePath, err)
-			}
-		}(file)
+		file := file
+		g.Go(func() error {
+			key := buildS3Key(prefix, localDir, file)
+			return uploadFile(ctx, s3Client, bucket, key, file)
+		})
 	}
 
-	wg.Wait()
-	close(errCh)
-
-	for err := range errCh {
-		return err
-	}
-	return nil
+	return g.Wait()
 }
 
 func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string) error {
@@ -70,7 +61,10 @@ func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath s
 }
 
 func buildS3Key(prefix, baseDir, localPath string) string {
-	rel, _ := filepath.Rel(baseDir, localPath)
+	rel, err := filepath.Rel(baseDir, localPath)
+	if err != nil {
+		rel = filepath.Base(localPath)
+	}
 	rel = filepath.ToSlash(rel)
 	return strings.TrimSuffix(prefix, "/") + "/" + rel
 }
