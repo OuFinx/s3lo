@@ -243,3 +243,116 @@ func sha256Hex(data []byte) string {
 	h := sha256.Sum256(data)
 	return fmt.Sprintf("%x", h)
 }
+
+// ImportImage loads an OCI image from a local directory into the Docker daemon.
+// It creates a Docker-compatible tar from the OCI layout and calls docker load.
+func ImportImage(ctx context.Context, srcDir string, imageRef string) error {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return fmt.Errorf("create docker client: %w", err)
+	}
+	defer cli.Close()
+
+	// Read manifest to find config and layers
+	manifestData, err := os.ReadFile(filepath.Join(srcDir, "manifest.json"))
+	if err != nil {
+		return fmt.Errorf("read manifest.json: %w", err)
+	}
+
+	manifest, err := ParseManifest(manifestData)
+	if err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+
+	// Build a Docker-format tar in memory/tempfile
+	// Docker expects:
+	//   manifest.json — array of [{Config: "config.json", RepoTags: ["ref"], Layers: ["layer1/layer.tar", ...]}]
+	//   config.json — the config blob
+	//   <hash>/layer.tar — each layer
+
+	tmpFile, err := os.CreateTemp("", "s3lo-import-*.tar")
+	if err != nil {
+		return fmt.Errorf("create temp tar: %w", err)
+	}
+	defer os.Remove(tmpFile.Name())
+	defer tmpFile.Close()
+
+	tw := tar.NewWriter(tmpFile)
+
+	// Write config blob
+	configDigest := manifest.Config.Digest.Encoded()
+	configPath := filepath.Join(srcDir, "blobs", "sha256", configDigest)
+	configData, err := os.ReadFile(configPath)
+	if err != nil {
+		return fmt.Errorf("read config blob: %w", err)
+	}
+	configName := configDigest + ".json"
+	if err := tarWriteFile(tw, configName, configData); err != nil {
+		return fmt.Errorf("write config to tar: %w", err)
+	}
+
+	// Write layers
+	var layerNames []string
+	for _, layer := range manifest.Layers {
+		layerDigest := layer.Digest.Encoded()
+		layerPath := filepath.Join(srcDir, "blobs", "sha256", layerDigest)
+
+		layerData, err := os.ReadFile(layerPath)
+		if err != nil {
+			return fmt.Errorf("read layer blob %s: %w", layerDigest[:12], err)
+		}
+
+		layerName := layerDigest + "/layer.tar"
+		if err := tarWriteFile(tw, layerName, layerData); err != nil {
+			return fmt.Errorf("write layer to tar: %w", err)
+		}
+		layerNames = append(layerNames, layerName)
+	}
+
+	// Write Docker manifest.json
+	dockerManifest := []dockerManifestEntry{
+		{
+			Config:   configName,
+			RepoTags: []string{imageRef},
+			Layers:   layerNames,
+		},
+	}
+	dockerManifestData, err := json.Marshal(dockerManifest)
+	if err != nil {
+		return fmt.Errorf("marshal docker manifest: %w", err)
+	}
+	if err := tarWriteFile(tw, "manifest.json", dockerManifestData); err != nil {
+		return fmt.Errorf("write manifest to tar: %w", err)
+	}
+
+	if err := tw.Close(); err != nil {
+		return fmt.Errorf("close tar writer: %w", err)
+	}
+
+	// Seek to start and docker load
+	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("seek tar: %w", err)
+	}
+
+	resp, err := cli.ImageLoad(ctx, tmpFile)
+	if err != nil {
+		return fmt.Errorf("docker load: %w", err)
+	}
+	defer resp.Body.Close()
+	io.Copy(io.Discard, resp.Body)
+
+	return nil
+}
+
+func tarWriteFile(tw *tar.Writer, name string, data []byte) error {
+	hdr := &tar.Header{
+		Name: name,
+		Mode: 0o644,
+		Size: int64(len(data)),
+	}
+	if err := tw.WriteHeader(hdr); err != nil {
+		return err
+	}
+	_, err := tw.Write(data)
+	return err
+}

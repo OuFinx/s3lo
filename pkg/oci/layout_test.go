@@ -140,3 +140,11 @@ func TestExtractTar_PathTraversal(t *testing.T) {
 		t.Errorf("expected 'escapes destination' error, got: %v", err)
 	}
 }
+
+func TestImportImage(t *testing.T) {
+	if os.Getenv("S3LO_TEST_DOCKER") == "" {
+		t.Skip("set S3LO_TEST_DOCKER=1 to run Docker integration tests")
+	}
+	// This would need a real OCI layout dir, skip for now as integration test
+	t.Skip("requires pre-built OCI layout directory")
+}
