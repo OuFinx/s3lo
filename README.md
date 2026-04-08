@@ -20,6 +20,21 @@ Use AWS S3 as a container image registry. Faster pulls, cheaper storage, no regi
 
 ### Install
 
+**Quick install (recommended):**
+```bash
+curl -sSL https://raw.githubusercontent.com/OuFinx/s3lo/main/install.sh | sh
+```
+
+**Homebrew (macOS/Linux):**
+```bash
+brew install OuFinx/tap/s3lo
+```
+
+**Manual download:**
+
+<details>
+<summary>Platform-specific binaries</summary>
+
 **macOS (Apple Silicon):**
 ```bash
 curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_darwin_arm64.tar.gz
@@ -49,6 +64,8 @@ tar xzf s3lo.tar.gz && sudo mv s3lo /usr/local/bin/
 go install github.com/finx/s3lo/cmd/s3lo@latest
 ```
 
+</details>
+
 ### Usage
 
 ```bash
@@ -71,13 +88,13 @@ s3lo stores container images on S3 using the [OCI Image Layout](https://github.c
 
 ```
 s3://my-bucket/myapp/v1.0/
-├── index.json              # OCI Image Index
-├── manifest.json           # OCI Manifest
-├── config.json             # Image Config
-└── blobs/sha256/
-    ├── a1b2c3d4...         # Layer 1 (shared with other images)
-    ├── e5f6g7h8...         # Layer 2
-    └── i9j0k1l2...         # Layer 3
+--�------ index.json              # OCI Image Index
+--�------ manifest.json           # OCI Manifest
+--�------ config.json             # Image Config
+--------- blobs/sha256/
+    --�------ a1b2c3d4...         # Layer 1 (shared with other images)
+    --�------ e5f6g7h8...         # Layer 2
+    --------- i9j0k1l2...         # Layer 3
 ```
 
 **Push** exports a Docker image, splits it into content-addressable layers, and uploads them to S3 in parallel. Existing layers are skipped (deduplication via SHA256).
@@ -86,7 +103,7 @@ s3://my-bucket/myapp/v1.0/
 
 ## Authentication
 
-s3lo uses the standard AWS credentials chain — environment variables, `~/.aws/credentials`, IAM instance profiles, SSO, etc.
+s3lo uses the standard AWS credentials chain --- environment variables, `~/.aws/credentials`, IAM instance profiles, SSO, etc.
 
 ### Minimum IAM Policy
 
@@ -150,15 +167,6 @@ import (
 ```
 
 All public APIs accept `context.Context` for cancellation and timeout support.
-
-## Kubernetes Integration
-
-For pulling S3 images directly in Kubernetes (without a registry), see [s3lo-operator](https://github.com/OuFinx/s3lo-operator) — a DaemonSet that integrates with containerd as a remote snapshotter.
-
-```yaml
-# With s3lo-operator installed, just use:
-image: s3/my-bucket/myapp:v1.0
-```
 
 ## Contributing
 
