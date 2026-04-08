@@ -46,6 +46,22 @@ func (c *Client) UploadDirectory(ctx context.Context, localDir, bucket, prefix s
 }
 
 func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string) error {
+	// Check if object already exists (deduplication)
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return err
+	}
+
+	head, err := client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err == nil && head.ContentLength != nil && *head.ContentLength == info.Size() {
+		// Object exists with same size, skip upload
+		return nil
+	}
+	// If HeadObject fails (404), proceed with upload
+
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err

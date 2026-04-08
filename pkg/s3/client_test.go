@@ -1,11 +1,12 @@
 package s3
 
 import (
+	"context"
 	"testing"
 )
 
 func TestNewClient(t *testing.T) {
-	c, err := NewClient()
+	c, err := NewClient(context.Background())
 	if err != nil {
 		t.Fatalf("NewClient failed: %v", err)
 	}

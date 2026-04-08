@@ -37,12 +37,11 @@ func List(s3Ref string) ([]ImageEntry, error) {
 		return nil, fmt.Errorf("invalid s3 reference %q: empty bucket", s3Ref)
 	}
 
-	client, err := s3client.NewClient()
+	ctx := context.Background()
+	client, err := s3client.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create S3 client: %w", err)
 	}
-
-	ctx := context.Background()
 	s3c, err := client.ClientForBucket(ctx, bucket)
 	if err != nil {
 		return nil, fmt.Errorf("get S3 client for bucket: %w", err)

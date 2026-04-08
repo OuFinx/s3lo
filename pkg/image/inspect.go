@@ -35,12 +35,11 @@ func Inspect(s3Ref string) (*ImageInfo, error) {
 		return nil, fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewClient()
+	ctx := context.Background()
+	client, err := s3client.NewClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create S3 client: %w", err)
 	}
-
-	ctx := context.Background()
 	s3c, err := client.ClientForBucket(ctx, parsed.Bucket)
 	if err != nil {
 		return nil, fmt.Errorf("get S3 client for bucket: %w", err)

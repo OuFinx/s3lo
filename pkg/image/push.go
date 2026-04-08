@@ -32,7 +32,7 @@ func Push(imageRef, s3Ref string) error {
 		return fmt.Errorf("write OCI layout: %w", err)
 	}
 
-	client, err := s3client.NewClient()
+	client, err := s3client.NewClient(context.Background())
 	if err != nil {
 		return fmt.Errorf("create S3 client: %w", err)
 	}

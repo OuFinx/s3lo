@@ -19,7 +19,7 @@ func TestUploadDirectory_Integration(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(`{"arch":"amd64"}`), 0o644)
 	os.WriteFile(filepath.Join(tmpDir, "blobs", "sha256_abc"), []byte("fake layer data"), 0o644)
 
-	c, err := NewClient()
+	c, err := NewClient(context.Background())
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -27,6 +27,14 @@ func TestUploadDirectory_Integration(t *testing.T) {
 	err = c.UploadDirectory(context.Background(), tmpDir, bucket, "test-image/v0.0.1")
 	if err != nil {
 		t.Fatalf("UploadDirectory: %v", err)
+	}
+}
+
+func TestBuildS3Key_NestedPath(t *testing.T) {
+	key := buildS3Key("myapp/v1.0", "/tmp/oci", "/tmp/oci/blobs/sha256/abc123")
+	want := "myapp/v1.0/blobs/sha256/abc123"
+	if key != want {
+		t.Errorf("buildS3Key() = %q, want %q", key, want)
 	}
 }
 

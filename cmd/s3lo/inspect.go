@@ -21,7 +21,11 @@ var inspectCmd = &cobra.Command{
 		fmt.Printf("Layers:    %d\n", len(info.Layers))
 		fmt.Printf("Total:     %.2f MB\n\n", float64(info.TotalSize)/1024/1024)
 		for i, layer := range info.Layers {
-			fmt.Printf("  [%d] %s (%.2f MB)\n", i+1, layer.Digest[:19], float64(layer.Size)/1024/1024)
+			digestStr := layer.Digest
+			if len(digestStr) > 19 {
+				digestStr = digestStr[:19]
+			}
+			fmt.Printf("  [%d] %s (%.2f MB)\n", i+1, digestStr, float64(layer.Size)/1024/1024)
 		}
 		return nil
 	},

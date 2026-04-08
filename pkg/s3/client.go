@@ -15,8 +15,8 @@ type Client struct {
 	regionCache map[string]string
 }
 
-func NewClient() (*Client, error) {
-	cfg, err := config.LoadDefaultConfig(context.Background())
+func NewClient(ctx context.Context) (*Client, error) {
+	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load AWS config: %w", err)
 	}

@@ -13,7 +13,7 @@ func TestDownloadDirectory_Integration(t *testing.T) {
 	}
 	bucket := os.Getenv("S3LO_TEST_BUCKET")
 
-	c, err := NewClient()
+	c, err := NewClient(context.Background())
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
