@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/finx/s3lo/pkg/oci"
-	"github.com/finx/s3lo/pkg/ref"
-	s3client "github.com/finx/s3lo/pkg/s3"
+	"github.com/OuFinx/s3lo/pkg/oci"
+	"github.com/OuFinx/s3lo/pkg/ref"
+	s3client "github.com/OuFinx/s3lo/pkg/s3"
 )
 
 // Push exports a local Docker image and uploads it to S3.

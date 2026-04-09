@@ -23,20 +23,20 @@ Thanks for your interest in contributing to s3lo!
 ### Build
 
 ```bash
-go build -o s3lo ./cmd/s3lo
+make build
 ```
 
 ### Test
 
 ```bash
 # Unit tests only
-go test ./...
+make test
 
 # With Docker integration tests
-S3LO_TEST_DOCKER=1 go test ./...
+S3LO_TEST_DOCKER=1 make test
 
 # With S3 integration tests
-S3LO_TEST_BUCKET=your-bucket S3LO_TEST_DOCKER=1 go test ./...
+S3LO_TEST_BUCKET=your-bucket S3LO_TEST_DOCKER=1 make test
 ```
 
 ### Project Structure

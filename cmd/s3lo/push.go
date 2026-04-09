@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/finx/s3lo/pkg/image"
+	"github.com/OuFinx/s3lo/pkg/image"
 	"github.com/spf13/cobra"
 )
 

@@ -1,4 +1,4 @@
-module github.com/finx/s3lo
+module github.com/OuFinx/s3lo
 
 go 1.26.2
 
