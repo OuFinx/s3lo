@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/OuFinx/s3lo/actions/workflows/ci.yml/badge.svg)](https://github.com/OuFinx/s3lo/actions/workflows/ci.yml)
 [![Release](https://github.com/OuFinx/s3lo/actions/workflows/release.yml/badge.svg)](https://github.com/OuFinx/s3lo/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/finx/s3lo)](https://goreportcard.com/report/github.com/finx/s3lo)
+[![Go Report Card](https://goreportcard.com/badge/github.com/OuFinx/s3lo)](https://goreportcard.com/report/github.com/OuFinx/s3lo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 Use AWS S3 as a container image registry. Faster pulls, cheaper storage, no registry to manage.
@@ -61,7 +61,7 @@ tar xzf s3lo.tar.gz && sudo mv s3lo /usr/local/bin/
 
 **From source:**
 ```bash
-go install github.com/finx/s3lo/cmd/s3lo@latest
+go install github.com/OuFinx/s3lo/cmd/s3lo@latest
 ```
 
 </details>
@@ -159,10 +159,10 @@ s3lo exposes its core packages for use in other tools:
 
 ```go
 import (
-    "github.com/finx/s3lo/pkg/ref"   // Parse s3://bucket/image:tag references
-    "github.com/finx/s3lo/pkg/oci"   // OCI manifest parsing, Docker export/import
-    "github.com/finx/s3lo/pkg/s3"    // S3 client with region auto-detection
-    "github.com/finx/s3lo/pkg/image" // High-level push/pull/list/inspect
+    "github.com/OuFinx/s3lo/pkg/ref"   // Parse s3://bucket/image:tag references
+    "github.com/OuFinx/s3lo/pkg/oci"   // OCI manifest parsing, Docker export/import
+    "github.com/OuFinx/s3lo/pkg/s3"    // S3 client with region auto-detection
+    "github.com/OuFinx/s3lo/pkg/image" // High-level push/pull/list/inspect
 )
 ```
 
