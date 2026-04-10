@@ -66,6 +66,16 @@ func (r Reference) S3Prefix() string {
 	return r.Image + "/" + tag
 }
 
+// ManifestsPrefix returns the v1.1.0 S3 prefix for this image's manifests.
+// Example: "manifests/myapp/v1.0/"
+func (r Reference) ManifestsPrefix() string {
+	tag := r.Tag
+	if tag == "" {
+		tag = r.Digest
+	}
+	return "manifests/" + r.Image + "/" + tag + "/"
+}
+
 // String returns the canonical s3:// reference string.
 func (r Reference) String() string {
 	if r.Digest != "" {

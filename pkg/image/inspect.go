@@ -3,10 +3,12 @@ package image
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
@@ -29,6 +31,7 @@ type LayerDetail struct {
 }
 
 // Inspect fetches and returns metadata about an image on S3.
+// Supports both v1.1.0 (manifests/ prefix) and v1.0.0 (per-tag) layouts.
 func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 	parsed, err := ref.Parse(s3Ref)
 	if err != nil {
@@ -44,10 +47,20 @@ func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 		return nil, fmt.Errorf("get S3 client for bucket: %w", err)
 	}
 
-	key := parsed.S3Prefix() + "/manifest.json"
-	data, err := downloadObject(ctx, s3c, parsed.Bucket, key)
+	// Try v1.1.0 layout first.
+	key := parsed.ManifestsPrefix() + "manifest.json"
+	data, err := getObject(ctx, s3c, parsed.Bucket, key)
 	if err != nil {
-		return nil, fmt.Errorf("download manifest: %w", err)
+		var noSuchKey *s3types.NoSuchKey
+		if !errors.As(err, &noSuchKey) {
+			return nil, fmt.Errorf("download manifest: %w", err)
+		}
+		// Fall back to v1.0.0 layout.
+		key = parsed.S3Prefix() + "/manifest.json"
+		data, err = getObject(ctx, s3c, parsed.Bucket, key)
+		if err != nil {
+			return nil, fmt.Errorf("download manifest: %w", err)
+		}
 	}
 
 	manifest, err := oci.ParseManifest(data)
@@ -81,7 +94,7 @@ func (i *ImageInfo) FormatJSON() (string, error) {
 	return string(b), nil
 }
 
-func downloadObject(ctx context.Context, client *s3.Client, bucket, key string) ([]byte, error) {
+func getObject(ctx context.Context, client *s3.Client, bucket, key string) ([]byte, error) {
 	resp, err := client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: &bucket,
 		Key:    &key,

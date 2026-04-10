@@ -8,9 +8,11 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"golang.org/x/sync/errgroup"
 )
 
+// UploadDirectory uploads all files in localDir to bucket at prefix/ with Standard storage class.
 func (c *Client) UploadDirectory(ctx context.Context, localDir, bucket, prefix string) error {
 	s3Client, err := c.ClientForBucket(ctx, bucket)
 	if err != nil {
@@ -38,14 +40,24 @@ func (c *Client) UploadDirectory(ctx context.Context, localDir, bucket, prefix s
 		file := file
 		g.Go(func() error {
 			key := buildS3Key(prefix, localDir, file)
-			return uploadFile(ctx, s3Client, bucket, key, file)
+			return uploadFile(ctx, s3Client, bucket, key, file, "")
 		})
 	}
 
 	return g.Wait()
 }
 
-func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string) error {
+// UploadFile uploads a single local file to a specific S3 key.
+// Pass empty string for storageClass to use the bucket default (Standard).
+func (c *Client) UploadFile(ctx context.Context, localPath, bucket, key string, storageClass s3types.StorageClass) error {
+	s3Client, err := c.ClientForBucket(ctx, bucket)
+	if err != nil {
+		return err
+	}
+	return uploadFile(ctx, s3Client, bucket, key, localPath, storageClass)
+}
+
+func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string, storageClass s3types.StorageClass) error {
 	// Check if object already exists (deduplication)
 	info, err := os.Stat(localPath)
 	if err != nil {
@@ -70,11 +82,15 @@ func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath s
 	}
 	defer f.Close()
 
-	_, err = client.PutObject(ctx, &s3.PutObjectInput{
+	input := &s3.PutObjectInput{
 		Bucket: &bucket,
 		Key:    &key,
 		Body:   f,
-	})
+	}
+	if storageClass != "" {
+		input.StorageClass = storageClass
+	}
+	_, err = client.PutObject(ctx, input)
 	return err
 }
 
