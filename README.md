@@ -88,12 +88,12 @@ s3lo stores container images on S3 using the [OCI Image Layout](https://github.c
 
 ```
 s3://my-bucket/myapp/v1.0/
---œ------ index.json              # OCI Image Index
---œ------ manifest.json           # OCI Manifest
---œ------ config.json             # Image Config
+--ï¿½------ index.json              # OCI Image Index
+--ï¿½------ manifest.json           # OCI Manifest
+--ï¿½------ config.json             # Image Config
 --------- blobs/sha256/
-    --œ------ a1b2c3d4...         # Layer 1 (shared with other images)
-    --œ------ e5f6g7h8...         # Layer 2
+    --ï¿½------ a1b2c3d4...         # Layer 1 (shared with other images)
+    --ï¿½------ e5f6g7h8...         # Layer 2
     --------- i9j0k1l2...         # Layer 3
 ```
 
@@ -167,6 +167,10 @@ import (
 ```
 
 All public APIs accept `context.Context` for cancellation and timeout support.
+
+## Documentation
+
+See [GUIDE.md](GUIDE.md) for the full feature reference: all commands with detailed flags and examples, S3 storage layout, deduplication mechanics, IAM policies, Go library usage, CI integration patterns, and FAQ.
 
 ## Contributing
 
