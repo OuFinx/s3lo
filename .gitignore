@@ -1,5 +1,5 @@
 # Binaries
-s3lo
+/s3lo
 *.exe
 *.dll
 *.so

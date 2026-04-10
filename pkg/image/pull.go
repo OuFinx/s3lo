@@ -2,15 +2,20 @@ package image
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
+	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	"golang.org/x/sync/errgroup"
 )
 
 // Pull downloads an OCI image from S3 and imports it into the local Docker daemon.
+// Supports both v1.1.0 (global blobs/sha256/ + manifests/) and v1.0.0 (per-tag) layouts.
 func Pull(ctx context.Context, s3Ref, imageTag string) error {
 	parsed, err := ref.Parse(s3Ref)
 	if err != nil {
@@ -28,11 +33,24 @@ func Pull(ctx context.Context, s3Ref, imageTag string) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	if err := client.DownloadDirectory(ctx, parsed.Bucket, parsed.S3Prefix(), tmpDir); err != nil {
-		return fmt.Errorf("download from S3: %w", err)
+	// Try v1.1.0 layout first.
+	manifestKey := parsed.ManifestsPrefix() + "manifest.json"
+	manifestData, err := client.GetObject(ctx, parsed.Bucket, manifestKey)
+	if err != nil {
+		var noSuchKey *s3types.NoSuchKey
+		if !errors.As(err, &noSuchKey) {
+			return fmt.Errorf("fetch manifest: %w", err)
+		}
+		// v1.1.0 not found — fall back to v1.0.0 per-tag layout.
+		if err := client.DownloadDirectory(ctx, parsed.Bucket, parsed.S3Prefix(), tmpDir); err != nil {
+			return fmt.Errorf("download from S3: %w", err)
+		}
+	} else {
+		if err := pullV110(ctx, client, parsed, manifestData, tmpDir); err != nil {
+			return err
+		}
 	}
 
-	// Use the image tag if provided, otherwise construct from ref
 	if imageTag == "" {
 		imageTag = parsed.Image + ":" + parsed.Tag
 	}
@@ -42,4 +60,40 @@ func Pull(ctx context.Context, s3Ref, imageTag string) error {
 	}
 
 	return nil
+}
+
+// pullV110 downloads a v1.1.0 image into tmpDir, reconstructing the local OCI layout
+// that oci.ImportImage expects: tmpDir/manifest.json + tmpDir/blobs/sha256/<digest>.
+func pullV110(ctx context.Context, client *s3client.Client, parsed ref.Reference, manifestData []byte, tmpDir string) error {
+	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), manifestData, 0o644); err != nil {
+		return fmt.Errorf("write manifest: %w", err)
+	}
+
+	manifest, err := oci.ParseManifest(manifestData)
+	if err != nil {
+		return fmt.Errorf("parse manifest: %w", err)
+	}
+
+	blobsDir := filepath.Join(tmpDir, "blobs", "sha256")
+	if err := os.MkdirAll(blobsDir, 0o755); err != nil {
+		return fmt.Errorf("create blobs dir: %w", err)
+	}
+
+	// Download config blob.
+	configDigest := manifest.Config.Digest.Encoded()
+	if err := client.DownloadObjectToFile(ctx, parsed.Bucket, "blobs/sha256/"+configDigest, filepath.Join(blobsDir, configDigest)); err != nil {
+		return fmt.Errorf("download config blob: %w", err)
+	}
+
+	// Download layer blobs in parallel.
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
+	for _, layer := range manifest.Layers {
+		layer := layer
+		g.Go(func() error {
+			d := layer.Digest.Encoded()
+			return client.DownloadObjectToFile(gCtx, parsed.Bucket, "blobs/sha256/"+d, filepath.Join(blobsDir, d))
+		})
+	}
+	return g.Wait()
 }

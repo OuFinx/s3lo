@@ -16,6 +16,7 @@ type ImageEntry struct {
 }
 
 // List lists all images in an S3 bucket path.
+// Supports both v1.1.0 (manifests/ prefix) and v1.0.0 (per-tag root) layouts.
 // s3Ref should be like "s3://my-bucket/" or "s3://my-bucket/prefix/".
 func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 	if !strings.HasPrefix(s3Ref, "s3://") {
@@ -46,16 +47,43 @@ func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 		return nil, fmt.Errorf("get S3 client for bucket: %w", err)
 	}
 
-	// List top-level prefixes (image names)
-	imageNames, err := listCommonPrefixes(ctx, s3c, bucket, prefix, "/")
+	// v1.1.0: images under manifests/<image>/<tag>/
+	v110Entries, err := listFromManifestsPrefix(ctx, s3c, bucket, prefix+"manifests/", prefix)
 	if err != nil {
-		return nil, fmt.Errorf("list images: %w", err)
+		return nil, err
+	}
+
+	// v1.0.0: images at <image>/<tag>/ (skip blobs/ and manifests/ reserved prefixes)
+	v100Entries, err := listFromRootPrefix(ctx, s3c, bucket, prefix)
+	if err != nil {
+		return nil, err
+	}
+
+	// Merge, deduplicating by name (v1.1.0 takes precedence).
+	seen := make(map[string]bool)
+	var entries []ImageEntry
+	for _, e := range v110Entries {
+		seen[e.Name] = true
+		entries = append(entries, e)
+	}
+	for _, e := range v100Entries {
+		if !seen[e.Name] {
+			entries = append(entries, e)
+		}
+	}
+
+	return entries, nil
+}
+
+func listFromManifestsPrefix(ctx context.Context, s3c *s3.Client, bucket, v110Prefix, userPrefix string) ([]ImageEntry, error) {
+	imageNames, err := listCommonPrefixes(ctx, s3c, bucket, v110Prefix, "/")
+	if err != nil {
+		return nil, fmt.Errorf("list v1.1.0 images: %w", err)
 	}
 
 	var entries []ImageEntry
 	for _, imagePfx := range imageNames {
-		// imagePfx looks like "prefix/imagename/" — extract just the image name
-		name := strings.TrimPrefix(imagePfx, prefix)
+		name := strings.TrimPrefix(imagePfx, v110Prefix)
 		name = strings.TrimSuffix(name, "/")
 
 		tagPrefixes, err := listCommonPrefixes(ctx, s3c, bucket, imagePfx, "/")
@@ -69,10 +97,44 @@ func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 			tag = strings.TrimSuffix(tag, "/")
 			tags = append(tags, tag)
 		}
+		if len(tags) > 0 {
+			entries = append(entries, ImageEntry{Name: name, Tags: tags})
+		}
+	}
+	return entries, nil
+}
 
-		entries = append(entries, ImageEntry{Name: name, Tags: tags})
+func listFromRootPrefix(ctx context.Context, s3c *s3.Client, bucket, prefix string) ([]ImageEntry, error) {
+	imageNames, err := listCommonPrefixes(ctx, s3c, bucket, prefix, "/")
+	if err != nil {
+		return nil, fmt.Errorf("list v1.0.0 images: %w", err)
 	}
 
+	var entries []ImageEntry
+	for _, imagePfx := range imageNames {
+		name := strings.TrimPrefix(imagePfx, prefix)
+		name = strings.TrimSuffix(name, "/")
+
+		// Skip v1.1.0 reserved prefixes.
+		if name == "blobs" || name == "manifests" {
+			continue
+		}
+
+		tagPrefixes, err := listCommonPrefixes(ctx, s3c, bucket, imagePfx, "/")
+		if err != nil {
+			return nil, fmt.Errorf("list tags for %s: %w", name, err)
+		}
+
+		var tags []string
+		for _, tagPfx := range tagPrefixes {
+			tag := strings.TrimPrefix(tagPfx, imagePfx)
+			tag = strings.TrimSuffix(tag, "/")
+			tags = append(tags, tag)
+		}
+		if len(tags) > 0 {
+			entries = append(entries, ImageEntry{Name: name, Tags: tags})
+		}
+	}
 	return entries, nil
 }
 
