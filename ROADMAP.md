@@ -1,15 +1,15 @@
 # s3lo Roadmap
 
-## v1.1.0 — Global Layer Deduplication
+## v1.1.0 — Global Layer Deduplication ✓
 
-- [ ] Push blobs to global bucket-level store (`bucket/blobs/sha256/`)
-- [ ] Pull blobs from global bucket-level store
-- [ ] Backward compatible pull (support v1.0.0 and v1.1.0 layouts)
-- [ ] `s3lo migrate` — convert v1.0.0 layout to v1.1.0
-- [ ] `s3lo gc` — garbage collect unreferenced blobs
-- [ ] `s3lo delete` — remove image tag
-- [ ] S3 Intelligent-Tiering for blob storage
-- [ ] Update list and inspect for v1.1.0 layout
+- [x] Push blobs to global bucket-level store (`bucket/blobs/sha256/`)
+- [x] Pull blobs from global bucket-level store
+- [x] Backward compatible pull (support v1.0.0 and v1.1.0 layouts)
+- [x] `s3lo migrate` — convert v1.0.0 layout to v1.1.0
+- [x] `s3lo gc` — garbage collect unreferenced blobs
+- [x] `s3lo delete` — remove image tag
+- [x] S3 Intelligent-Tiering for blob storage
+- [x] Update list and inspect for v1.1.0 layout
 
 ## v1.2.0 — Lifecycle & Operations
 
