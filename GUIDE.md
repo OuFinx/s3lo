@@ -11,11 +11,17 @@ Complete reference for all s3lo features, commands, and usage patterns.
 - [Commands](#commands)
   - [push](#push)
   - [pull](#pull)
+  - [copy](#copy)
   - [list](#list)
   - [inspect](#inspect)
   - [delete](#delete)
   - [gc](#gc)
   - [migrate](#migrate)
+  - [stats](#stats)
+  - [recommend](#recommend)
+  - [config](#config)
+  - [lifecycle](#lifecycle)
+  - [configure](#configure)
   - [version](#version)
 - [Authentication](#authentication)
 - [IAM Policies](#iam-policies)
@@ -128,10 +134,23 @@ s3lo push org/backend:latest s3://my-bucket/org/backend:latest
 s3lo push myapp:$(git rev-parse --short HEAD) s3://my-bucket/myapp:$(git rev-parse --short HEAD)
 ```
 
+**Flags:**
+- `--force` - overwrite an existing tag even if the bucket has immutability enabled.
+
+**Progress output:**
+```
+Pushing myapp:v1.0 to s3://my-bucket/myapp:v1.0
+  sha256:a1b2c3d4e5f67890  45.2 MB    uploaded
+  sha256:e5f6g7h8i9j01234  12.1 MB    skipped (exists)
+  sha256:i9j0k1l2m3n45678   1.3 MB    uploaded
+Done.
+```
+
 **Notes:**
 - The local image must be available in Docker (`docker images` shows it). If it is not present, run `docker pull` first.
 - On Apple Silicon (arm64), push `linux/amd64` images for EKS compatibility: `docker pull --platform linux/amd64 myapp:v1.0`.
 - Pushing the same image twice is safe and fast - only changed or missing blobs are uploaded.
+- If the bucket has immutability enabled (`s3lo config set ... immutable=true`), pushing to an existing tag fails unless `--force` is passed.
 
 ---
 
@@ -370,6 +389,323 @@ Migrated 5 image tag(s), 23 blob(s) moved to global store
 
 ---
 
+### stats
+
+Show storage usage, deduplication savings, and cost estimate for a bucket.
+
+```
+s3lo stats <s3-bucket-ref>
+```
+
+**What it does:**
+1. Scans all manifests under `manifests/` to count images, tags, and sum logical blob bytes (all references, with duplicates counted).
+2. Lists all blobs under `blobs/sha256/` to get actual stored bytes and storage class breakdown.
+3. Calculates deduplication savings: logical bytes minus actual stored bytes.
+4. Estimates monthly cost vs the ECR equivalent.
+
+**Examples:**
+```bash
+s3lo stats s3://my-bucket/
+```
+
+**Output:**
+```
+Bucket: s3://my-bucket/
+
+Images:       12
+Tags:         47
+Unique blobs: 89
+Total size:   2.4 GB
+
+Dedup savings: 1.8 GB (43% saved)
+
+Storage class breakdown:
+  INTELLIGENT_TIERING:           2.2 GB (91%)
+  STANDARD:                      0.2 GB (9%)
+
+Estimated monthly cost: $0.06
+vs ECR equivalent:      $0.24 (4.3x cheaper)
+```
+
+**Notes:**
+- Only v1.1.0 layout images are counted. Run `s3lo migrate` first to include v1.0.0 images.
+- Storage class reported is as returned by `ListObjectsV2` (top-level class only - for Intelligent-Tiering objects, the actual tier within IT is not shown).
+
+---
+
+### recommend
+
+Generate S3 Lifecycle Rule recommendations for a bucket.
+
+```
+s3lo recommend <s3-bucket-ref>
+```
+
+**What it does:**
+1. Checks whether bucket versioning is enabled.
+2. Generates recommendations tailored to s3lo's storage layout.
+3. Outputs a ready-to-apply Terraform HCL snippet.
+
+**Examples:**
+```bash
+s3lo recommend s3://my-bucket/
+```
+
+**Output:**
+```
+Recommended S3 Lifecycle Rules for my-bucket:
+
+1. Move blobs to Infrequent Access after 30 days
+   Prefix: blobs/sha256/
+   ...
+
+2. Expire incomplete multipart uploads after 7 days
+   ...
+
+Terraform:
+  resource "aws_s3_bucket_lifecycle_configuration" "s3lo" {
+    bucket = "my-bucket"
+    ...
+  }
+```
+
+**Recommendations generated:**
+- **Blob tiering** - transition `blobs/sha256/` objects to `STANDARD_IA` after 30 days. Image layers are large and rarely re-pulled after the initial deployment. STANDARD_IA costs ~40% less.
+- **Multipart cleanup** - abort incomplete multipart uploads after 7 days to prevent orphaned storage charges.
+- **Non-current version expiry** - if versioning is enabled, expire old object versions after 14 days.
+
+**Notes:**
+- The recommendations are the same for most buckets. The only variable is whether versioning is enabled.
+- Apply the Terraform snippet or use the AWS Console / CLI to set the rules. `recommend` does not modify the bucket.
+
+---
+
+### config
+
+Manage per-bucket s3lo configuration stored at `s3://bucket/s3lo.yaml`.
+
+```
+s3lo config set <s3-bucket-ref> <key>=<value>
+s3lo config get <s3-bucket-ref>
+```
+
+**Available keys:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `immutable` | `true` / `false` | Reject pushes that would overwrite an existing tag |
+
+**Examples:**
+```bash
+# Enable immutability
+s3lo config set s3://my-bucket/ immutable=true
+
+# Check current config
+s3lo config get s3://my-bucket/
+
+# Disable immutability
+s3lo config set s3://my-bucket/ immutable=false
+```
+
+**How immutability works:**
+When `immutable=true`, pushing to an existing tag fails:
+```
+Error: tag v1.0 already exists for myapp (bucket is immutable). Use --force to overwrite
+```
+
+Override with `--force`:
+```bash
+s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --force
+```
+
+**Config storage:**
+The config is a small YAML file stored at the bucket root (`s3lo.yaml`). It is read on every `push` call. The `s3:GetObject` and `s3:PutObject` permissions are required.
+
+---
+
+### lifecycle
+
+Apply declarative image retention policies to automatically clean up old tags.
+
+```
+s3lo lifecycle apply <s3-bucket-ref> --config <file> [--confirm]
+```
+
+**Flags:**
+- `--config <file>` - path to the lifecycle policy YAML file (required)
+- `--confirm` - actually delete tags. Without this flag, only a dry run is performed.
+
+**Policy file format:**
+
+```yaml
+rules:
+  - match: "*"          # glob pattern matched against image name
+    keep_last: 10       # keep the N most recently pushed tags
+    max_age: 90d        # delete tags older than this (Nd = days, or Go duration like 720h)
+    keep_tags:          # tags that are never deleted regardless of other rules
+      - latest
+      - stable
+
+  - match: "dev/*"      # matches dev/backend, dev/worker, etc.
+    max_age: 7d
+
+  - match: "myapp"      # exact name match
+    keep_last: 5
+    keep_tags: ["stable"]
+```
+
+**Rule matching:**
+- The first rule whose `match` pattern matches the image name is applied. Other rules are ignored for that image.
+- `match` uses Go's `path.Match` glob syntax: `*` matches within a single path segment, `?` matches a single character.
+- If no rule matches an image, it is not touched.
+
+**Rule fields:**
+- `match` - required. Glob pattern for image names.
+- `keep_last` - keep the N most recently pushed tags (by manifest LastModified). 0 or omitted means no limit.
+- `max_age` - delete tags whose manifest is older than this duration. Supports `Nd` (e.g. `7d`, `90d`) and Go duration strings (e.g. `168h`).
+- `keep_tags` - list of tag names that are never deleted regardless of `keep_last` or `max_age`.
+
+When both `keep_last` and `max_age` are set, a tag is deleted if it violates either condition.
+
+**Examples:**
+```bash
+# Dry run - see what would be deleted
+s3lo lifecycle apply s3://my-bucket/ --config lifecycle.yaml
+
+# Actually delete
+s3lo lifecycle apply s3://my-bucket/ --config lifecycle.yaml --confirm
+
+# After deleting tags, reclaim blob storage
+s3lo gc s3://my-bucket/ --confirm
+```
+
+**Output:**
+```
+Dry run: 12 tag(s) would be deleted (out of 47 evaluated)
+Run with --confirm to delete them. Then run 'gc --confirm' to reclaim blob storage.
+```
+
+**Notes:**
+- `lifecycle apply` only deletes manifest files (the tag reference). Blobs are not touched.
+- Run `s3lo gc --confirm` after applying a lifecycle policy to reclaim the blob storage.
+- The 1-hour gc grace period still applies, so blobs from recently pushed tags are safe.
+
+---
+
+### configure
+
+Interactive first-time setup wizard.
+
+```
+s3lo configure
+```
+
+**What it does:**
+1. Prompts for AWS region (detects current from `AWS_DEFAULT_REGION` or `AWS_REGION` env vars, defaults to `us-east-1`).
+2. Prompts for a default S3 bucket (optional).
+3. If a bucket is provided, verifies S3 connectivity.
+4. Saves settings to `~/.config/s3lo/config.yaml`.
+
+**Example session:**
+```
+Welcome to s3lo!
+
+AWS Region [us-east-1]: eu-central-1
+Default S3 bucket (optional, press Enter to skip): my-bucket
+
+Verifying access to s3://my-bucket... ok
+
+Configuration saved to /Users/you/.config/s3lo/config.yaml
+
+You can now push images:
+  s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0
+```
+
+**Config file format:**
+```yaml
+# ~/.config/s3lo/config.yaml
+default_bucket: my-bucket
+region: eu-central-1
+```
+
+**Notes:**
+- The config file is read-only by the owner (`chmod 600`).
+- The directory is created with `chmod 700` if it does not exist.
+- Currently, `default_bucket` is stored for reference but not yet auto-applied to commands. Future versions will allow omitting the bucket from push/pull/list references.
+
+---
+
+### copy
+
+Copy an image to S3 without pulling it to the local Docker daemon.
+
+```
+s3lo copy <src> <s3-dest>
+```
+
+**Arguments:**
+- `<src>` - source image. Can be an S3 reference or an OCI registry reference.
+- `<s3-dest>` - destination in `s3://bucket/image:tag` format.
+
+**Source formats supported:**
+
+| Source | Example |
+|--------|---------|
+| S3 bucket | `s3://source-bucket/myapp:v1.0` |
+| ECR | `123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0` |
+| Docker Hub | `docker.io/library/nginx:latest` |
+| Any OCI registry | `registry.example.com/myapp:v1.0` |
+
+**Examples:**
+```bash
+# Copy between S3 buckets
+s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
+
+# Copy from ECR to S3 (auto-authenticates using your AWS credentials)
+s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
+
+# Copy from Docker Hub to S3
+s3lo copy docker.io/library/nginx:latest s3://my-bucket/nginx:latest
+
+# Copy from any OCI-compatible registry
+s3lo copy ghcr.io/owner/myapp:v1.0 s3://my-bucket/myapp:v1.0
+```
+
+**How it works:**
+
+*S3-to-S3 (same bucket):*
+Uses S3 server-side `CopyObject` for blobs - no data transfer, no cost, instant.
+
+*S3-to-S3 (different buckets):*
+Downloads each blob to a local temp file, uploads to the destination bucket. Your machine is the transfer point.
+
+*ECR-to-S3:*
+Calls `ecr:GetAuthorizationToken` using your AWS credentials to get a temporary token, then pulls manifests and blobs from the ECR registry API and uploads them to S3.
+
+*Other OCI registries:*
+Attempts unauthenticated access first. On 401, performs the standard Bearer token challenge flow (`WWW-Authenticate` header). Blobs are streamed via HTTP and written to temp files before upload.
+
+**Blob deduplication:**
+Before uploading each blob, copy checks whether it already exists at the destination. Existing blobs are skipped.
+
+**Output:**
+```
+Copying 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 to s3://my-bucket/myapp:v1.0
+Done. 4 blob(s) copied, 1 skipped (already exist).
+```
+
+**IAM requirements for ECR source:**
+```json
+{
+  "Effect": "Allow",
+  "Action": ["ecr:GetAuthorizationToken"],
+  "Resource": "*"
+}
+```
+Plus read access to the ECR repository.
+
+---
+
 ### version
 
 Print the s3lo version and build commit.
@@ -472,11 +808,18 @@ Required for: `pull`, `list`, `inspect`.
 |---------|---------------------|
 | push | GetObject, PutObject, HeadObject, ListBucket, GetBucketLocation |
 | pull | GetObject, HeadObject, ListBucket, GetBucketLocation |
+| copy (S3 src) | GetObject, PutObject, HeadObject, ListBucket, GetBucketLocation |
+| copy (ECR src) | Same as push, plus `ecr:GetAuthorizationToken` |
 | list | ListBucket, GetBucketLocation |
 | inspect | GetObject, GetBucketLocation |
 | delete | GetObject, DeleteObject, ListBucket, GetBucketLocation |
 | gc | GetObject, DeleteObject, ListBucket, GetBucketLocation |
 | migrate | GetObject, PutObject, DeleteObject, ListBucket, GetBucketLocation |
+| stats | GetObject, ListBucket, GetBucketLocation |
+| recommend | GetBucketLocation, GetBucketVersioning |
+| config set | GetObject, PutObject, GetBucketLocation |
+| config get | GetObject, GetBucketLocation |
+| lifecycle apply | GetObject, DeleteObject, ListBucket, GetBucketLocation |
 
 ---
 

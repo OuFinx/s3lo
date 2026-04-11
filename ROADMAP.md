@@ -11,15 +11,15 @@
 - [x] S3 Intelligent-Tiering for blob storage
 - [x] Update list and inspect for v1.1.0 layout
 
-## v1.2.0 — Lifecycle & Operations
+## v1.2.0 — Lifecycle & Operations ✓
 
-- [ ] `s3lo lifecycle` — declarative retention policies
-- [ ] `s3lo stats` — storage usage and deduplication savings
-- [ ] `s3lo copy` — copy images between S3 buckets or from ECR
-- [ ] `s3lo configure` — guided first-time setup
-- [ ] Tag immutability
-- [ ] S3 Lifecycle Rules recommendation generator
-- [ ] Progress bars for push and pull
+- [x] `s3lo lifecycle` — declarative retention policies
+- [x] `s3lo stats` — storage usage and deduplication savings
+- [x] `s3lo copy` — copy images between S3 buckets or from ECR
+- [x] `s3lo configure` — guided first-time setup
+- [x] Tag immutability
+- [x] S3 Lifecycle Rules recommendation generator
+- [x] Progress bars for push and pull
 
 ## v1.3.0 — Multi-Architecture Images
 

@@ -75,11 +75,38 @@ s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0
 # Pull from S3 into local Docker
 s3lo pull s3://my-bucket/myapp:v1.0
 
+# Copy from ECR or another S3 bucket (no local Docker needed)
+s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
+s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
+
 # List images in a bucket
 s3lo list s3://my-bucket/
 
 # Inspect image metadata
 s3lo inspect s3://my-bucket/myapp:v1.0
+
+# Show storage stats and deduplication savings
+s3lo stats s3://my-bucket/
+
+# Delete a tag (blobs remain; run gc to reclaim)
+s3lo delete s3://my-bucket/myapp:v1.0
+
+# Garbage collect unreferenced blobs
+s3lo gc s3://my-bucket/             # dry run
+s3lo gc s3://my-bucket/ --confirm   # delete
+
+# Apply declarative retention policies
+s3lo lifecycle apply s3://my-bucket/ --config lifecycle.yaml
+s3lo lifecycle apply s3://my-bucket/ --config lifecycle.yaml --confirm
+
+# Generate S3 Lifecycle Rule Terraform for the bucket
+s3lo recommend s3://my-bucket/
+
+# Enable tag immutability
+s3lo config set s3://my-bucket/ immutable=true
+
+# First-time interactive setup
+s3lo configure
 ```
 
 ## How It Works
