@@ -10,7 +10,9 @@ import (
 var statsCmd = &cobra.Command{
 	Use:     "stats <s3-bucket-ref>",
 	Short:   "Show storage usage and deduplication savings",
-	Example: `  s3lo stats s3://my-bucket/`,
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/stats/
+
+  s3lo stats s3://my-bucket/`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := image.Stats(cmd.Context(), args[0])

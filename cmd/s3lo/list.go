@@ -10,7 +10,9 @@ import (
 var listCmd = &cobra.Command{
 	Use:   "list <s3-bucket-path>",
 	Short: "List images in an S3 bucket",
-	Example: `  s3lo list s3://my-bucket/`,
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/list/
+
+  s3lo list s3://my-bucket/`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		entries, err := image.List(cmd.Context(), args[0])

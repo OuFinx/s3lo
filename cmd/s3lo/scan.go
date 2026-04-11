@@ -26,7 +26,9 @@ var scanCmd = &cobra.Command{
 
 Trivy must be installed, or s3lo can install it automatically.
 Use --install-trivy to skip the confirmation prompt.`,
-	Example: `  s3lo scan s3://my-bucket/myapp:v1.0
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/scan/
+
+  s3lo scan s3://my-bucket/myapp:v1.0
   s3lo scan s3://my-bucket/myapp:v1.0 --severity HIGH,CRITICAL
   s3lo scan s3://my-bucket/myapp:v1.0 --format json
   s3lo scan s3://my-bucket/myapp:v1.0 --platform linux/arm64`,

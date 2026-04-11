@@ -19,7 +19,9 @@ Sources:
   registry.example.com/myapp:v1.0                              Any OCI registry to S3
 
 For multi-arch images, all platforms are copied by default. Use --platform to copy a specific platform only.`,
-	Example: `  # Copy between S3 buckets (all platforms)
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/copy/
+
+  # Copy between S3 buckets (all platforms)
   s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
 
   # Copy from Docker Hub (all platforms)

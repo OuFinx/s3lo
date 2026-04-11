@@ -10,7 +10,9 @@ import (
 var inspectCmd = &cobra.Command{
 	Use:   "inspect <s3-ref>",
 	Short: "Inspect an image on S3",
-	Example: `  s3lo inspect s3://my-bucket/myapp:v1.0`,
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/inspect/
+
+  s3lo inspect s3://my-bucket/myapp:v1.0`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		info, err := image.Inspect(cmd.Context(), args[0])

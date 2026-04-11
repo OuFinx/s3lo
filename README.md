@@ -195,7 +195,7 @@ All public APIs accept `context.Context` for cancellation and timeout support.
 
 ## Documentation
 
-See [GUIDE.md](GUIDE.md) for the full feature reference: all commands with detailed flags and examples, S3 storage layout, deduplication mechanics, IAM policies, Go library usage, CI integration patterns, and FAQ.
+See the [documentation site](https://oufinx.github.io/s3lo/) for the full reference: all commands with detailed flags and examples, S3 storage layout, deduplication mechanics, IAM policies, Go library usage, CI integration patterns, and FAQ.
 
 ## Contributing
 
