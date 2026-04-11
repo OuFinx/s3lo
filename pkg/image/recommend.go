@@ -3,29 +3,26 @@ package image
 import (
 	"context"
 	"fmt"
-	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
 )
 
-// Recommendation describes a single lifecycle rule recommendation.
+// Recommendation describes a single actionable suggestion for the bucket.
 type Recommendation struct {
 	Title       string
 	Description string
 }
 
-// RecommendResult holds generated lifecycle rule recommendations for a bucket.
+// RecommendResult holds the findings and recommendations for a bucket.
 type RecommendResult struct {
 	Bucket          string
-	VersioningOn    bool
+	Findings        []string
 	Recommendations []Recommendation
-	TerraformHCL    string
 }
 
-// Recommend analyzes a bucket and generates S3 Lifecycle Rule recommendations.
-// The recommendations cover blob tiering, multipart upload cleanup, and versioning.
+// Recommend analyzes the actual state of a bucket and returns data-driven recommendations.
 func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error) {
 	bucket, _, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
@@ -42,82 +39,92 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 		return nil, fmt.Errorf("get S3 client for bucket: %w", err)
 	}
 
-	// Check bucket versioning status.
-	versioningOn := false
+	result := &RecommendResult{Bucket: bucket}
+
+	// --- Versioning ---
 	vResp, err := s3c.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{Bucket: &bucket})
 	if err == nil && vResp.Status == s3types.BucketVersioningStatusEnabled {
-		versioningOn = true
-	}
-
-	result := &RecommendResult{
-		Bucket:       bucket,
-		VersioningOn: versioningOn,
-	}
-
-	result.Recommendations = []Recommendation{
-		{
-			Title: "Move blobs to Infrequent Access after 30 days",
-			Description: "Prefix: blobs/sha256/\n" +
-				"Transition: STANDARD -> STANDARD_IA after 30 days\n" +
-				"Blobs (image layers) are large and rarely accessed after initial pull.\n" +
-				"STANDARD_IA costs ~40% less with no performance difference for pull.",
-		},
-		{
-			Title:       "Expire incomplete multipart uploads after 7 days",
-			Description: "Incomplete multipart uploads accumulate storage cost without being usable.\n" + "Cleaning them up after 7 days prevents orphaned storage charges.",
-		},
-	}
-
-	if versioningOn {
+		result.Findings = append(result.Findings, "Versioning: enabled")
 		result.Recommendations = append(result.Recommendations, Recommendation{
-			Title: "Delete non-current object versions after 14 days",
-			Description: "Bucket versioning is enabled. Old versions of manifests and blobs\n" +
-				"accumulate over time. 14 days gives enough time for recovery if needed.",
+			Title: "Disable bucket versioning",
+			Description: "s3lo manages its own content-addressable layout — versioning adds no benefit\n" +
+				"and doubles storage costs when objects are overwritten (e.g. manifest files on re-push).\n" +
+				"Disable versioning and add a lifecycle rule to expire non-current versions.",
+		})
+	} else {
+		result.Findings = append(result.Findings, "Versioning: disabled (good)")
+	}
+
+	// --- Existing S3 lifecycle rules ---
+	lcResp, err := s3c.GetBucketLifecycleConfiguration(ctx, &s3.GetBucketLifecycleConfigurationInput{Bucket: &bucket})
+	if err == nil && len(lcResp.Rules) > 0 {
+		result.Findings = append(result.Findings, fmt.Sprintf("S3 lifecycle rules: %d rule(s) configured", len(lcResp.Rules)))
+	} else {
+		result.Findings = append(result.Findings, "S3 lifecycle rules: none")
+		result.Recommendations = append(result.Recommendations, Recommendation{
+			Title: "Add S3 lifecycle rule to abort incomplete multipart uploads",
+			Description: "Incomplete multipart uploads accumulate storage cost without being usable.\n" +
+				"Add a lifecycle rule to abort them after 7 days:\n\n" +
+				"  aws s3api put-bucket-lifecycle-configuration \\\n" +
+				"    --bucket " + bucket + " \\\n" +
+				"    --lifecycle-configuration '{\n" +
+				"      \"Rules\": [{\n" +
+				"        \"ID\": \"abort-incomplete-multipart\",\n" +
+				"        \"Status\": \"Enabled\",\n" +
+				"        \"Filter\": {},\n" +
+				"        \"AbortIncompleteMultipartUpload\": {\"DaysAfterInitiation\": 7}\n" +
+				"      }]\n" +
+				"    }'",
 		})
 	}
 
-	result.TerraformHCL = buildTerraformHCL(bucket, versioningOn)
-	return result, nil
-}
-
-func buildTerraformHCL(bucket string, versioning bool) string {
-	var b strings.Builder
-	b.WriteString(fmt.Sprintf(`resource "aws_s3_bucket_lifecycle_configuration" "s3lo" {
-  bucket = %q
-
-  rule {
-    id     = "s3lo-blob-tiering"
-    status = "Enabled"
-    filter { prefix = "blobs/" }
-    transition {
-      days          = 30
-      storage_class = "STANDARD_IA"
-    }
-  }
-
-  rule {
-    id     = "s3lo-abort-multipart"
-    status = "Enabled"
-    filter {}
-    abort_incomplete_multipart_upload {
-      days_after_initiation = 7
-    }
-  }
-`, bucket))
-
-	if versioning {
-		b.WriteString(`
-  rule {
-    id     = "s3lo-noncurrent-expiry"
-    status = "Enabled"
-    filter {}
-    noncurrent_version_expiration {
-      noncurrent_days = 14
-    }
-  }
-`)
+	// --- Incomplete multipart uploads ---
+	mpu, err := s3c.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{Bucket: &bucket})
+	if err == nil && len(mpu.Uploads) > 0 {
+		result.Findings = append(result.Findings, fmt.Sprintf("Incomplete multipart uploads: %d found (wasted storage)", len(mpu.Uploads)))
+		result.Recommendations = append(result.Recommendations, Recommendation{
+			Title: "Clean up incomplete multipart uploads now",
+			Description: fmt.Sprintf("%d incomplete multipart upload(s) are consuming storage without being usable.\n", len(mpu.Uploads)) +
+				"Run: aws s3api list-multipart-uploads --bucket " + bucket,
+		})
+	} else {
+		result.Findings = append(result.Findings, "Incomplete multipart uploads: none (good)")
 	}
 
-	b.WriteString("}\n")
-	return b.String()
+	// --- s3lo.yaml config ---
+	cfg, err := GetBucketConfig(ctx, client, bucket)
+	if err == nil {
+		hasLifecycle := cfg.Default.Lifecycle != nil
+		if !hasLifecycle {
+			for _, img := range cfg.Images {
+				if img.Lifecycle != nil {
+					hasLifecycle = true
+					break
+				}
+			}
+		}
+		if hasLifecycle {
+			result.Findings = append(result.Findings, "s3lo lifecycle config: configured")
+			result.Recommendations = append(result.Recommendations, Recommendation{
+				Title: "Schedule s3lo clean to enforce lifecycle rules automatically",
+				Description: "Lifecycle rules are configured in s3lo.yaml but only enforced when\n" +
+					"s3lo clean is run. Schedule it to run automatically:\n\n" +
+					"  # GitHub Actions (nightly):\n" +
+					"  - cron: '0 2 * * *'\n" +
+					"    run: s3lo clean s3://" + bucket + "/ --confirm\n\n" +
+					"  # AWS EventBridge + Lambda: invoke s3lo clean as a scheduled task",
+			})
+		} else {
+			result.Findings = append(result.Findings, "s3lo lifecycle config: not configured")
+			result.Recommendations = append(result.Recommendations, Recommendation{
+				Title: "Configure lifecycle rules to automatically clean old tags",
+				Description: "No lifecycle rules are set. Without them, old tags and blobs accumulate indefinitely.\n" +
+					"Example:\n\n" +
+					"  s3lo config set s3://" + bucket + "/ lifecycle.keep_last=10 lifecycle.max_age=90d\n" +
+					"  s3lo clean s3://" + bucket + "/ --confirm",
+			})
+		}
+	}
+
+	return result, nil
 }

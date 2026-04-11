@@ -327,23 +327,23 @@ var configRecommendCmd = &cobra.Command{
 			return err
 		}
 
-		fmt.Printf("Recommendations for s3://%s/:\n\n", result.Bucket)
+		fmt.Printf("Analysis for s3://%s/:\n\n", result.Bucket)
+		for _, f := range result.Findings {
+			fmt.Printf("  • %s\n", f)
+		}
+
+		if len(result.Recommendations) == 0 {
+			fmt.Println("\nNo recommendations — bucket looks good.")
+			return nil
+		}
+
+		fmt.Printf("\nRecommendations:\n\n")
 		for i, rec := range result.Recommendations {
 			fmt.Printf("%d. %s\n", i+1, rec.Title)
 			for _, line := range splitLines(rec.Description) {
 				fmt.Printf("   %s\n", line)
 			}
 			fmt.Println()
-		}
-
-		if result.VersioningOn {
-			fmt.Println("(Bucket versioning is enabled - non-current version rule included)")
-			fmt.Println()
-		}
-
-		fmt.Println("Terraform:")
-		for _, line := range splitLines(result.TerraformHCL) {
-			fmt.Printf("  %s\n", line)
 		}
 		return nil
 	},
