@@ -9,6 +9,7 @@ import (
 	"time"
 
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )
 
@@ -113,15 +114,24 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, 
 		result.Deleted += len(toDelete)
 
 		if !dryRun {
+			g, gCtx := errgroup.WithContext(ctx)
+			g.SetLimit(10)
 			for _, tm := range toDelete {
-				tagPrefix := strings.TrimSuffix(tm.manifestKey, "manifest.json")
-				keys, err := client.ListKeys(ctx, bucket, tagPrefix)
-				if err != nil {
-					return nil, fmt.Errorf("list tag files for %s:%s: %w", tm.image, tm.tag, err)
-				}
-				if err := client.DeleteObjects(ctx, bucket, keys); err != nil {
-					return nil, fmt.Errorf("delete %s:%s: %w", tm.image, tm.tag, err)
-				}
+				tm := tm
+				g.Go(func() error {
+					tagPrefix := strings.TrimSuffix(tm.manifestKey, "manifest.json")
+					keys, err := client.ListKeys(gCtx, bucket, tagPrefix)
+					if err != nil {
+						return fmt.Errorf("list tag files for %s:%s: %w", tm.image, tm.tag, err)
+					}
+					if err := client.DeleteObjects(gCtx, bucket, keys); err != nil {
+						return fmt.Errorf("delete %s:%s: %w", tm.image, tm.tag, err)
+					}
+					return nil
+				})
+			}
+			if err := g.Wait(); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -154,13 +164,17 @@ func evaluateTags(lc *LifecycleImageConfig, tags []tagMeta) ([]tagMeta, error) {
 		return sorted[i].lastModified.After(sorted[j].lastModified)
 	})
 
+	// kept counts non-protected tags seen so far (for keep_last).
+	// Protected tags are excluded from this count so they don't consume
+	// slots that would cause other tags to be incorrectly deleted.
+	kept := 0
 	var toDelete []tagMeta
-	for i, tm := range sorted {
+	for _, tm := range sorted {
 		if keepSet[tm.tag] {
 			continue
 		}
 		shouldDelete := false
-		if lc.KeepLast > 0 && i >= lc.KeepLast {
+		if lc.KeepLast > 0 && kept >= lc.KeepLast {
 			shouldDelete = true
 		}
 		if maxAge > 0 && now.Sub(tm.lastModified) > maxAge {
@@ -168,6 +182,8 @@ func evaluateTags(lc *LifecycleImageConfig, tags []tagMeta) ([]tagMeta, error) {
 		}
 		if shouldDelete {
 			toDelete = append(toDelete, tm)
+		} else {
+			kept++
 		}
 	}
 	return toDelete, nil

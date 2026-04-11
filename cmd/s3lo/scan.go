@@ -202,6 +202,9 @@ func trivyPlatformSuffix() (string, error) {
 	return os_ + "-" + arch, nil
 }
 
+// maxTrivyBinarySize caps the Trivy binary extraction at 500 MB.
+const maxTrivyBinarySize = 500 << 20
+
 // downloadAndExtractTrivy downloads a .tar.gz archive and extracts the "trivy" binary to destPath.
 func downloadAndExtractTrivy(ctx context.Context, url, destPath string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -235,12 +238,15 @@ func downloadAndExtractTrivy(ctx context.Context, url, destPath string) error {
 		if hdr.Name != "trivy" {
 			continue
 		}
+		if hdr.Size > maxTrivyBinarySize {
+			return fmt.Errorf("trivy binary too large (%d bytes, max %d)", hdr.Size, maxTrivyBinarySize)
+		}
 		// Write to a temp file then rename for atomicity.
 		tmp, err := os.CreateTemp(filepath.Dir(destPath), "trivy-*")
 		if err != nil {
 			return err
 		}
-		if _, err := io.Copy(tmp, tr); err != nil {
+		if _, err := io.Copy(tmp, io.LimitReader(tr, maxTrivyBinarySize)); err != nil {
 			tmp.Close()
 			os.Remove(tmp.Name())
 			return err

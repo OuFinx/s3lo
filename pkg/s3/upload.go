@@ -3,6 +3,7 @@ package s3
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -59,40 +60,36 @@ func (c *Client) UploadFile(ctx context.Context, localPath, bucket, key string, 
 }
 
 func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string, storageClass s3types.StorageClass) error {
-	// Check if object already exists (deduplication)
-	info, err := os.Stat(localPath)
-	if err != nil {
-		return err
-	}
-
-	head, err := client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-	})
-	if err == nil && head.ContentLength != nil && *head.ContentLength == info.Size() {
-		// Deduplication: skip upload if object exists with same size.
-		// This is safe because blob files are named by their SHA256 digest
-		// (content-addressable), so same key = same content by definition.
-		return nil
-	}
-	// If HeadObject fails (404), proceed with upload
-
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
+	ct := contentTypeForKey(key)
 	input := &s3.PutObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-		Body:   f,
+		Bucket:      &bucket,
+		Key:         &key,
+		Body:        f,
+		ContentType: &ct,
 	}
 	if storageClass != "" {
 		input.StorageClass = storageClass
 	}
 	_, err = client.PutObject(ctx, input)
 	return err
+}
+
+// contentTypeForKey returns the appropriate Content-Type for an S3 key.
+func contentTypeForKey(key string) string {
+	switch {
+	case strings.HasSuffix(key, ".json") || strings.HasSuffix(key, "manifest.json"):
+		return "application/json"
+	case strings.HasSuffix(key, "oci-layout"):
+		return "application/json"
+	default:
+		return "application/octet-stream"
+	}
 }
 
 // PutObject uploads raw bytes to an S3 key.
@@ -111,7 +108,8 @@ func (c *Client) PutObject(ctx context.Context, bucket, key string, data []byte)
 	return err
 }
 
-// HeadObjectExists returns true if an S3 object exists.
+// HeadObjectExists returns true if an S3 object exists, false if it doesn't (404).
+// Returns an error for non-404 failures (permissions, throttling, network).
 func (c *Client) HeadObjectExists(ctx context.Context, bucket, key string) (bool, error) {
 	s3Client, err := c.ClientForBucket(ctx, bucket)
 	if err != nil {
@@ -122,7 +120,19 @@ func (c *Client) HeadObjectExists(ctx context.Context, bucket, key string) (bool
 		Key:    &key,
 	})
 	if err != nil {
-		return false, nil // treat any error (including 404) as not exists
+		// Check if the error is a 404 (NotFound).
+		var notFound *s3types.NotFound
+		if errors.As(err, &notFound) {
+			return false, nil
+		}
+		// HeadObject returns smithy OperationError wrapping HTTP 404
+		// which may not always map to s3types.NotFound. Check for
+		// "NotFound" or "404" in the error message as a fallback.
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "NotFound") || strings.Contains(errMsg, "404") {
+			return false, nil
+		}
+		return false, err
 	}
 	return true, nil
 }

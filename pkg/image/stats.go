@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	"golang.org/x/sync/errgroup"
 )
 
 // StatsResult holds storage statistics for a bucket.
@@ -56,13 +58,14 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
 
+	// Filter to manifest.json keys only.
+	var keys []string
 	seenImages := make(map[string]bool)
 	for _, key := range manifestKeys {
 		if !strings.HasSuffix(key, "/manifest.json") {
 			continue
 		}
-
-		result.Tags++
+		keys = append(keys, key)
 
 		// Extract image name from: manifests/<image...>/<tag>/manifest.json
 		rel := strings.TrimPrefix(key, manifestsPrefix)
@@ -70,30 +73,56 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 		if lastSlash := strings.LastIndex(rel, "/"); lastSlash >= 0 {
 			seenImages[rel[:lastSlash]] = true
 		}
-
-		data, err := client.GetObject(ctx, bucket, key)
-		if err != nil {
-			continue // skip unreadable manifests
-		}
-
-		var m struct {
-			Config struct {
-				Size int64 `json:"size"`
-			} `json:"config"`
-			Layers []struct {
-				Size int64 `json:"size"`
-			} `json:"layers"`
-		}
-		if err := json.Unmarshal(data, &m); err != nil {
-			continue
-		}
-
-		result.LogicalBytes += m.Config.Size
-		for _, layer := range m.Layers {
-			result.LogicalBytes += layer.Size
-		}
 	}
+
+	result.Tags = len(keys)
 	result.Images = len(seenImages)
+
+	// Fetch all manifests in parallel to compute logical byte totals.
+	var (
+		mu           sync.Mutex
+		logicalBytes int64
+	)
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(20)
+
+	for _, key := range keys {
+		key := key
+		g.Go(func() error {
+			data, err := client.GetObject(gCtx, bucket, key)
+			if err != nil {
+				return nil // skip unreadable manifests
+			}
+
+			var m struct {
+				Config struct {
+					Size int64 `json:"size"`
+				} `json:"config"`
+				Layers []struct {
+					Size int64 `json:"size"`
+				} `json:"layers"`
+			}
+			if err := json.Unmarshal(data, &m); err != nil {
+				return nil
+			}
+
+			total := m.Config.Size
+			for _, layer := range m.Layers {
+				total += layer.Size
+			}
+
+			mu.Lock()
+			logicalBytes += total
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+	result.LogicalBytes = logicalBytes
 
 	// List actual stored blobs with storage class info.
 	blobsPrefix := prefix + "blobs/sha256/"
@@ -114,3 +143,4 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 
 	return result, nil
 }
+
