@@ -21,11 +21,13 @@
 - [x] `s3lo config recommend` — data-driven bucket analysis and recommendations
 - [x] Progress output for push and pull
 
-## v1.3.0 — Multi-Architecture Images
+## v1.3.0 — Multi-Architecture Images ✓
 
-- [ ] Push multi-arch images with OCI Image Index
-- [ ] Pull specific platform from multi-arch image
-- [ ] Update inspect and list for multi-arch images
+- [x] `s3lo copy` copies all platforms by default for multi-arch images (OCI Image Index)
+- [x] `s3lo pull` auto-detects host platform; `--platform` flag to override
+- [x] `s3lo manifest create` — build a multi-arch index from single-arch tags
+- [x] `s3lo inspect` displays per-platform details for multi-arch images
+- [x] `s3lo copy --platform` to copy a single platform from a multi-arch image
 
 ## v1.4.0 — CI Integration
 

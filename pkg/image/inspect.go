@@ -18,9 +18,13 @@ import (
 // ImageInfo holds metadata about an image stored on S3.
 type ImageInfo struct {
 	Reference string
+	IsIndex   bool
+	// Single-arch fields (IsIndex == false).
 	Manifest  ocispec.Manifest
 	Layers    []LayerDetail
 	TotalSize int64
+	// Multi-arch fields (IsIndex == true).
+	Platforms []PlatformInfo
 }
 
 // LayerDetail describes a single image layer.
@@ -28,6 +32,14 @@ type LayerDetail struct {
 	Digest    string
 	Size      int64
 	MediaType string
+}
+
+// PlatformInfo holds metadata for one platform in a multi-arch image.
+type PlatformInfo struct {
+	Platform  string
+	Digest    string
+	Layers    []LayerDetail
+	TotalSize int64
 }
 
 // Inspect fetches and returns metadata about an image on S3.
@@ -63,23 +75,51 @@ func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 		}
 	}
 
-	manifest, err := oci.ParseManifest(data)
-	if err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
-	}
+	info := &ImageInfo{Reference: s3Ref}
 
-	info := &ImageInfo{
-		Reference: s3Ref,
-		Manifest:  manifest,
-	}
-
-	for _, layer := range manifest.Layers {
-		info.Layers = append(info.Layers, LayerDetail{
-			Digest:    layer.Digest.String(),
-			Size:      layer.Size,
-			MediaType: string(layer.MediaType),
-		})
-		info.TotalSize += layer.Size
+	if isImageIndex(data) {
+		info.IsIndex = true
+		idx, err := parseIndex(data)
+		if err != nil {
+			return nil, fmt.Errorf("parse image index: %w", err)
+		}
+		for _, desc := range idx.Manifests {
+			platManifestData, err := client.GetObject(ctx, parsed.Bucket, "blobs/sha256/"+desc.Digest.Encoded())
+			if err != nil {
+				return nil, fmt.Errorf("fetch platform manifest %s: %w", platformString(desc.Platform), err)
+			}
+			platManifest, err := oci.ParseManifest(platManifestData)
+			if err != nil {
+				return nil, fmt.Errorf("parse platform manifest: %w", err)
+			}
+			pi := PlatformInfo{
+				Platform: platformString(desc.Platform),
+				Digest:   desc.Digest.String(),
+			}
+			for _, layer := range platManifest.Layers {
+				pi.Layers = append(pi.Layers, LayerDetail{
+					Digest:    layer.Digest.String(),
+					Size:      layer.Size,
+					MediaType: string(layer.MediaType),
+				})
+				pi.TotalSize += layer.Size
+			}
+			info.Platforms = append(info.Platforms, pi)
+		}
+	} else {
+		manifest, err := oci.ParseManifest(data)
+		if err != nil {
+			return nil, fmt.Errorf("parse manifest: %w", err)
+		}
+		info.Manifest = manifest
+		for _, layer := range manifest.Layers {
+			info.Layers = append(info.Layers, LayerDetail{
+				Digest:    layer.Digest.String(),
+				Size:      layer.Size,
+				MediaType: string(layer.MediaType),
+			})
+			info.TotalSize += layer.Size
+		}
 	}
 
 	return info, nil

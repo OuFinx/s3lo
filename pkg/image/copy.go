@@ -2,7 +2,6 @@ package image
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,6 +22,14 @@ import (
 type CopyResult struct {
 	BlobsCopied  int
 	BlobsSkipped int
+	Platforms    int // number of platforms copied (1 for single-arch)
+}
+
+// CopyOptions controls copy behavior.
+type CopyOptions struct {
+	// Platform filters to a specific platform (e.g. "linux/amd64").
+	// Empty means copy all platforms.
+	Platform string
 }
 
 // Copy copies an image from src to dest.
@@ -31,16 +38,16 @@ type CopyResult struct {
 //   - <registry>/<image>:<tag>  (OCI registry, e.g. ECR or Docker Hub)
 //
 // dest must be s3://bucket/image:tag.
-func Copy(ctx context.Context, src, destRef string) (*CopyResult, error) {
+func Copy(ctx context.Context, src, destRef string, opts CopyOptions) (*CopyResult, error) {
 	if strings.HasPrefix(src, "s3://") {
-		return copyS3ToS3(ctx, src, destRef)
+		return copyS3ToS3(ctx, src, destRef, opts)
 	}
-	return copyRegistryToS3(ctx, src, destRef)
+	return copyRegistryToS3(ctx, src, destRef, opts)
 }
 
 // copyS3ToS3 copies an image between S3 locations.
 // Uses server-side S3 CopyObject within the same bucket; streams cross-bucket.
-func copyS3ToS3(ctx context.Context, srcRef, destRef string) (*CopyResult, error) {
+func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (*CopyResult, error) {
 	srcParsed, err := ref.Parse(srcRef)
 	if err != nil {
 		return nil, fmt.Errorf("invalid source S3 reference: %w", err)
@@ -55,91 +62,161 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string) (*CopyResult, error
 		return nil, fmt.Errorf("create S3 client: %w", err)
 	}
 
-	// Fetch the source manifest.
 	manifestKey := srcParsed.ManifestsPrefix() + "manifest.json"
 	manifestData, err := client.GetObject(ctx, srcParsed.Bucket, manifestKey)
 	if err != nil {
 		return nil, fmt.Errorf("fetch source manifest: %w", err)
 	}
 
-	var manifest struct {
-		Config struct {
-			Digest string `json:"digest"`
-		} `json:"config"`
-		Layers []struct {
-			Digest string `json:"digest"`
-		} `json:"layers"`
-	}
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return nil, fmt.Errorf("parse source manifest: %w", err)
-	}
-
 	result := &CopyResult{}
 	sameBucket := srcParsed.Bucket == destParsed.Bucket
 
-	// Collect all blob digests.
-	var digests []string
-	digests = append(digests, trimSHA256Prefix(manifest.Config.Digest))
-	for _, layer := range manifest.Layers {
-		digests = append(digests, trimSHA256Prefix(layer.Digest))
-	}
-
-	// Copy blobs.
-	for _, digest := range digests {
+	copyBlob := func(digest string) error {
 		srcKey := "blobs/sha256/" + digest
 		destKey := "blobs/sha256/" + digest
-
 		exists, _ := client.HeadObjectExists(ctx, destParsed.Bucket, destKey)
 		if exists {
 			result.BlobsSkipped++
-			continue
+			return nil
 		}
-
 		if sameBucket {
-			// Server-side copy within the same bucket.
 			if err := client.CopyObject(ctx, srcParsed.Bucket, srcKey, destKey); err != nil {
-				return nil, fmt.Errorf("copy blob %s: %w", digest[:12], err)
+				return fmt.Errorf("copy blob %s: %w", digest[:12], err)
 			}
 		} else {
-			// Cross-bucket: download then upload.
 			data, err := client.GetObject(ctx, srcParsed.Bucket, srcKey)
 			if err != nil {
-				return nil, fmt.Errorf("download blob %s: %w", digest[:12], err)
+				return fmt.Errorf("download blob %s: %w", digest[:12], err)
 			}
-			tmpFile, err := writeTempFile(data)
+			tmp, err := writeTempFile(data)
 			if err != nil {
-				return nil, err
+				return err
 			}
-			defer os.Remove(tmpFile)
-			if err := client.UploadFile(ctx, tmpFile, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
-				return nil, fmt.Errorf("upload blob %s: %w", digest[:12], err)
+			defer os.Remove(tmp)
+			if err := client.UploadFile(ctx, tmp, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
+				return fmt.Errorf("upload blob %s: %w", digest[:12], err)
 			}
 		}
 		result.BlobsCopied++
+		return nil
 	}
 
-	// Copy manifest files.
-	srcManifestPrefix := srcParsed.ManifestsPrefix()
-	destManifestPrefix := destParsed.ManifestsPrefix()
-	manifestKeys, err := client.ListKeys(ctx, srcParsed.Bucket, srcManifestPrefix)
-	if err != nil {
-		return nil, fmt.Errorf("list source manifest files: %w", err)
-	}
-	for _, key := range manifestKeys {
-		rel := strings.TrimPrefix(key, srcManifestPrefix)
-		destKey := destManifestPrefix + rel
+	if isImageIndex(manifestData) {
+		idx, err := parseIndex(manifestData)
+		if err != nil {
+			return nil, fmt.Errorf("parse image index: %w", err)
+		}
 
-		if sameBucket {
-			if err := client.CopyObject(ctx, srcParsed.Bucket, key, destKey); err != nil {
-				return nil, fmt.Errorf("copy manifest file %s: %w", rel, err)
+		// Filter platforms if requested.
+		var selected []ocispec.Descriptor
+		for _, desc := range idx.Manifests {
+			if opts.Platform != "" && !matchesPlatform(desc, opts.Platform) {
+				continue
+			}
+			selected = append(selected, desc)
+		}
+		if len(selected) == 0 {
+			return nil, fmt.Errorf("no matching platform found (available: %s)", indexPlatformList(idx))
+		}
+
+		for _, desc := range selected {
+			d := desc.Digest.Encoded()
+			// Copy platform manifest blob.
+			if err := copyBlob(d); err != nil {
+				return nil, err
+			}
+			// Fetch and copy the platform manifest's blobs.
+			platManifestData, err := client.GetObject(ctx, srcParsed.Bucket, "blobs/sha256/"+d)
+			if err != nil {
+				return nil, fmt.Errorf("fetch platform manifest %s: %w", d[:12], err)
+			}
+			var platManifest struct {
+				Config struct{ Digest string `json:"digest"` } `json:"config"`
+				Layers []struct{ Digest string `json:"digest"` } `json:"layers"`
+			}
+			if err := json.Unmarshal(platManifestData, &platManifest); err != nil {
+				return nil, fmt.Errorf("parse platform manifest: %w", err)
+			}
+			if err := copyBlob(trimSHA256Prefix(platManifest.Config.Digest)); err != nil {
+				return nil, err
+			}
+			for _, layer := range platManifest.Layers {
+				if err := copyBlob(trimSHA256Prefix(layer.Digest)); err != nil {
+					return nil, err
+				}
+			}
+			result.Platforms++
+		}
+
+		// Write manifest files.
+		destPrefix := destParsed.ManifestsPrefix()
+		var writeManifestData []byte
+		if opts.Platform != "" && len(selected) == 1 {
+			// Single platform selected: write the platform manifest directly.
+			d := selected[0].Digest.Encoded()
+			writeManifestData, err = client.GetObject(ctx, srcParsed.Bucket, "blobs/sha256/"+d)
+			if err != nil {
+				return nil, fmt.Errorf("fetch platform manifest for write: %w", err)
 			}
 		} else {
-			data, err := client.GetObject(ctx, srcParsed.Bucket, key)
-			if err != nil {
-				return nil, fmt.Errorf("download manifest file %s: %w", rel, err)
+			// Build a filtered index if needed, otherwise write the original.
+			if opts.Platform != "" {
+				filteredIdx := idx
+				filteredIdx.Manifests = selected
+				writeManifestData, err = json.Marshal(filteredIdx)
+				if err != nil {
+					return nil, fmt.Errorf("marshal filtered index: %w", err)
+				}
+			} else {
+				writeManifestData = manifestData
 			}
-			if err := client.PutObject(ctx, destParsed.Bucket, destKey, data); err != nil {
-				return nil, fmt.Errorf("upload manifest file %s: %w", rel, err)
+		}
+		if err := client.PutObject(ctx, destParsed.Bucket, destPrefix+"manifest.json", writeManifestData); err != nil {
+			return nil, fmt.Errorf("write manifest.json: %w", err)
+		}
+		ociLayout := []byte(`{"imageLayoutVersion":"1.0.0"}`)
+		if err := client.PutObject(ctx, destParsed.Bucket, destPrefix+"oci-layout", ociLayout); err != nil {
+			return nil, fmt.Errorf("write oci-layout: %w", err)
+		}
+	} else {
+		// Single-arch: copy blobs and manifest files.
+		result.Platforms = 1
+		var manifest struct {
+			Config struct{ Digest string `json:"digest"` } `json:"config"`
+			Layers []struct{ Digest string `json:"digest"` } `json:"layers"`
+		}
+		if err := json.Unmarshal(manifestData, &manifest); err != nil {
+			return nil, fmt.Errorf("parse source manifest: %w", err)
+		}
+		if err := copyBlob(trimSHA256Prefix(manifest.Config.Digest)); err != nil {
+			return nil, err
+		}
+		for _, layer := range manifest.Layers {
+			if err := copyBlob(trimSHA256Prefix(layer.Digest)); err != nil {
+				return nil, err
+			}
+		}
+		srcManifestPrefix := srcParsed.ManifestsPrefix()
+		destManifestPrefix := destParsed.ManifestsPrefix()
+		manifestKeys, err := client.ListKeys(ctx, srcParsed.Bucket, srcManifestPrefix)
+		if err != nil {
+			return nil, fmt.Errorf("list source manifest files: %w", err)
+		}
+		for _, key := range manifestKeys {
+			rel := strings.TrimPrefix(key, srcManifestPrefix)
+			destKey := destManifestPrefix + rel
+			if sameBucket {
+				if err := client.CopyObject(ctx, srcParsed.Bucket, key, destKey); err != nil {
+					return nil, fmt.Errorf("copy manifest file %s: %w", rel, err)
+				}
+			} else {
+				data, err := client.GetObject(ctx, srcParsed.Bucket, key)
+				if err != nil {
+					return nil, fmt.Errorf("download manifest file %s: %w", rel, err)
+				}
+				if err := client.PutObject(ctx, destParsed.Bucket, destKey, data); err != nil {
+					return nil, fmt.Errorf("upload manifest file %s: %w", rel, err)
+				}
 			}
 		}
 	}
@@ -149,7 +226,8 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string) (*CopyResult, error
 
 // copyRegistryToS3 pulls an image from an OCI registry and pushes it to S3.
 // Supports ECR (auto-auth via AWS SDK) and any OCI Distribution compatible registry.
-func copyRegistryToS3(ctx context.Context, srcRef, destRef string) (*CopyResult, error) {
+// If the source is a multi-arch Image Index, all platforms are copied by default.
+func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (*CopyResult, error) {
 	destParsed, err := ref.Parse(destRef)
 	if err != nil {
 		return nil, fmt.Errorf("invalid destination S3 reference: %w", err)
@@ -166,17 +244,11 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string) (*CopyResult,
 		return nil, fmt.Errorf("resolve registry auth: %w", err)
 	}
 
-	// Fetch manifest.
+	// Fetch manifest (accepts both single-arch and multi-arch).
 	manifestURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", reg, image, tag)
-	manifestData, mediaType, err := fetchWithAuth(httpClient, manifestURL, token, reg, image)
+	manifestData, _, err := fetchWithAuth(httpClient, manifestURL, token, reg, image)
 	if err != nil {
 		return nil, fmt.Errorf("fetch manifest from registry: %w", err)
-	}
-
-	// Parse manifest.
-	var manifest ocispec.Manifest
-	if err := json.Unmarshal(manifestData, &manifest); err != nil {
-		return nil, fmt.Errorf("parse manifest: %w", err)
 	}
 
 	s3c, err := s3client.NewClient(ctx)
@@ -186,63 +258,150 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string) (*CopyResult,
 
 	result := &CopyResult{}
 
-	// Download and upload blobs: config + layers.
-	type blobRef struct {
-		digest    string
-		mediaType string
-	}
-	blobs := []blobRef{{digest: manifest.Config.Digest.String(), mediaType: string(manifest.Config.MediaType)}}
-	for _, layer := range manifest.Layers {
-		blobs = append(blobs, blobRef{digest: layer.Digest.String(), mediaType: string(layer.MediaType)})
-	}
-
-	for _, b := range blobs {
-		encoded := strings.TrimPrefix(b.digest, "sha256:")
+	uploadBlob := func(digest string) error {
+		encoded := trimSHA256Prefix(digest)
 		destKey := "blobs/sha256/" + encoded
-
 		exists, _ := s3c.HeadObjectExists(ctx, destParsed.Bucket, destKey)
 		if exists {
 			result.BlobsSkipped++
-			continue
+			return nil
 		}
-
-		blobURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", reg, image, b.digest)
+		blobURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", reg, image, digest)
 		blobData, _, err := fetchWithAuth(httpClient, blobURL, token, reg, image)
 		if err != nil {
-			return nil, fmt.Errorf("fetch blob %s: %w", encoded[:12], err)
+			return fmt.Errorf("fetch blob %s: %w", encoded[:12], err)
 		}
-
-		tmpFile, err := writeTempFile(blobData)
+		tmp, err := writeTempFile(blobData)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		defer os.Remove(tmpFile)
-
-		if err := s3c.UploadFile(ctx, tmpFile, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
-			return nil, fmt.Errorf("upload blob %s: %w", encoded[:12], err)
+		defer os.Remove(tmp)
+		if err := s3c.UploadFile(ctx, tmp, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
+			return fmt.Errorf("upload blob %s: %w", encoded[:12], err)
 		}
 		result.BlobsCopied++
+		return nil
 	}
 
-	// Write manifest files.
+	copyPlatformManifest := func(manifestBytes []byte, manifestDigest string) error {
+		// Store platform manifest as a blob.
+		if err := uploadBlob(manifestDigest); err != nil {
+			return err
+		}
+		// Actually fetch and upload the platform manifest blob bytes directly.
+		encoded := trimSHA256Prefix(manifestDigest)
+		destKey := "blobs/sha256/" + encoded
+		exists, _ := s3c.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		if !exists {
+			tmp, err := writeTempFile(manifestBytes)
+			if err != nil {
+				return err
+			}
+			defer os.Remove(tmp)
+			if err := s3c.UploadFile(ctx, tmp, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
+				return fmt.Errorf("upload platform manifest blob: %w", err)
+			}
+		}
+		// Upload the platform's blobs.
+		var m ocispec.Manifest
+		if err := json.Unmarshal(manifestBytes, &m); err != nil {
+			return fmt.Errorf("parse platform manifest: %w", err)
+		}
+		if err := uploadBlob(m.Config.Digest.String()); err != nil {
+			return err
+		}
+		for _, layer := range m.Layers {
+			if err := uploadBlob(layer.Digest.String()); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
 	manifestPrefix := destParsed.ManifestsPrefix()
-
-	// Write manifest.json (OCI format).
-	if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"manifest.json", manifestData); err != nil {
-		return nil, fmt.Errorf("write manifest.json: %w", err)
-	}
-
-	// Write index.json wrapping the manifest.
-	indexData, err := buildOCIIndex(manifest.Config.Digest.String(), manifestData, mediaType)
-	if err != nil {
-		return nil, fmt.Errorf("build index.json: %w", err)
-	}
-	if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"index.json", indexData); err != nil {
-		return nil, fmt.Errorf("write index.json: %w", err)
-	}
-
-	// Write oci-layout marker.
 	ociLayout := []byte(`{"imageLayoutVersion":"1.0.0"}`)
+
+	if isImageIndex(manifestData) {
+		idx, err := parseIndex(manifestData)
+		if err != nil {
+			return nil, fmt.Errorf("parse image index: %w", err)
+		}
+
+		// Filter platforms if requested.
+		var selected []ocispec.Descriptor
+		for _, desc := range idx.Manifests {
+			if opts.Platform != "" && !matchesPlatform(desc, opts.Platform) {
+				continue
+			}
+			selected = append(selected, desc)
+		}
+		if len(selected) == 0 {
+			return nil, fmt.Errorf("no matching platform found (available: %s)", indexPlatformList(idx))
+		}
+
+		var writeManifestData []byte
+
+		if opts.Platform != "" && len(selected) == 1 {
+			// Single platform selected: fetch platform manifest and write it directly.
+			desc := selected[0]
+			platURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", reg, image, desc.Digest.String())
+			platData, _, err := fetchWithAuth(httpClient, platURL, token, reg, image)
+			if err != nil {
+				return nil, fmt.Errorf("fetch platform manifest: %w", err)
+			}
+			if err := copyPlatformManifest(platData, desc.Digest.String()); err != nil {
+				return nil, err
+			}
+			writeManifestData = platData
+			result.Platforms = 1
+		} else {
+			// Copy all selected platforms, write the index.
+			for _, desc := range selected {
+				platURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", reg, image, desc.Digest.String())
+				platData, _, err := fetchWithAuth(httpClient, platURL, token, reg, image)
+				if err != nil {
+					return nil, fmt.Errorf("fetch platform manifest %s: %w", platformString(desc.Platform), err)
+				}
+				if err := copyPlatformManifest(platData, desc.Digest.String()); err != nil {
+					return nil, fmt.Errorf("copy platform %s: %w", platformString(desc.Platform), err)
+				}
+				result.Platforms++
+			}
+			if opts.Platform != "" {
+				filteredIdx := idx
+				filteredIdx.Manifests = selected
+				writeManifestData, err = json.Marshal(filteredIdx)
+				if err != nil {
+					return nil, fmt.Errorf("marshal filtered index: %w", err)
+				}
+			} else {
+				writeManifestData = manifestData
+			}
+		}
+
+		if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"manifest.json", writeManifestData); err != nil {
+			return nil, fmt.Errorf("write manifest.json: %w", err)
+		}
+	} else {
+		// Single-arch manifest.
+		result.Platforms = 1
+		var manifest ocispec.Manifest
+		if err := json.Unmarshal(manifestData, &manifest); err != nil {
+			return nil, fmt.Errorf("parse manifest: %w", err)
+		}
+		if err := uploadBlob(manifest.Config.Digest.String()); err != nil {
+			return nil, err
+		}
+		for _, layer := range manifest.Layers {
+			if err := uploadBlob(layer.Digest.String()); err != nil {
+				return nil, err
+			}
+		}
+		if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"manifest.json", manifestData); err != nil {
+			return nil, fmt.Errorf("write manifest.json: %w", err)
+		}
+	}
+
 	if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"oci-layout", ociLayout); err != nil {
 		return nil, fmt.Errorf("write oci-layout: %w", err)
 	}
@@ -294,7 +453,7 @@ func fetchWithAuth(client *http.Client, rawURL, authToken, registry, image strin
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("Accept", "application/vnd.oci.image.manifest.v1+json,application/vnd.docker.distribution.manifest.v2+json")
+	req.Header.Set("Accept", acceptHeader())
 
 	if authToken != "" {
 		// ECR uses Basic auth with the base64 token directly.
@@ -445,22 +604,11 @@ func writeTempFile(data []byte) (string, error) {
 	return f.Name(), nil
 }
 
-// buildOCIIndex wraps a manifest in an OCI Image Index.
-func buildOCIIndex(configDigest string, manifestData []byte, mediaType string) ([]byte, error) {
-	_ = configDigest
-	if mediaType == "" {
-		mediaType = "application/vnd.oci.image.manifest.v1+json"
+// indexPlatformList returns a human-readable list of platforms in an index.
+func indexPlatformList(idx ocispec.Index) string {
+	var parts []string
+	for _, d := range idx.Manifests {
+		parts = append(parts, platformString(d.Platform))
 	}
-	index := map[string]interface{}{
-		"schemaVersion": 2,
-		"mediaType":     "application/vnd.oci.image.index.v1+json",
-		"manifests": []map[string]interface{}{
-			{
-				"mediaType": mediaType,
-				"size":      len(manifestData),
-				"digest":    fmt.Sprintf("sha256:%x", sha256.Sum256(manifestData)),
-			},
-		},
-	}
-	return json.MarshalIndent(index, "", "  ")
+	return strings.Join(parts, ", ")
 }
