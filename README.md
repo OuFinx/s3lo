@@ -80,11 +80,6 @@ s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/my
 s3lo copy docker.io/library/alpine:latest s3://my-bucket/alpine:latest
 s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
 
-# Create a multi-arch tag from single-arch images
-s3lo manifest create s3://my-bucket/myapp:v1.0 \
-  s3://my-bucket/myapp:v1.0-amd64 \
-  s3://my-bucket/myapp:v1.0-arm64
-
 # List images in a bucket
 s3lo list s3://my-bucket/
 

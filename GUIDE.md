@@ -12,7 +12,6 @@ Complete reference for all s3lo features, commands, and usage patterns.
   - [push](#push)
   - [pull](#pull)
   - [copy](#copy)
-  - [manifest](#manifest)
   - [list](#list)
   - [inspect](#inspect)
   - [delete](#delete)
@@ -253,51 +252,6 @@ Done. 3 platform(s) copied, 12 blob(s) copied, 0 skipped (already exist).
 }
 ```
 Plus read access to the ECR repository.
-
----
-
-### manifest
-
-Manage multi-arch image manifests.
-
-#### manifest create
-
-Build an OCI Image Index (multi-arch manifest) from existing single-arch tags stored in S3.
-
-```
-s3lo manifest create <s3-dest> <s3-src> [s3-src...]
-```
-
-**Arguments:**
-- `<s3-dest>` - destination multi-arch tag in `s3://bucket/image:tag` format
-- `<s3-src>` - one or more existing single-arch tags (must be in the same bucket)
-
-The platform (`os/arch`) for each source is read from the image config blob. All sources and the destination must reside in the same bucket.
-
-**Use case:**
-When your CI builds platform-specific images separately (e.g. on different runners), use `manifest create` to combine them under a single multi-arch tag that `copy` and `pull` can resolve automatically.
-
-**Examples:**
-```bash
-# Build amd64 and arm64 separately, then combine
-s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0-amd64
-s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0-arm64
-
-s3lo manifest create s3://my-bucket/myapp:v1.0 \
-  s3://my-bucket/myapp:v1.0-amd64 \
-  s3://my-bucket/myapp:v1.0-arm64
-```
-
-**Output:**
-```
-Creating multi-arch manifest for s3://my-bucket/myapp:v1.0 from 2 source(s)...
-Done. Image index written with 2 platform(s).
-```
-
-**Notes:**
-- The source tags must be single-arch images. Passing a multi-arch index as a source returns an error.
-- Blobs are not duplicated — the index references the same blobs already stored by each source tag.
-- After running `manifest create`, `s3lo pull s3://my-bucket/myapp:v1.0` will automatically select the platform matching the host.
 
 ---
 
@@ -991,7 +945,7 @@ Not currently. s3lo uses the Docker daemon to export images (`docker save`) and 
 
 **Q: Does s3lo support multi-architecture images?**
 
-Yes, since v1.3.0. s3lo stores OCI Image Indexes natively. `copy` copies all platforms by default. `pull` auto-detects the host platform and selects the matching platform manifest. Use `manifest create` to build a multi-arch tag from separately-pushed single-arch images.
+Yes, since v1.3.0. s3lo stores OCI Image Indexes natively. `copy` copies all platforms by default, preserving the full index at the destination. `pull` auto-detects the host platform automatically — no flags needed.
 
 **Q: What happens if a push is interrupted?**
 
