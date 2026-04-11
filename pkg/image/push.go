@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	"golang.org/x/sync/errgroup"
 )
 
 // manifestFiles are the per-tag metadata files uploaded to manifests/<image>/<tag>/.
@@ -70,37 +72,50 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		}
 	}
 
-	// Upload blobs to global blobs/sha256/ with Intelligent-Tiering.
+	// Upload blobs to global blobs/sha256/ with Intelligent-Tiering in parallel.
 	blobsDir := filepath.Join(tmpDir, "blobs", "sha256")
 	entries, err := os.ReadDir(blobsDir)
 	if err != nil {
 		return fmt.Errorf("read blobs dir: %w", err)
 	}
+
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
+	var onBlobMu sync.Mutex
+
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
 		}
-		localPath := filepath.Join(blobsDir, entry.Name())
-		key := "blobs/sha256/" + entry.Name()
+		entry := entry
+		g.Go(func() error {
+			localPath := filepath.Join(blobsDir, entry.Name())
+			key := "blobs/sha256/" + entry.Name()
 
-		// Check if blob already exists (deduplication). UploadFile also checks,
-		// but we need to know the result to call OnBlob correctly.
-		info, _ := os.Stat(localPath)
-		skipped := false
-		exists, _ := client.HeadObjectExists(ctx, parsed.Bucket, key)
-		if exists && info != nil {
-			skipped = true
-		}
-
-		if !skipped {
-			if err := client.UploadFile(ctx, localPath, parsed.Bucket, key, s3types.StorageClassIntelligentTiering); err != nil {
-				return fmt.Errorf("upload blob %s: %w", entry.Name(), err)
+			info, err := os.Stat(localPath)
+			if err != nil {
+				return fmt.Errorf("stat blob %s: %w", entry.Name(), err)
 			}
-		}
 
-		if opts.OnBlob != nil && info != nil {
-			opts.OnBlob(entry.Name(), info.Size(), skipped)
-		}
+			// Single dedup check — UploadFile skips internally when the object exists,
+			// but we need to know the outcome for OnBlob reporting.
+			exists, _ := client.HeadObjectExists(gCtx, parsed.Bucket, key)
+			if !exists {
+				if err := client.UploadFile(gCtx, localPath, parsed.Bucket, key, s3types.StorageClassIntelligentTiering); err != nil {
+					return fmt.Errorf("upload blob %s: %w", entry.Name(), err)
+				}
+			}
+
+			if opts.OnBlob != nil {
+				onBlobMu.Lock()
+				opts.OnBlob(entry.Name(), info.Size(), exists)
+				onBlobMu.Unlock()
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return err
 	}
 
 	// Upload manifest files to manifests/<image>/<tag>/ with Standard storage class.

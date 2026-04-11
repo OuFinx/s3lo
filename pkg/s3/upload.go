@@ -59,24 +59,6 @@ func (c *Client) UploadFile(ctx context.Context, localPath, bucket, key string, 
 }
 
 func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string, storageClass s3types.StorageClass) error {
-	// Check if object already exists (deduplication)
-	info, err := os.Stat(localPath)
-	if err != nil {
-		return err
-	}
-
-	head, err := client.HeadObject(ctx, &s3.HeadObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-	})
-	if err == nil && head.ContentLength != nil && *head.ContentLength == info.Size() {
-		// Deduplication: skip upload if object exists with same size.
-		// This is safe because blob files are named by their SHA256 digest
-		// (content-addressable), so same key = same content by definition.
-		return nil
-	}
-	// If HeadObject fails (404), proceed with upload
-
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err
