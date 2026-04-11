@@ -167,6 +167,9 @@ func WriteOCILayout(dir string, manifestBytes []byte, configBytes []byte) error 
 	return nil
 }
 
+// maxExtractFileSize caps individual file sizes during tar extraction (10 GB).
+const maxExtractFileSize = 10 << 30
+
 // extractTar extracts a tar archive from r into dir.
 func extractTar(r io.Reader, dir string) error {
 	tr := tar.NewReader(r)
@@ -190,6 +193,9 @@ func extractTar(r io.Reader, dir string) error {
 				return err
 			}
 		case tar.TypeReg, tar.TypeRegA:
+			if hdr.Size > maxExtractFileSize {
+				return fmt.Errorf("tar entry %q is too large (%d bytes, max %d)", hdr.Name, hdr.Size, maxExtractFileSize)
+			}
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
@@ -197,7 +203,7 @@ func extractTar(r io.Reader, dir string) error {
 			if err != nil {
 				return err
 			}
-			if _, err := io.Copy(f, tr); err != nil {
+			if _, err := io.Copy(f, io.LimitReader(tr, maxExtractFileSize)); err != nil {
 				f.Close()
 				return err
 			}
@@ -297,15 +303,33 @@ func ImportImage(ctx context.Context, srcDir string, imageRef string) error {
 		layerDigest := layer.Digest.Encoded()
 		layerPath := filepath.Join(srcDir, "blobs", "sha256", layerDigest)
 
-		layerData, err := os.ReadFile(layerPath)
-		if err != nil {
-			return fmt.Errorf("read layer blob %s: %w", layerDigest[:12], err)
-		}
-
 		layerName := layerDigest + "/layer.tar"
-		if err := tarWriteFile(tw, layerName, layerData); err != nil {
-			return fmt.Errorf("write layer to tar: %w", err)
+
+		// Stream layer from file instead of reading entirely into memory.
+		layerFile, err := os.Open(layerPath)
+		if err != nil {
+			return fmt.Errorf("open layer blob %s: %w", layerDigest[:12], err)
 		}
+		layerInfo, err := layerFile.Stat()
+		if err != nil {
+			layerFile.Close()
+			return fmt.Errorf("stat layer blob %s: %w", layerDigest[:12], err)
+		}
+		hdr := &tar.Header{
+			Name: layerName,
+			Mode: 0o644,
+			Size: layerInfo.Size(),
+		}
+		if err := tw.WriteHeader(hdr); err != nil {
+			layerFile.Close()
+			return fmt.Errorf("write layer tar header %s: %w", layerDigest[:12], err)
+		}
+		if _, err := io.Copy(tw, layerFile); err != nil {
+			layerFile.Close()
+			return fmt.Errorf("write layer to tar %s: %w", layerDigest[:12], err)
+		}
+		layerFile.Close()
+
 		layerNames = append(layerNames, layerName)
 	}
 
