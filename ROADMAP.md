@@ -33,16 +33,20 @@
 - [x] Official GitHub Action for s3lo push ([OuFinx/s3lo-action](https://github.com/OuFinx/s3lo-action))
 - [x] Documentation website (MkDocs Material, auto-deployed to GitHub Pages)
 
+## v1.5.0 — Vulnerability Scanning
+
+- [x] `s3lo scan` — vulnerability scanning with Trivy
+- [x] Auto-install Trivy when not found (Y/N prompt, `--install-trivy` flag)
+- [x] Multi-arch support: `--platform` flag to select platform
+- [x] Severity filtering: `--severity HIGH,CRITICAL`
+- [x] Output format control: `--format json|sarif|cyclonedx`
+
 ## v2.0.0 — Security
 
 - [ ] `s3lo sign` — sign images with cosign/Sigstore
 - [ ] `s3lo verify` — verify image signatures
 
-## v2.1.0 — Vulnerability Scanning
-
-- [ ] `s3lo scan` — vulnerability scanning with Trivy
-
-## v2.2.0 — Multi-Cloud Support
+## v2.1.0 — Multi-Cloud Support
 
 - [ ] Abstract storage backend interface
 - [ ] Google Cloud Storage backend

@@ -71,6 +71,7 @@ nav:
     - clean: commands/clean.md
     - stats: commands/stats.md
     - config: commands/config.md
+    - scan: commands/scan.md
   - Concepts:
     - How It Works: concepts/how-it-works.md
     - Storage Layout: concepts/storage-layout.md

@@ -13,6 +13,7 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 | [`clean`](clean.md) | Prune old tags and garbage collect unreferenced blobs |
 | [`stats`](stats.md) | Show storage usage, deduplication savings, and cost estimate |
 | [`config`](config.md) | Manage per-image and bucket-wide configuration |
+| [`scan`](scan.md) | Scan an image for vulnerabilities with Trivy |
 
 ## S3 reference format
 

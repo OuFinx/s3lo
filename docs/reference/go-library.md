@@ -10,7 +10,7 @@ go get github.com/OuFinx/s3lo
 
 | Package | Description |
 |---------|-------------|
-| `github.com/OuFinx/s3lo/pkg/image` | High-level operations: push, pull, copy, list, inspect, delete, GC, stats |
+| `github.com/OuFinx/s3lo/pkg/image` | High-level operations: push, pull, copy, list, inspect, delete, GC, stats, scan |
 | `github.com/OuFinx/s3lo/pkg/ref` | Parse `s3://bucket/image:tag` references |
 | `github.com/OuFinx/s3lo/pkg/s3` | S3 client with region auto-detection |
 | `github.com/OuFinx/s3lo/pkg/oci` | OCI manifest and config types |
@@ -114,6 +114,35 @@ fmt.Printf("deleted %d blobs (%d bytes freed)\n", result.Deleted, result.FreedBy
 stats, err := image.Stats(ctx, "s3://my-bucket/")
 fmt.Printf("images: %d, tags: %d, size: %d bytes\n", stats.Images, stats.Tags, stats.ActualBytes)
 fmt.Printf("dedup savings: %d bytes\n", stats.LogicalBytes-stats.ActualBytes)
+```
+
+## Scan
+
+```go
+import "github.com/OuFinx/s3lo/pkg/image"
+
+// Scan an image — Trivy must be installed.
+exitCode, err := image.Scan(ctx, "s3://my-bucket/myapp:v1.0", image.ScanOptions{
+    TrivyPath: "/usr/local/bin/trivy",
+    Severity:  "HIGH,CRITICAL",
+})
+if exitCode != 0 {
+    fmt.Println("vulnerabilities found")
+}
+```
+
+With progress callback and platform selection:
+
+```go
+exitCode, err := image.Scan(ctx, "s3://my-bucket/alpine:latest", image.ScanOptions{
+    TrivyPath: trivyPath,
+    Platform:  "linux/amd64",
+    Severity:  "HIGH,CRITICAL",
+    Format:    "json",
+    OnBlob: func(digest string, size int64) {
+        fmt.Printf("downloaded %s (%d bytes)\n", digest[:12], size)
+    },
+})
 ```
 
 ## Parse a reference
