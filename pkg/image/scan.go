@@ -1,12 +1,10 @@
 package image
 
 import (
-	"archive/tar"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -81,22 +79,9 @@ func Scan(ctx context.Context, s3Ref string, opts ScanOptions) (int, error) {
 		return 0, fmt.Errorf("build OCI layout: %w", err)
 	}
 
-	// Tar the OCI layout into a single file for trivy --input.
-	tarFile, err := os.CreateTemp("", "s3lo-scan-*.tar")
-	if err != nil {
-		return 0, fmt.Errorf("create scan tar: %w", err)
-	}
-	tarName := tarFile.Name()
-	defer os.Remove(tarName)
-
-	if err := tarDirectory(tmpDir, tarFile); err != nil {
-		tarFile.Close()
-		return 0, fmt.Errorf("tar OCI layout: %w", err)
-	}
-	tarFile.Close()
-
 	// Build trivy arguments.
-	args := []string{"image", "--input", tarName}
+	// Pass the OCI Image Layout directory directly — Trivy reads index.json from it.
+	args := []string{"image", "--input", tmpDir}
 	if opts.Severity != "" {
 		args = append(args, "--severity", opts.Severity)
 	}
@@ -159,47 +144,3 @@ func finalizeOCILayout(dir string, manifestData []byte) error {
 	return nil
 }
 
-// tarDirectory writes all files in srcDir into w as a flat tar archive.
-// File paths in the archive are relative to srcDir.
-func tarDirectory(srcDir string, w io.Writer) error {
-	tw := tar.NewWriter(w)
-	err := filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(srcDir, path)
-		if err != nil {
-			return err
-		}
-		if info.IsDir() {
-			if rel == "." {
-				return nil
-			}
-			return tw.WriteHeader(&tar.Header{
-				Typeflag: tar.TypeDir,
-				Name:     rel + "/",
-				Mode:     0o755,
-			})
-		}
-		f, err := os.Open(path)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		hdr := &tar.Header{
-			Typeflag: tar.TypeReg,
-			Name:     rel,
-			Size:     info.Size(),
-			Mode:     0o644,
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			return err
-		}
-		_, err = io.Copy(tw, f)
-		return err
-	})
-	if err != nil {
-		return err
-	}
-	return tw.Close()
-}
