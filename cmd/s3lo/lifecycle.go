@@ -5,6 +5,7 @@ import (
 	"os"
 
 	"github.com/OuFinx/s3lo/pkg/image"
+	s3client "github.com/OuFinx/s3lo/pkg/s3"
 	"github.com/spf13/cobra"
 )
 
@@ -25,36 +26,37 @@ Runs in dry-run mode by default — no deletions are performed.
 Use --confirm to actually delete tags that violate the policy.
 Blobs are not deleted; run 'gc --confirm' after to reclaim space.
 
-Example policy file (s3lo-lifecycle.yaml):
-
-  rules:
-    - match: "*"
-      keep_last: 10
-      max_age: 90d
-
-    - match: "dev/*"
-      max_age: 7d
-      keep_tags: ["latest"]
-
-    - match: "myapp"
-      keep_last: 5
-      keep_tags: ["stable", "latest"]`,
-	Example: `  s3lo lifecycle apply s3://my-bucket/ --config lifecycle.yaml
-  s3lo lifecycle apply s3://my-bucket/ --config lifecycle.yaml --confirm`,
+By default, lifecycle rules are read from the bucket config stored at s3lo.yaml.
+Use --config to override with a local file (same YAML format as 's3lo config set').`,
+	Example: `  s3lo lifecycle apply s3://my-bucket/                        # use bucket config
+  s3lo lifecycle apply s3://my-bucket/ --config override.yaml # use local file
+  s3lo lifecycle apply s3://my-bucket/ --confirm               # actually delete`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if lifecycleApplyConfig == "" {
-			return fmt.Errorf("--config is required")
-		}
+		var cfg *image.BucketConfig
 
-		data, err := os.ReadFile(lifecycleApplyConfig)
-		if err != nil {
-			return fmt.Errorf("read config file: %w", err)
-		}
-
-		cfg, err := image.ParseLifecycleConfig(data)
-		if err != nil {
-			return err
+		if lifecycleApplyConfig != "" {
+			data, err := os.ReadFile(lifecycleApplyConfig)
+			if err != nil {
+				return fmt.Errorf("read config file: %w", err)
+			}
+			cfg, err = image.LoadBucketConfigFromFile(data)
+			if err != nil {
+				return err
+			}
+		} else {
+			bucket, _, err := image.ParseBucketRef(args[0])
+			if err != nil {
+				return err
+			}
+			client, err := s3client.NewClient(cmd.Context())
+			if err != nil {
+				return err
+			}
+			cfg, err = image.GetBucketConfig(cmd.Context(), client, bucket)
+			if err != nil {
+				return err
+			}
 		}
 
 		dryRun := !lifecycleConfirm
@@ -80,7 +82,7 @@ Example policy file (s3lo-lifecycle.yaml):
 }
 
 func init() {
-	lifecycleApplyCmd.Flags().StringVar(&lifecycleApplyConfig, "config", "", "Path to lifecycle policy YAML file (required)")
+	lifecycleApplyCmd.Flags().StringVar(&lifecycleApplyConfig, "config", "", "Path to BucketConfig YAML file (optional; defaults to bucket's s3lo.yaml)")
 	lifecycleApplyCmd.Flags().BoolVar(&lifecycleConfirm, "confirm", false,
 		"Actually delete tags (default is dry-run)")
 	lifecycleCmd.AddCommand(lifecycleApplyCmd)

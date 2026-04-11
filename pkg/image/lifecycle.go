@@ -3,7 +3,6 @@ package image
 import (
 	"context"
 	"fmt"
-	"path"
 	"sort"
 	"strconv"
 	"strings"
@@ -13,61 +12,51 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// LifecycleRule defines retention criteria for images matching a name pattern.
-type LifecycleRule struct {
-	// Match is a glob pattern matched against image names (e.g. "*", "dev/*", "myapp").
-	Match string `yaml:"match"`
-	// KeepLast keeps the N most recently pushed tags. 0 means no limit.
-	KeepLast int `yaml:"keep_last"`
-	// MaxAge deletes tags older than this duration (e.g. "7d", "30d", "90d").
-	MaxAge string `yaml:"max_age"`
-	// KeepTags lists tags that are never deleted regardless of other rules.
-	KeepTags []string `yaml:"keep_tags"`
-}
-
-// LifecycleConfig holds a lifecycle policy loaded from a YAML file.
-type LifecycleConfig struct {
-	Rules []LifecycleRule `yaml:"rules"`
-}
-
-// ParseLifecycleConfig parses a lifecycle YAML config.
-func ParseLifecycleConfig(data []byte) (*LifecycleConfig, error) {
-	var cfg LifecycleConfig
-	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return nil, fmt.Errorf("parse lifecycle config: %w", err)
-	}
-	for i, r := range cfg.Rules {
-		if r.Match == "" {
-			return nil, fmt.Errorf("rule %d: match pattern is required", i+1)
-		}
-		if r.MaxAge != "" {
-			if _, err := parseDuration(r.MaxAge); err != nil {
-				return nil, fmt.Errorf("rule %d: invalid max_age %q: %w", i+1, r.MaxAge, err)
-			}
-		}
-	}
-	return &cfg, nil
-}
-
 // LifecycleResult summarizes a lifecycle apply run.
 type LifecycleResult struct {
-	Evaluated int // tags evaluated
-	Deleted   int // tags deleted (or would be in dry run)
+	Evaluated int
+	Deleted   int
 	DryRun    bool
 }
 
 // tagMeta holds metadata about a single image tag needed for lifecycle evaluation.
 type tagMeta struct {
-	image       string
-	tag         string
-	manifestKey string
+	image        string
+	tag          string
+	manifestKey  string
 	lastModified time.Time
 }
 
-// ApplyLifecycle evaluates the lifecycle policy against all images in the bucket
+// LoadBucketConfigFromFile parses a BucketConfig from a local YAML file's bytes.
+func LoadBucketConfigFromFile(data []byte) (*BucketConfig, error) {
+	var cfg BucketConfig
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parse config: %w", err)
+	}
+	// Validate lifecycle durations.
+	validate := func(lc *LifecycleImageConfig) error {
+		if lc != nil && lc.MaxAge != "" {
+			if _, err := parseDuration(lc.MaxAge); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	if err := validate(cfg.Default.Lifecycle); err != nil {
+		return nil, fmt.Errorf("default lifecycle: %w", err)
+	}
+	for name, img := range cfg.Images {
+		if err := validate(img.Lifecycle); err != nil {
+			return nil, fmt.Errorf("image %q lifecycle: %w", name, err)
+		}
+	}
+	return &cfg, nil
+}
+
+// ApplyLifecycle evaluates the lifecycle settings in cfg against all images in the bucket
 // and deletes manifest files for tags that should be purged.
 // If dryRun is true, no deletions are performed.
-func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *LifecycleConfig, dryRun bool) (*LifecycleResult, error) {
+func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, dryRun bool) (*LifecycleResult, error) {
 	bucket, prefix, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err
@@ -99,26 +88,25 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *LifecycleConfi
 		}
 		imageName := rel[:lastSlash]
 		tagName := rel[lastSlash+1:]
-		tm := tagMeta{
+		imageTagsMap[imageName] = append(imageTagsMap[imageName], tagMeta{
 			image:        imageName,
 			tag:          tagName,
 			manifestKey:  obj.Key,
 			lastModified: obj.LastModified,
-		}
-		imageTagsMap[imageName] = append(imageTagsMap[imageName], tm)
+		})
 	}
 
 	result := &LifecycleResult{DryRun: dryRun}
 
 	for imageName, tags := range imageTagsMap {
-		rule := matchRule(cfg.Rules, imageName)
-		if rule == nil {
-			continue
+		lc := cfg.EffectiveConfig(imageName).Lifecycle
+		if lc == nil || (lc.KeepLast == 0 && lc.MaxAge == "" && len(lc.KeepTags) == 0) {
+			continue // no lifecycle policy for this image
 		}
 
-		toDelete, err := evaluateRule(rule, tags)
+		toDelete, err := evaluateTags(lc, tags)
 		if err != nil {
-			return nil, fmt.Errorf("evaluate rule for %s: %w", imageName, err)
+			return nil, fmt.Errorf("evaluate lifecycle for %s: %w", imageName, err)
 		}
 
 		result.Evaluated += len(tags)
@@ -126,7 +114,6 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *LifecycleConfi
 
 		if !dryRun {
 			for _, tm := range toDelete {
-				// Delete all files under the tag's manifests prefix.
 				tagPrefix := strings.TrimSuffix(tm.manifestKey, "manifest.json")
 				keys, err := client.ListKeys(ctx, bucket, tagPrefix)
 				if err != nil {
@@ -142,32 +129,17 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *LifecycleConfi
 	return result, nil
 }
 
-// matchRule returns the first rule whose Match pattern matches imageName, or nil.
-func matchRule(rules []LifecycleRule, imageName string) *LifecycleRule {
-	for i := range rules {
-		matched, err := path.Match(rules[i].Match, imageName)
-		if err != nil {
-			continue
-		}
-		if matched {
-			return &rules[i]
-		}
-	}
-	return nil
-}
-
-// evaluateRule returns the tags that should be deleted according to the rule.
-func evaluateRule(rule *LifecycleRule, tags []tagMeta) ([]tagMeta, error) {
-	keepSet := make(map[string]bool, len(rule.KeepTags))
-	for _, t := range rule.KeepTags {
+// evaluateTags returns the tags that should be deleted according to the lifecycle config.
+func evaluateTags(lc *LifecycleImageConfig, tags []tagMeta) ([]tagMeta, error) {
+	keepSet := make(map[string]bool, len(lc.KeepTags))
+	for _, t := range lc.KeepTags {
 		keepSet[t] = true
 	}
 
-	// Parse max_age once.
 	var maxAge time.Duration
-	if rule.MaxAge != "" {
+	if lc.MaxAge != "" {
 		var err error
-		maxAge, err = parseDuration(rule.MaxAge)
+		maxAge, err = parseDuration(lc.MaxAge)
 		if err != nil {
 			return nil, err
 		}
@@ -188,14 +160,12 @@ func evaluateRule(rule *LifecycleRule, tags []tagMeta) ([]tagMeta, error) {
 			continue
 		}
 		shouldDelete := false
-
-		if rule.KeepLast > 0 && i >= rule.KeepLast {
+		if lc.KeepLast > 0 && i >= lc.KeepLast {
 			shouldDelete = true
 		}
 		if maxAge > 0 && now.Sub(tm.lastModified) > maxAge {
 			shouldDelete = true
 		}
-
 		if shouldDelete {
 			toDelete = append(toDelete, tm)
 		}
@@ -203,19 +173,18 @@ func evaluateRule(rule *LifecycleRule, tags []tagMeta) ([]tagMeta, error) {
 	return toDelete, nil
 }
 
-// parseDuration parses durations like "7d", "30d", "90d".
-// Only days are supported (e.g. "7d"). Standard Go durations (e.g. "24h") also work.
+// parseDuration parses durations like "7d", "30d". Standard Go durations (e.g. "24h") also work.
 func parseDuration(s string) (time.Duration, error) {
 	if strings.HasSuffix(s, "d") {
 		days, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
 		if err != nil {
-			return 0, fmt.Errorf("invalid duration %q: %w", s, err)
+			return 0, fmt.Errorf("invalid duration %q", s)
 		}
 		return time.Duration(days) * 24 * time.Hour, nil
 	}
 	d, err := time.ParseDuration(s)
 	if err != nil {
-		return 0, fmt.Errorf("invalid duration %q: %w", s, err)
+		return 0, fmt.Errorf("invalid duration %q", s)
 	}
 	return d, nil
 }
