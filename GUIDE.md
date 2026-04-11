@@ -116,9 +116,7 @@ s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --force
 **Progress output:**
 ```
 Pushing myapp:v1.0 to s3://my-bucket/myapp:v1.0
-  sha256:a1b2c3d4e5f67890  45.2 MB    uploaded
-  sha256:e5f6g7h8i9j01234  12.1 MB    skipped (exists)
-  sha256:i9j0k1l2m3n45678   1.3 MB    uploaded
+  uploading ⠸ 58.7 MB [45s]
 Done.
 ```
 
@@ -155,17 +153,21 @@ s3lo pull <s3-ref> [image-tag] [flags]
 
 **Examples:**
 ```bash
-# Pull and import with the same tag (auto-detect platform for multi-arch images)
+# Pull and import (auto-detect platform for multi-arch images)
 s3lo pull s3://my-bucket/myapp:v1.0
 
-# Pull and import with a custom local tag
+# Pull with a custom local tag
 s3lo pull s3://my-bucket/myapp:v1.0 myapp:local
 
 # Pull a specific platform from a multi-arch image
 s3lo pull s3://my-bucket/myapp:v1.0 --platform linux/arm64
+```
 
-# Pull a specific commit SHA
-s3lo pull s3://my-bucket/myapp:abc1234
+**Progress output:**
+```
+Pulling s3://my-bucket/myapp:v1.0
+  downloading ⠸ 58.7 MB [30s]
+Done. Image imported into Docker.
 ```
 
 ---
@@ -198,21 +200,32 @@ For multi-arch images, all platforms are copied by default and the full OCI Imag
 
 **Examples:**
 ```bash
-# Copy between S3 buckets (all platforms preserved)
-s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
+# Copy from Docker Hub — bare name, same as docker pull
+s3lo copy alpine:latest s3://my-bucket/alpine:latest
+s3lo copy nginx:1.25 s3://my-bucket/nginx:1.25
 
-# Copy from Docker Hub — all platforms
-s3lo copy docker.io/library/alpine:latest s3://my-bucket/alpine:latest
-
-# Copy from Docker Hub — specific platform only
-s3lo copy docker.io/library/alpine:latest s3://my-bucket/alpine:latest --platform linux/amd64
+# Copy a specific platform only
+s3lo copy alpine:latest s3://my-bucket/alpine:latest --platform linux/amd64
 
 # Copy from ECR to S3 (auto-authenticates using your AWS credentials)
 s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
 
-# Copy from any OCI-compatible registry
+# Copy from GHCR or any OCI registry
 s3lo copy ghcr.io/owner/myapp:v1.0 s3://my-bucket/myapp:v1.0
+
+# Copy between S3 buckets (all platforms preserved, server-side within same bucket)
+s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
 ```
+
+**Reference formats accepted:**
+
+| Format | Example | Resolves to |
+|--------|---------|-------------|
+| Bare name | `alpine` | `docker.io/library/alpine:latest` |
+| Name:tag | `alpine:3.18` | `docker.io/library/alpine:3.18` |
+| User/image | `user/myapp:v1.0` | `docker.io/user/myapp:v1.0` |
+| Full registry | `ghcr.io/owner/image:tag` | as-is |
+| S3 | `s3://bucket/image:tag` | as-is |
 
 **How it works:**
 
@@ -231,16 +244,11 @@ Attempts unauthenticated access first. On 401, performs the standard Bearer toke
 **Blob deduplication:**
 Before uploading each blob, copy checks whether it already exists at the destination. Existing blobs are skipped.
 
-**Output (single-arch):**
+**Output:**
 ```
-Copying 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 to s3://my-bucket/myapp:v1.0
-Done. 4 blob(s) copied, 1 skipped (already exist).
-```
-
-**Output (multi-arch):**
-```
-Copying docker.io/library/alpine:latest to s3://my-bucket/alpine:latest
-Done. 3 platform(s) copied, 12 blob(s) copied, 0 skipped (already exist).
+Copying alpine:latest to s3://my-bucket/alpine:latest
+  copying ⠸ 47.3 MB [1m05s]
+Done. 16 platform(s) copied, 23 blob(s) copied, 32 skipped (already exist).
 ```
 
 **IAM requirements for ECR source:**
