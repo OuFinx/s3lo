@@ -11,8 +11,8 @@ import (
 
 var (
 	cleanConfirm   bool
-	cleanTagsOnly  bool
-	cleanBlobsOnly bool
+	cleanTags  bool
+	cleanBlobs bool
 	cleanConfig    string
 )
 
@@ -25,22 +25,22 @@ unreferenced blobs. Runs in dry-run mode by default — no deletions are perform
 Lifecycle rules are read from the bucket's s3lo.yaml. Use --config to override
 with a local file.
 
-Use --tags-only to only prune tags, or --blobs-only to only collect blobs.`,
+Use --tags to only prune tags, or --blobs to only collect blobs.`,
 	Example: `  s3lo clean s3://my-bucket/                  # dry run
   s3lo clean s3://my-bucket/ --confirm         # prune tags + gc blobs
-  s3lo clean s3://my-bucket/ --tags-only       # dry run, tags only
-  s3lo clean s3://my-bucket/ --blobs-only      # dry run, blobs only
-  s3lo clean s3://my-bucket/ --confirm --tags-only`,
+  s3lo clean s3://my-bucket/ --tags       # dry run, tags only
+  s3lo clean s3://my-bucket/ --blobs      # dry run, blobs only
+  s3lo clean s3://my-bucket/ --confirm --tags`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		if cleanTagsOnly && cleanBlobsOnly {
-			return fmt.Errorf("--tags-only and --blobs-only are mutually exclusive")
+		if cleanTags && cleanBlobs {
+			return fmt.Errorf("--tags and --blobs are mutually exclusive")
 		}
 
 		dryRun := !cleanConfirm
 		s3Ref := args[0]
 
-		if !cleanBlobsOnly {
+		if !cleanBlobs {
 			var cfg *image.BucketConfig
 
 			if cleanConfig != "" {
@@ -83,7 +83,7 @@ Use --tags-only to only prune tags, or --blobs-only to only collect blobs.`,
 			}
 		}
 
-		if !cleanTagsOnly {
+		if !cleanTags {
 			gcResult, err := image.GC(cmd.Context(), s3Ref, dryRun)
 			if err != nil {
 				return err
@@ -108,8 +108,8 @@ Use --tags-only to only prune tags, or --blobs-only to only collect blobs.`,
 
 func init() {
 	cleanCmd.Flags().BoolVar(&cleanConfirm, "confirm", false, "Actually delete (default is dry-run)")
-	cleanCmd.Flags().BoolVar(&cleanTagsOnly, "tags-only", false, "Only prune old tags, skip blob gc")
-	cleanCmd.Flags().BoolVar(&cleanBlobsOnly, "blobs-only", false, "Only gc unreferenced blobs, skip tag pruning")
+	cleanCmd.Flags().BoolVar(&cleanTags, "tags", false, "Only prune old tags, skip blob gc")
+	cleanCmd.Flags().BoolVar(&cleanBlobs, "blobs", false, "Only gc unreferenced blobs, skip tag pruning")
 	cleanCmd.Flags().StringVar(&cleanConfig, "config", "", "Path to BucketConfig YAML file (optional; defaults to bucket's s3lo.yaml)")
 	rootCmd.AddCommand(cleanCmd)
 }
