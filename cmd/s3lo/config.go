@@ -347,7 +347,7 @@ var configRecommendCmd = &cobra.Command{
 		fmt.Printf("\nRecommendations:\n\n")
 		for i, rec := range result.Recommendations {
 			fmt.Printf("%d. %s\n", i+1, rec.Title)
-			for _, line := range splitLines(rec.Description) {
+			for _, line := range strings.Split(rec.Description, "\n") {
 				fmt.Printf("   %s\n", line)
 			}
 			fmt.Println()
@@ -356,20 +356,6 @@ var configRecommendCmd = &cobra.Command{
 	},
 }
 
-func splitLines(s string) []string {
-	var lines []string
-	start := 0
-	for i := 0; i < len(s); i++ {
-		if s[i] == '\n' {
-			lines = append(lines, s[start:i])
-			start = i + 1
-		}
-	}
-	if start < len(s) {
-		lines = append(lines, s[start:])
-	}
-	return lines
-}
 
 func init() {
 	configCmd.AddCommand(configSetCmd)

@@ -66,16 +66,30 @@ func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath s
 	}
 	defer f.Close()
 
+	ct := contentTypeForKey(key)
 	input := &s3.PutObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-		Body:   f,
+		Bucket:      &bucket,
+		Key:         &key,
+		Body:        f,
+		ContentType: &ct,
 	}
 	if storageClass != "" {
 		input.StorageClass = storageClass
 	}
 	_, err = client.PutObject(ctx, input)
 	return err
+}
+
+// contentTypeForKey returns the appropriate Content-Type for an S3 key.
+func contentTypeForKey(key string) string {
+	switch {
+	case strings.HasSuffix(key, ".json") || strings.HasSuffix(key, "manifest.json"):
+		return "application/json"
+	case strings.HasSuffix(key, "oci-layout"):
+		return "application/json"
+	default:
+		return "application/octet-stream"
+	}
 }
 
 // PutObject uploads raw bytes to an S3 key.

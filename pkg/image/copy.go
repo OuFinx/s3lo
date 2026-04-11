@@ -96,16 +96,19 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 				return fmt.Errorf("copy blob %s: %w", digest[:12], err)
 			}
 		} else {
-			data, err := client.GetObject(ctx, srcParsed.Bucket, srcKey)
+			// Stream cross-bucket: download to a temp file, then upload.
+			// Avoids loading the entire blob into memory.
+			tmp, err := os.CreateTemp("", "s3lo-copy-blob-*")
 			if err != nil {
+				return fmt.Errorf("create temp file for blob %s: %w", digest[:12], err)
+			}
+			tmpName := tmp.Name()
+			tmp.Close()
+			defer os.Remove(tmpName)
+			if err := client.DownloadObjectToFile(ctx, srcParsed.Bucket, srcKey, tmpName); err != nil {
 				return fmt.Errorf("download blob %s: %w", digest[:12], err)
 			}
-			tmp, err := writeTempFile(data)
-			if err != nil {
-				return err
-			}
-			defer os.Remove(tmp)
-			if err := client.UploadFile(ctx, tmp, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
+			if err := client.UploadFile(ctx, tmpName, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
 				return fmt.Errorf("upload blob %s: %w", digest[:12], err)
 			}
 		}
@@ -330,7 +333,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 
 	// Fetch manifest (accepts both single-arch and multi-arch).
 	manifestURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", reg, image, tag)
-	manifestData, _, err := fetchWithAuth(httpClient, manifestURL, token, reg, image)
+	manifestData, _, err := fetchWithAuthContext(ctx, httpClient, manifestURL, token, reg, image)
 	if err != nil {
 		return nil, fmt.Errorf("fetch manifest from registry: %w", err)
 	}
@@ -379,7 +382,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 			return nil
 		}
 		blobURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", reg, image, digest)
-		blobData, _, err := fetchWithAuth(httpClient, blobURL, token, reg, image)
+		blobData, _, err := fetchWithAuthContext(ctx, httpClient, blobURL, token, reg, image)
 		if err != nil {
 			return fmt.Errorf("fetch blob %s: %w", encoded[:12], err)
 		}
@@ -452,7 +455,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 				i, desc := i, desc
 				g.Go(func() error {
 					platURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", reg, image, desc.Digest.String())
-					data, _, err := fetchWithAuth(httpClient, platURL, token, reg, image)
+					data, _, err := fetchWithAuthContext(ctx, httpClient, platURL, token, reg, image)
 					if err != nil {
 						return fmt.Errorf("fetch platform manifest %s: %w", platformString(desc.Platform), err)
 					}
@@ -623,7 +626,12 @@ func resolveECRAuth(ctx context.Context, registry string) (string, error) {
 // fetchWithAuth fetches a URL using Bearer or Basic auth.
 // On 401 with a WWW-Authenticate challenge, it performs the token flow and retries.
 func fetchWithAuth(client *http.Client, rawURL, authToken, registry, image string) ([]byte, string, error) {
-	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	return fetchWithAuthContext(context.Background(), client, rawURL, authToken, registry, image)
+}
+
+// fetchWithAuthContext is fetchWithAuth with explicit context propagation.
+func fetchWithAuthContext(ctx context.Context, client *http.Client, rawURL, authToken, registry, image string) ([]byte, string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
 		return nil, "", err
 	}
@@ -650,7 +658,7 @@ func fetchWithAuth(client *http.Client, rawURL, authToken, registry, image strin
 		if err != nil {
 			return nil, "", fmt.Errorf("auth challenge: %w", err)
 		}
-		req2, err := http.NewRequest(http.MethodGet, rawURL, nil)
+		req2, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return nil, "", fmt.Errorf("create retry request: %w", err)
 		}

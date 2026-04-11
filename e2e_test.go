@@ -50,15 +50,9 @@ func TestE2E_PushPullListInspect(t *testing.T) {
 		t.Errorf("inspect output missing layers info: %s", inspectOut)
 	}
 
-	// Pull
-	tmpDir := t.TempDir()
-	pull := exec.Command(binary, "pull", ref, tmpDir)
+	// Pull (imports into local Docker; no image-tag arg means it uses the ref name)
+	pull := exec.Command(binary, "pull", ref)
 	if out, err := pull.CombinedOutput(); err != nil {
 		t.Fatalf("pull failed: %s\n%s", err, out)
-	}
-
-	// Verify pulled files
-	if _, err := os.Stat(tmpDir + "/manifest.json"); os.IsNotExist(err) {
-		t.Error("pulled image missing manifest.json")
 	}
 }
