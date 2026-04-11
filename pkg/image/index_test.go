@@ -1,6 +1,7 @@
 package image
 
 import (
+	"strings"
 	"testing"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -59,16 +60,14 @@ func TestHostPlatform(t *testing.T) {
 	if p == "" {
 		t.Fatal("hostPlatform() returned empty string")
 	}
-	// Must contain a slash (os/arch).
-	found := false
-	for _, c := range p {
-		if c == '/' {
-			found = true
-			break
-		}
-	}
-	if !found {
+	// Must be in "os/arch" format.
+	if !strings.Contains(p, "/") {
 		t.Errorf("hostPlatform() %q missing '/'", p)
+	}
+	// OS must always be linux — container images are linux-based regardless of host OS.
+	parts := strings.SplitN(p, "/", 2)
+	if parts[0] != "linux" {
+		t.Errorf("hostPlatform() OS = %q, want linux (macOS/Windows must be normalized)", parts[0])
 	}
 }
 

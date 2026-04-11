@@ -30,14 +30,11 @@ func isImageIndex(data []byte) bool {
 	}
 	// Some registries omit mediaType but include manifests array — treat as index.
 	if probe.MediaType == "" && len(probe.Manifests) > 0 && probe.SchemaVersion == 2 {
-		// Check if it looks like an index (has platform fields).
 		var entry struct {
 			Platform *ocispec.Platform `json:"platform"`
 		}
-		if len(probe.Manifests) > 0 {
-			if json.Unmarshal(probe.Manifests[0], &entry) == nil && entry.Platform != nil {
-				return true
-			}
+		if json.Unmarshal(probe.Manifests[0], &entry) == nil && entry.Platform != nil {
+			return true
 		}
 	}
 	return false
@@ -52,22 +49,16 @@ func parseIndex(data []byte) (ocispec.Index, error) {
 	return idx, nil
 }
 
-// hostPlatform returns the current host platform string (e.g. "linux/amd64").
+// hostPlatform returns the host platform string for container image selection (e.g. "linux/amd64").
+// Container images are always linux-based, so darwin and windows hosts are normalized to linux —
+// matching the behavior of Docker and other OCI tools (a Mac user wants linux/arm64, not darwin/arm64).
 func hostPlatform() string {
-	os := runtime.GOOS
-	arch := runtime.GOARCH
-	// Normalize Go arch names to OCI arch names.
-	switch arch {
-	case "amd64":
-		arch = "amd64"
-	case "arm64":
-		arch = "arm64"
-	case "386":
-		arch = "386"
-	case "arm":
-		arch = "arm"
+	goos := runtime.GOOS
+	if goos == "darwin" || goos == "windows" {
+		goos = "linux"
 	}
-	return os + "/" + arch
+	arch := runtime.GOARCH
+	return goos + "/" + arch
 }
 
 // parsePlatform parses a platform string like "linux/amd64" or "linux/arm/v7".

@@ -284,11 +284,9 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	}
 
 	copyPlatformManifest := func(manifestBytes []byte, manifestDigest string) error {
-		// Store platform manifest as a blob.
-		if err := uploadBlob(manifestDigest); err != nil {
-			return err
-		}
-		// Actually fetch and upload the platform manifest blob bytes directly.
+		// Store platform manifest as a content-addressed blob using the bytes we already
+		// have. Do NOT use uploadBlob() here — that fetches via the /blobs/ endpoint which
+		// is wrong for manifests (manifests live at /manifests/<digest> on registries).
 		encoded := trimSHA256Prefix(manifestDigest)
 		destKey := "blobs/sha256/" + encoded
 		exists, _ := s3c.HeadObjectExists(ctx, destParsed.Bucket, destKey)
@@ -301,8 +299,11 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 			if err := s3c.UploadFile(ctx, tmp, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
 				return fmt.Errorf("upload platform manifest blob: %w", err)
 			}
+			result.BlobsCopied++
+		} else {
+			result.BlobsSkipped++
 		}
-		// Upload the platform's blobs.
+		// Upload the platform's config and layer blobs.
 		var m ocispec.Manifest
 		if err := json.Unmarshal(manifestBytes, &m); err != nil {
 			return fmt.Errorf("parse platform manifest: %w", err)
