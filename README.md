@@ -88,25 +88,21 @@ s3lo inspect s3://my-bucket/myapp:v1.0
 # Show storage stats and deduplication savings
 s3lo stats s3://my-bucket/
 
-# Delete a tag (blobs remain; run gc to reclaim)
+# Delete a tag
 s3lo delete s3://my-bucket/myapp:v1.0
 
-# Garbage collect unreferenced blobs
-s3lo gc s3://my-bucket/             # dry run
-s3lo gc s3://my-bucket/ --confirm   # delete
+# Configure lifecycle rules (keep last 10 tags, max 90 days)
+s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
 
-# Apply declarative retention policies
-s3lo lifecycle apply s3://my-bucket/ --config lifecycle.yaml
-s3lo lifecycle apply s3://my-bucket/ --config lifecycle.yaml --confirm
+# Clean old tags and unreferenced blobs (dry run by default)
+s3lo clean s3://my-bucket/
+s3lo clean s3://my-bucket/ --confirm
 
-# Generate S3 Lifecycle Rule Terraform for the bucket
-s3lo recommend s3://my-bucket/
+# Analyze bucket configuration and get recommendations
+s3lo config recommend s3://my-bucket/
 
-# Enable tag immutability
-s3lo config set s3://my-bucket/ immutable=true
-
-# First-time interactive setup
-s3lo configure
+# Enable per-image tag immutability
+s3lo config set s3://my-bucket/myapp immutable=true
 ```
 
 ## How It Works
