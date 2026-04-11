@@ -18,14 +18,37 @@ var inspectCmd = &cobra.Command{
 			return err
 		}
 		fmt.Printf("Reference: %s\n", info.Reference)
-		fmt.Printf("Layers:    %d\n", len(info.Layers))
-		fmt.Printf("Total:     %.2f MB\n\n", float64(info.TotalSize)/1024/1024)
-		for i, layer := range info.Layers {
-			digestStr := layer.Digest
-			if len(digestStr) > 19 {
-				digestStr = digestStr[:19]
+		if info.IsIndex {
+			fmt.Printf("Type:      multi-arch image index (%d platform(s))\n\n", len(info.Platforms))
+			for _, p := range info.Platforms {
+				digestStr := p.Digest
+				if len(digestStr) > 19 {
+					digestStr = digestStr[:19]
+				}
+				fmt.Printf("  Platform: %s\n", p.Platform)
+				fmt.Printf("  Digest:   %s...\n", digestStr)
+				fmt.Printf("  Layers:   %d\n", len(p.Layers))
+				fmt.Printf("  Size:     %.2f MB\n", float64(p.TotalSize)/1024/1024)
+				for i, layer := range p.Layers {
+					ld := layer.Digest
+					if len(ld) > 19 {
+						ld = ld[:19]
+					}
+					fmt.Printf("    [%d] %s... (%.2f MB)\n", i+1, ld, float64(layer.Size)/1024/1024)
+				}
+				fmt.Println()
 			}
-			fmt.Printf("  [%d] %s (%.2f MB)\n", i+1, digestStr, float64(layer.Size)/1024/1024)
+		} else {
+			fmt.Printf("Type:      single-arch image\n")
+			fmt.Printf("Layers:    %d\n", len(info.Layers))
+			fmt.Printf("Total:     %.2f MB\n\n", float64(info.TotalSize)/1024/1024)
+			for i, layer := range info.Layers {
+				digestStr := layer.Digest
+				if len(digestStr) > 19 {
+					digestStr = digestStr[:19]
+				}
+				fmt.Printf("  [%d] %s... (%.2f MB)\n", i+1, digestStr, float64(layer.Size)/1024/1024)
+			}
 		}
 		return nil
 	},

@@ -16,6 +16,9 @@ import (
 
 // PullOptions controls pull behavior.
 type PullOptions struct {
+	// Platform selects a specific platform from a multi-arch image (e.g. "linux/amd64").
+	// Empty means auto-detect the host platform.
+	Platform string
 	// OnBlob is called for each blob after it is downloaded.
 	// digest is the sha256 hex digest, size in bytes.
 	OnBlob func(digest string, size int64)
@@ -53,6 +56,13 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 			return fmt.Errorf("download from S3: %w", err)
 		}
 	} else {
+		// Check if this is a multi-arch image index.
+		if isImageIndex(manifestData) {
+			manifestData, err = resolvePlatformManifest(ctx, client, parsed.Bucket, manifestData, opts.Platform)
+			if err != nil {
+				return err
+			}
+		}
 		if err := pullV110(ctx, client, parsed, manifestData, tmpDir, opts.OnBlob); err != nil {
 			return err
 		}
@@ -67,6 +77,33 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 	}
 
 	return nil
+}
+
+// resolvePlatformManifest selects a platform from an Image Index and returns its manifest bytes.
+// If platform is empty, the host platform is used.
+func resolvePlatformManifest(ctx context.Context, client *s3client.Client, bucket string, indexData []byte, platform string) ([]byte, error) {
+	idx, err := parseIndex(indexData)
+	if err != nil {
+		return nil, fmt.Errorf("parse image index: %w", err)
+	}
+
+	target := platform
+	if target == "" {
+		target = hostPlatform()
+	}
+
+	for _, desc := range idx.Manifests {
+		if matchesPlatform(desc, target) {
+			d := desc.Digest.Encoded()
+			data, err := client.GetObject(ctx, bucket, "blobs/sha256/"+d)
+			if err != nil {
+				return nil, fmt.Errorf("fetch platform manifest for %s: %w", target, err)
+			}
+			return data, nil
+		}
+	}
+
+	return nil, fmt.Errorf("platform %q not found in image index (available: %s)", target, indexPlatformList(idx))
 }
 
 // pullV110 downloads a v1.1.0 image into tmpDir, reconstructing the local OCI layout

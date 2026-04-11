@@ -116,9 +116,7 @@ s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --force
 **Progress output:**
 ```
 Pushing myapp:v1.0 to s3://my-bucket/myapp:v1.0
-  sha256:a1b2c3d4e5f67890  45.2 MB    uploaded
-  sha256:e5f6g7h8i9j01234  12.1 MB    skipped (exists)
-  sha256:i9j0k1l2m3n45678   1.3 MB    uploaded
+  uploading ⠸ 58.7 MB [45s]
 Done.
 ```
 
@@ -135,30 +133,41 @@ Done.
 Download an image from S3 and import it into local Docker.
 
 ```
-s3lo pull <s3-ref> [image-tag]
+s3lo pull <s3-ref> [image-tag] [flags]
 ```
 
 **Arguments:**
 - `<s3-ref>` - source in `s3://bucket/image:tag` format
 - `[image-tag]` - optional tag to apply after import (defaults to `image:tag` from the ref)
 
+**Flags:**
+- `--platform <os/arch>` - select a specific platform from a multi-arch image (e.g. `linux/amd64`). Default: auto-detect host platform.
+
 **What it does:**
 1. Downloads `manifest.json` from S3.
-2. Downloads all blobs in parallel.
-3. Reconstructs a local OCI Image Layout on disk.
-4. Imports it into the local Docker daemon via `docker load`.
-5. Optionally retags the image.
+2. If the image is a multi-arch index, selects the platform matching the host (or `--platform`).
+3. Downloads all blobs in parallel.
+4. Reconstructs a local OCI Image Layout on disk.
+5. Imports it into the local Docker daemon via `docker load`.
+6. Optionally retags the image.
 
 **Examples:**
 ```bash
-# Pull and import with the same tag
+# Pull and import (auto-detect platform for multi-arch images)
 s3lo pull s3://my-bucket/myapp:v1.0
 
-# Pull and import with a custom local tag
+# Pull with a custom local tag
 s3lo pull s3://my-bucket/myapp:v1.0 myapp:local
 
-# Pull a specific commit SHA
-s3lo pull s3://my-bucket/myapp:abc1234
+# Pull a specific platform from a multi-arch image
+s3lo pull s3://my-bucket/myapp:v1.0 --platform linux/arm64
+```
+
+**Progress output:**
+```
+Pulling s3://my-bucket/myapp:v1.0
+  downloading ⠸ 58.7 MB [30s]
+Done. Image imported into Docker.
 ```
 
 ---
@@ -168,12 +177,15 @@ s3lo pull s3://my-bucket/myapp:abc1234
 Copy an image to S3 without pulling it to the local Docker daemon.
 
 ```
-s3lo copy <src> <s3-dest>
+s3lo copy <src> <s3-dest> [flags]
 ```
 
 **Arguments:**
 - `<src>` - source image. Can be an S3 reference or an OCI registry reference.
 - `<s3-dest>` - destination in `s3://bucket/image:tag` format.
+
+**Flags:**
+- `--platform <os/arch>` - copy a specific platform only (e.g. `linux/amd64`). Default: copy all platforms.
 
 **Source formats supported:**
 
@@ -184,20 +196,36 @@ s3lo copy <src> <s3-dest>
 | Docker Hub | `docker.io/library/nginx:latest` |
 | Any OCI registry | `registry.example.com/myapp:v1.0` |
 
+For multi-arch images, all platforms are copied by default and the full OCI Image Index is preserved at the destination. Use `--platform` to copy only one platform.
+
 **Examples:**
 ```bash
-# Copy between S3 buckets
-s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
+# Copy from Docker Hub — bare name, same as docker pull
+s3lo copy alpine:latest s3://my-bucket/alpine:latest
+s3lo copy nginx:1.25 s3://my-bucket/nginx:1.25
+
+# Copy a specific platform only
+s3lo copy alpine:latest s3://my-bucket/alpine:latest --platform linux/amd64
 
 # Copy from ECR to S3 (auto-authenticates using your AWS credentials)
 s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
 
-# Copy from Docker Hub to S3
-s3lo copy docker.io/library/nginx:latest s3://my-bucket/nginx:latest
-
-# Copy from any OCI-compatible registry
+# Copy from GHCR or any OCI registry
 s3lo copy ghcr.io/owner/myapp:v1.0 s3://my-bucket/myapp:v1.0
+
+# Copy between S3 buckets (all platforms preserved, server-side within same bucket)
+s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
 ```
+
+**Reference formats accepted:**
+
+| Format | Example | Resolves to |
+|--------|---------|-------------|
+| Bare name | `alpine` | `docker.io/library/alpine:latest` |
+| Name:tag | `alpine:3.18` | `docker.io/library/alpine:3.18` |
+| User/image | `user/myapp:v1.0` | `docker.io/user/myapp:v1.0` |
+| Full registry | `ghcr.io/owner/image:tag` | as-is |
+| S3 | `s3://bucket/image:tag` | as-is |
 
 **How it works:**
 
@@ -218,8 +246,9 @@ Before uploading each blob, copy checks whether it already exists at the destina
 
 **Output:**
 ```
-Copying 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 to s3://my-bucket/myapp:v1.0
-Done. 4 blob(s) copied, 1 skipped (already exist).
+Copying alpine:latest to s3://my-bucket/alpine:latest
+  copying ⠸ 47.3 MB [1m05s]
+Done. 16 platform(s) copied, 23 blob(s) copied, 32 skipped (already exist).
 ```
 
 **IAM requirements for ECR source:**
@@ -260,30 +289,50 @@ org/frontend:sha-abc123
 
 ### inspect
 
-Show image metadata including size, layers, and creation time.
+Show image metadata including size, layers, and platform information.
 
 ```
 s3lo inspect <s3-ref>
 ```
 
+Supports both single-arch images and multi-arch image indexes.
+
 **Examples:**
 ```bash
 s3lo inspect s3://my-bucket/myapp:v1.0
+s3lo inspect s3://my-bucket/alpine:latest
 ```
 
-**Output example:**
+**Single-arch output:**
 ```
-Image:   s3://my-bucket/myapp:v1.0
-Created: 2024-10-15T12:00:00Z
-OS/Arch: linux/amd64
-Layers:  4
+Reference: s3://my-bucket/myapp:v1.0
+Type:      single-arch image
+Layers:    4
+Total:     58.70 MB
 
-  sha256:a1b2c3d4...  45.2 MB
-  sha256:e5f6g7h8...  12.1 MB
-  sha256:i9j0k1l2...   1.3 MB
-  sha256:m3n4o5p6...   0.1 MB
+  [1] sha256:a1b2c3d4e5f67890...  (45.20 MB)
+  [2] sha256:e5f6g7h8i9j01234...  (12.10 MB)
+  [3] sha256:i9j0k1l2m3n45678...   (1.30 MB)
+  [4] sha256:m3n4o5p6q7r89012...   (0.10 MB)
+```
 
-Total: 58.7 MB
+**Multi-arch output:**
+```
+Reference: s3://my-bucket/alpine:latest
+Type:      multi-arch image index (3 platform(s))
+
+  Platform: linux/amd64
+  Digest:   sha256:a1b2c3d4e5f...
+  Layers:   4
+  Size:     7.80 MB
+    [1] sha256:a1b2c3d4...  (3.20 MB)
+    ...
+
+  Platform: linux/arm64
+  ...
+
+  Platform: linux/arm/v7
+  ...
 ```
 
 ---
@@ -571,7 +620,7 @@ s3lo version
 
 **Output:**
 ```
-s3lo v1.2.0 (abc1234)
+s3lo v1.3.0 (abc1234)
 ```
 
 ---
@@ -904,7 +953,7 @@ Not currently. s3lo uses the Docker daemon to export images (`docker save`) and 
 
 **Q: Does s3lo support multi-architecture images?**
 
-Not yet. Multi-arch support (OCI Image Index) is planned for v1.3.0. Currently, each image reference stores a single-platform image. Best practice for EKS is to push `linux/amd64` explicitly.
+Yes, since v1.3.0. s3lo stores OCI Image Indexes natively. `copy` copies all platforms by default, preserving the full index at the destination. `pull` auto-detects the host platform automatically — no flags needed.
 
 **Q: What happens if a push is interrupted?**
 

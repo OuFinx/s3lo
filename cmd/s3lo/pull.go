@@ -15,21 +15,22 @@ var pullCmd = &cobra.Command{
   s3lo pull s3://my-bucket/myapp:v1.0 myapp:v1.0`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		platform, _ := cmd.Flags().GetString("platform")
 		imageTag := ""
 		if len(args) > 1 {
 			imageTag = args[1]
 		}
 		fmt.Printf("Pulling %s\n", args[0])
+		bar := newProgressBar("  downloading")
 		opts := image.PullOptions{
-			OnBlob: func(digest string, size int64) {
-				short := digest
-				if len(short) > 19 {
-					short = short[:19]
-				}
-				fmt.Printf("  sha256:%s  %s\n", short, formatBytes(size))
+			Platform: platform,
+			OnBlob: func(_ string, size int64) {
+				bar.Add64(size)
 			},
 		}
-		if err := image.Pull(cmd.Context(), args[0], imageTag, opts); err != nil {
+		err := image.Pull(cmd.Context(), args[0], imageTag, opts)
+		bar.Finish()
+		if err != nil {
 			return err
 		}
 		fmt.Println("Done. Image imported into Docker.")
@@ -39,4 +40,5 @@ var pullCmd = &cobra.Command{
 
 func init() {
 	rootCmd.AddCommand(pullCmd)
+	pullCmd.Flags().String("platform", "", `Platform to pull from a multi-arch image (e.g. "linux/amd64"). Default: auto-detect host platform.`)
 }

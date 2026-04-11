@@ -75,7 +75,9 @@ s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0
 # Pull from S3 into local Docker
 s3lo pull s3://my-bucket/myapp:v1.0
 
-# Copy from ECR or another S3 bucket (no local Docker needed)
+# Copy from any registry — bare names work just like docker pull
+s3lo copy alpine:latest s3://my-bucket/alpine:latest
+s3lo copy nginx:1.25 s3://my-bucket/nginx:1.25
 s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
 s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
 

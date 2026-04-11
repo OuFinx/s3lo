@@ -16,29 +16,49 @@ Sources:
   s3://bucket/image:tag                                         S3-to-S3 copy (server-side within same bucket)
   123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0         ECR to S3 (auto-authenticates via AWS credentials)
   docker.io/library/nginx:latest                                Docker Hub to S3
-  registry.example.com/myapp:v1.0                              Any OCI registry to S3`,
-	Example: `  # Copy between S3 buckets
+  registry.example.com/myapp:v1.0                              Any OCI registry to S3
+
+For multi-arch images, all platforms are copied by default. Use --platform to copy a specific platform only.`,
+	Example: `  # Copy between S3 buckets (all platforms)
   s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
 
-  # Copy from ECR to S3
-  s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
+  # Copy from Docker Hub (all platforms)
+  s3lo copy docker.io/library/alpine:latest s3://my-bucket/alpine:latest
 
-  # Copy from Docker Hub to S3
-  s3lo copy docker.io/library/nginx:latest s3://my-bucket/nginx:latest`,
+  # Copy a specific platform only
+  s3lo copy docker.io/library/alpine:latest s3://my-bucket/alpine:latest --platform linux/amd64
+
+  # Copy from ECR to S3
+  s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		platform, _ := cmd.Flags().GetString("platform")
 		src, dest := args[0], args[1]
 		fmt.Printf("Copying %s to %s\n", src, dest)
-		result, err := image.Copy(cmd.Context(), src, dest)
+		bar := newProgressBar("  copying")
+		opts := image.CopyOptions{
+			Platform: platform,
+			OnBlob: func(_ string, _ string, size int64, _ bool) {
+				bar.Add64(size)
+			},
+		}
+		result, err := image.Copy(cmd.Context(), src, dest, opts)
+		bar.Finish()
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Done. %d blob(s) copied, %d skipped (already exist).\n",
-			result.BlobsCopied, result.BlobsSkipped)
+		if result.Platforms > 1 {
+			fmt.Printf("Done. %d platform(s) copied, %d blob(s) copied, %d skipped (already exist).\n",
+				result.Platforms, result.BlobsCopied, result.BlobsSkipped)
+		} else {
+			fmt.Printf("Done. %d blob(s) copied, %d skipped (already exist).\n",
+				result.BlobsCopied, result.BlobsSkipped)
+		}
 		return nil
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(copyCmd)
+	copyCmd.Flags().String("platform", "", `Copy a specific platform only (e.g. "linux/amd64"). Default: copy all platforms.`)
 }
