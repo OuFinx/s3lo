@@ -266,11 +266,11 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 	}
 	var tasks []blobTask
 	if d := trimSHA256Prefix(manifest.Config.Digest); d != "" {
-		tasks = append(tasks, blobTask{d, manifest.Config.Size, ""})
+		tasks = append(tasks, blobTask{d, manifest.Config.Size, "single"})
 	}
 	for _, layer := range manifest.Layers {
 		if d := trimSHA256Prefix(layer.Digest); d != "" {
-			tasks = append(tasks, blobTask{d, layer.Size, ""})
+			tasks = append(tasks, blobTask{d, layer.Size, "single"})
 		}
 	}
 	if err := runParallel(tasks); err != nil {
@@ -560,11 +560,11 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	}
 	var tasks []blobTask
 	if d := manifest.Config.Digest; d != "" {
-		tasks = append(tasks, blobTask{d, manifest.Config.Size, ""})
+		tasks = append(tasks, blobTask{d, manifest.Config.Size, "single"})
 	}
 	for _, layer := range manifest.Layers {
 		if d := layer.Digest; d != "" {
-			tasks = append(tasks, blobTask{d, layer.Size, ""})
+			tasks = append(tasks, blobTask{d, layer.Size, "single"})
 		}
 	}
 	if err := runParallel(tasks); err != nil {
