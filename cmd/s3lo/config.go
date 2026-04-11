@@ -329,7 +329,11 @@ var configRecommendCmd = &cobra.Command{
 
 		fmt.Printf("Analysis for s3://%s/:\n\n", result.Bucket)
 		for _, f := range result.Findings {
-			fmt.Printf("  • %s\n", f)
+			status := "[good]"
+			if !f.OK {
+				status = "[bad] "
+			}
+			fmt.Printf("  %s %s\n", status, f.Label)
 		}
 
 		if len(result.Recommendations) == 0 {

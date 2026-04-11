@@ -15,10 +15,16 @@ type Recommendation struct {
 	Description string
 }
 
+// Finding describes an observed bucket setting with a good/bad status.
+type Finding struct {
+	Label string
+	OK    bool
+}
+
 // RecommendResult holds the findings and recommendations for a bucket.
 type RecommendResult struct {
 	Bucket          string
-	Findings        []string
+	Findings        []Finding
 	Recommendations []Recommendation
 }
 
@@ -44,7 +50,7 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 	// --- Versioning ---
 	vResp, err := s3c.GetBucketVersioning(ctx, &s3.GetBucketVersioningInput{Bucket: &bucket})
 	if err == nil && vResp.Status == s3types.BucketVersioningStatusEnabled {
-		result.Findings = append(result.Findings, "Versioning: enabled")
+		result.Findings = append(result.Findings, Finding{"Versioning: enabled", false})
 		result.Recommendations = append(result.Recommendations, Recommendation{
 			Title: "Disable bucket versioning",
 			Description: "s3lo manages its own content-addressable layout — versioning adds no benefit\n" +
@@ -52,15 +58,15 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 				"Disable versioning and add a lifecycle rule to expire non-current versions.",
 		})
 	} else {
-		result.Findings = append(result.Findings, "Versioning: disabled (good)")
+		result.Findings = append(result.Findings, Finding{"Versioning: disabled", true})
 	}
 
 	// --- Existing S3 lifecycle rules ---
 	lcResp, err := s3c.GetBucketLifecycleConfiguration(ctx, &s3.GetBucketLifecycleConfigurationInput{Bucket: &bucket})
 	if err == nil && len(lcResp.Rules) > 0 {
-		result.Findings = append(result.Findings, fmt.Sprintf("S3 lifecycle rules: %d rule(s) configured", len(lcResp.Rules)))
+		result.Findings = append(result.Findings, Finding{fmt.Sprintf("S3 lifecycle rules: %d rule(s) configured", len(lcResp.Rules)), true})
 	} else {
-		result.Findings = append(result.Findings, "S3 lifecycle rules: none")
+		result.Findings = append(result.Findings, Finding{"S3 lifecycle rules: none", false})
 		result.Recommendations = append(result.Recommendations, Recommendation{
 			Title: "Add S3 lifecycle rule to abort incomplete multipart uploads",
 			Description: "Incomplete multipart uploads accumulate storage cost without being usable.\n" +
@@ -81,14 +87,14 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 	// --- Incomplete multipart uploads ---
 	mpu, err := s3c.ListMultipartUploads(ctx, &s3.ListMultipartUploadsInput{Bucket: &bucket})
 	if err == nil && len(mpu.Uploads) > 0 {
-		result.Findings = append(result.Findings, fmt.Sprintf("Incomplete multipart uploads: %d found (wasted storage)", len(mpu.Uploads)))
+		result.Findings = append(result.Findings, Finding{fmt.Sprintf("Incomplete multipart uploads: %d found", len(mpu.Uploads)), false})
 		result.Recommendations = append(result.Recommendations, Recommendation{
 			Title: "Clean up incomplete multipart uploads now",
 			Description: fmt.Sprintf("%d incomplete multipart upload(s) are consuming storage without being usable.\n", len(mpu.Uploads)) +
 				"Run: aws s3api list-multipart-uploads --bucket " + bucket,
 		})
 	} else {
-		result.Findings = append(result.Findings, "Incomplete multipart uploads: none (good)")
+		result.Findings = append(result.Findings, Finding{"Incomplete multipart uploads: none", true})
 	}
 
 	// --- s3lo.yaml config ---
@@ -104,7 +110,7 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 			}
 		}
 		if hasLifecycle {
-			result.Findings = append(result.Findings, "s3lo lifecycle config: configured")
+			result.Findings = append(result.Findings, Finding{"s3lo lifecycle config: configured", true})
 			result.Recommendations = append(result.Recommendations, Recommendation{
 				Title: "Schedule s3lo clean to enforce lifecycle rules automatically",
 				Description: "Lifecycle rules are configured in s3lo.yaml but only enforced when\n" +
@@ -115,7 +121,7 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 					"  # AWS EventBridge + Lambda: invoke s3lo clean as a scheduled task",
 			})
 		} else {
-			result.Findings = append(result.Findings, "s3lo lifecycle config: not configured")
+			result.Findings = append(result.Findings, Finding{"s3lo lifecycle config: not configured", false})
 			result.Recommendations = append(result.Recommendations, Recommendation{
 				Title: "Configure lifecycle rules to automatically clean old tags",
 				Description: "No lifecycle rules are set. Without them, old tags and blobs accumulate indefinitely.\n" +
