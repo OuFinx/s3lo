@@ -35,7 +35,24 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 		platform, _ := cmd.Flags().GetString("platform")
 		src, dest := args[0], args[1]
 		fmt.Printf("Copying %s to %s\n", src, dest)
-		opts := image.CopyOptions{Platform: platform}
+		opts := image.CopyOptions{
+			Platform: platform,
+			OnBlob: func(plat, digest string, size int64, skipped bool) {
+				short := digest
+				if len(short) > 19 {
+					short = short[:19]
+				}
+				status := ""
+				if skipped {
+					status = "  skipped"
+				}
+				if plat != "" {
+					fmt.Printf("  %-20s sha256:%s  %s%s\n", plat, short, formatBytes(size), status)
+				} else {
+					fmt.Printf("  sha256:%s  %s%s\n", short, formatBytes(size), status)
+				}
+			},
+		}
 		result, err := image.Copy(cmd.Context(), src, dest, opts)
 		if err != nil {
 			return err
