@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	"golang.org/x/sync/errgroup"
 )
 
 // GCResult summarizes the outcome of a GC run.
@@ -76,8 +78,8 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 	return result, nil
 }
 
-// collectReferencedDigests fetches all manifests and returns the set of blob
-// digests (without sha256: prefix) they reference.
+// collectReferencedDigests fetches all manifests in parallel and returns the set
+// of blob digests (without sha256: prefix) they reference.
 func collectReferencedDigests(ctx context.Context, client *s3client.Client, bucket, prefix string) (map[string]bool, error) {
 	manifestsPrefix := prefix + "manifests/"
 	manifestKeys, err := client.ListKeys(ctx, bucket, manifestsPrefix)
@@ -85,36 +87,58 @@ func collectReferencedDigests(ctx context.Context, client *s3client.Client, buck
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
 
-	referenced := make(map[string]bool)
+	// Filter to manifest.json keys only.
+	var keys []string
 	for _, key := range manifestKeys {
-		if !strings.HasSuffix(key, "/manifest.json") {
-			continue
+		if strings.HasSuffix(key, "/manifest.json") {
+			keys = append(keys, key)
 		}
-		data, err := client.GetObject(ctx, bucket, key)
-		if err != nil {
-			return nil, fmt.Errorf("fetch manifest %s: %w", key, err)
-		}
+	}
 
-		var manifest struct {
-			Config struct {
-				Digest string `json:"digest"`
-			} `json:"config"`
-			Layers []struct {
-				Digest string `json:"digest"`
-			} `json:"layers"`
-		}
-		if err := json.Unmarshal(data, &manifest); err != nil {
-			return nil, fmt.Errorf("parse manifest %s: %w", key, err)
-		}
+	var (
+		mu         sync.Mutex
+		referenced = make(map[string]bool)
+	)
 
-		if d := trimSHA256Prefix(manifest.Config.Digest); d != "" {
-			referenced[d] = true
-		}
-		for _, layer := range manifest.Layers {
-			if d := trimSHA256Prefix(layer.Digest); d != "" {
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(20)
+
+	for _, key := range keys {
+		key := key
+		g.Go(func() error {
+			data, err := client.GetObject(ctx, bucket, key)
+			if err != nil {
+				return fmt.Errorf("fetch manifest %s: %w", key, err)
+			}
+
+			var manifest struct {
+				Config struct {
+					Digest string `json:"digest"`
+				} `json:"config"`
+				Layers []struct {
+					Digest string `json:"digest"`
+				} `json:"layers"`
+			}
+			if err := json.Unmarshal(data, &manifest); err != nil {
+				return fmt.Errorf("parse manifest %s: %w", key, err)
+			}
+
+			mu.Lock()
+			if d := trimSHA256Prefix(manifest.Config.Digest); d != "" {
 				referenced[d] = true
 			}
-		}
+			for _, layer := range manifest.Layers {
+				if d := trimSHA256Prefix(layer.Digest); d != "" {
+					referenced[d] = true
+				}
+			}
+			mu.Unlock()
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 	return referenced, nil
 }
