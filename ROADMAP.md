@@ -28,16 +28,15 @@
 - [x] `s3lo inspect` displays per-platform details for multi-arch images
 - [x] `s3lo copy --platform` to copy a single platform from a multi-arch image
 
-## v1.4.0 — CI Integration
+## v1.4.0 — CI Integration & Documentation ✓
 
-- [ ] Official GitHub Action for s3lo push
-- [ ] GitLab CI template
+- [x] Official GitHub Action for s3lo push ([OuFinx/s3lo-action](https://github.com/OuFinx/s3lo-action))
+- [x] Documentation website (MkDocs Material, auto-deployed to GitHub Pages)
 
-## v2.0.0 — Security & Documentation
+## v2.0.0 — Security
 
 - [ ] `s3lo sign` — sign images with cosign/Sigstore
 - [ ] `s3lo verify` — verify image signatures
-- [ ] Documentation website
 
 ## v2.1.0 — Vulnerability Scanning
 
