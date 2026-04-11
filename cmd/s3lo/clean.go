@@ -9,11 +9,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var cleanCmd = &cobra.Command{
-	Use:   "clean",
-	Short: "Clean up old tags and unreferenced blobs",
-}
-
 var (
 	cleanConfirm   bool
 	cleanTagsOnly  bool
@@ -21,8 +16,8 @@ var (
 	cleanConfig    string
 )
 
-var cleanRunCmd = &cobra.Command{
-	Use:   "run <s3-bucket-ref>",
+var cleanCmd = &cobra.Command{
+	Use:   "clean <s3-bucket-ref>",
 	Short: "Prune old tags and garbage collect unreferenced blobs",
 	Long: `Removes old image tags according to lifecycle rules, then garbage collects
 unreferenced blobs. Runs in dry-run mode by default — no deletions are performed.
@@ -31,11 +26,11 @@ Lifecycle rules are read from the bucket's s3lo.yaml. Use --config to override
 with a local file.
 
 Use --tags-only to only prune tags, or --blobs-only to only collect blobs.`,
-	Example: `  s3lo clean run s3://my-bucket/                  # dry run
-  s3lo clean run s3://my-bucket/ --confirm         # prune tags + gc blobs
-  s3lo clean run s3://my-bucket/ --tags-only       # dry run, tags only
-  s3lo clean run s3://my-bucket/ --blobs-only      # dry run, blobs only
-  s3lo clean run s3://my-bucket/ --confirm --tags-only`,
+	Example: `  s3lo clean s3://my-bucket/                  # dry run
+  s3lo clean s3://my-bucket/ --confirm         # prune tags + gc blobs
+  s3lo clean s3://my-bucket/ --tags-only       # dry run, tags only
+  s3lo clean s3://my-bucket/ --blobs-only      # dry run, blobs only
+  s3lo clean s3://my-bucket/ --confirm --tags-only`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if cleanTagsOnly && cleanBlobsOnly {
@@ -53,9 +48,10 @@ Use --tags-only to only prune tags, or --blobs-only to only collect blobs.`,
 				if err != nil {
 					return fmt.Errorf("read config file: %w", err)
 				}
-				cfg, err = image.LoadBucketConfigFromFile(data)
-				if err != nil {
-					return err
+				var err2 error
+				cfg, err2 = image.LoadBucketConfigFromFile(data)
+				if err2 != nil {
+					return err2
 				}
 			} else {
 				bucket, _, err := image.ParseBucketRef(s3Ref)
@@ -66,9 +62,10 @@ Use --tags-only to only prune tags, or --blobs-only to only collect blobs.`,
 				if err != nil {
 					return err
 				}
-				cfg, err = image.GetBucketConfig(cmd.Context(), client, bucket)
-				if err != nil {
-					return err
+				var err2 error
+				cfg, err2 = image.GetBucketConfig(cmd.Context(), client, bucket)
+				if err2 != nil {
+					return err2
 				}
 			}
 
@@ -110,10 +107,9 @@ Use --tags-only to only prune tags, or --blobs-only to only collect blobs.`,
 }
 
 func init() {
-	cleanRunCmd.Flags().BoolVar(&cleanConfirm, "confirm", false, "Actually delete (default is dry-run)")
-	cleanRunCmd.Flags().BoolVar(&cleanTagsOnly, "tags-only", false, "Only prune old tags, skip blob gc")
-	cleanRunCmd.Flags().BoolVar(&cleanBlobsOnly, "blobs-only", false, "Only gc unreferenced blobs, skip tag pruning")
-	cleanRunCmd.Flags().StringVar(&cleanConfig, "config", "", "Path to BucketConfig YAML file (optional; defaults to bucket's s3lo.yaml)")
-	cleanCmd.AddCommand(cleanRunCmd)
+	cleanCmd.Flags().BoolVar(&cleanConfirm, "confirm", false, "Actually delete (default is dry-run)")
+	cleanCmd.Flags().BoolVar(&cleanTagsOnly, "tags-only", false, "Only prune old tags, skip blob gc")
+	cleanCmd.Flags().BoolVar(&cleanBlobsOnly, "blobs-only", false, "Only gc unreferenced blobs, skip tag pruning")
+	cleanCmd.Flags().StringVar(&cleanConfig, "config", "", "Path to BucketConfig YAML file (optional; defaults to bucket's s3lo.yaml)")
 	rootCmd.AddCommand(cleanCmd)
 }
