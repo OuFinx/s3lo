@@ -1,6 +1,28 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+	"os"
+	"time"
+
+	"github.com/schollz/progressbar/v3"
+)
+
+// newProgressBar creates a bytes-based indeterminate progress bar that writes to stderr.
+// Use bar.Add64(size) to advance it, bar.Finish() when done.
+// In non-TTY environments (CI, piped output) it is automatically silenced.
+func newProgressBar(description string) *progressbar.ProgressBar {
+	return progressbar.NewOptions64(
+		-1, // indeterminate — total is unknown upfront
+		progressbar.OptionSetWriter(os.Stderr),
+		progressbar.OptionSetDescription(description),
+		progressbar.OptionShowBytes(true),
+		progressbar.OptionSpinnerType(14),
+		progressbar.OptionThrottle(50*time.Millisecond),
+		progressbar.OptionSetRenderBlankState(true),
+		progressbar.OptionOnCompletion(func() { fmt.Fprint(os.Stderr, "\n") }),
+	)
+}
 
 // formatBytes returns a human-readable byte size string.
 func formatBytes(b int64) string {

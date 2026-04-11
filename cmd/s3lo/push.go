@@ -16,21 +16,16 @@ var pushCmd = &cobra.Command{
 	Args:    cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Pushing %s to %s\n", args[0], args[1])
+		bar := newProgressBar("  uploading")
 		opts := image.PushOptions{
 			Force: pushForce,
-			OnBlob: func(digest string, size int64, skipped bool) {
-				short := digest
-				if len(short) > 19 {
-					short = short[:19]
-				}
-				status := "uploaded"
-				if skipped {
-					status = "skipped (exists)"
-				}
-				fmt.Printf("  sha256:%s  %-10s  %s\n", short, formatBytes(size), status)
+			OnBlob: func(_ string, size int64, _ bool) {
+				bar.Add64(size)
 			},
 		}
-		if err := image.Push(cmd.Context(), args[0], args[1], opts); err != nil {
+		err := image.Push(cmd.Context(), args[0], args[1], opts)
+		bar.Finish()
+		if err != nil {
 			return err
 		}
 		fmt.Println("Done.")
