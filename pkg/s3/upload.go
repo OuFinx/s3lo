@@ -3,6 +3,7 @@ package s3
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -93,7 +94,8 @@ func (c *Client) PutObject(ctx context.Context, bucket, key string, data []byte)
 	return err
 }
 
-// HeadObjectExists returns true if an S3 object exists.
+// HeadObjectExists returns true if an S3 object exists, false if it doesn't (404).
+// Returns an error for non-404 failures (permissions, throttling, network).
 func (c *Client) HeadObjectExists(ctx context.Context, bucket, key string) (bool, error) {
 	s3Client, err := c.ClientForBucket(ctx, bucket)
 	if err != nil {
@@ -104,7 +106,19 @@ func (c *Client) HeadObjectExists(ctx context.Context, bucket, key string) (bool
 		Key:    &key,
 	})
 	if err != nil {
-		return false, nil // treat any error (including 404) as not exists
+		// Check if the error is a 404 (NotFound).
+		var notFound *s3types.NotFound
+		if errors.As(err, &notFound) {
+			return false, nil
+		}
+		// HeadObject returns smithy OperationError wrapping HTTP 404
+		// which may not always map to s3types.NotFound. Check for
+		// "NotFound" or "404" in the error message as a fallback.
+		errMsg := err.Error()
+		if strings.Contains(errMsg, "NotFound") || strings.Contains(errMsg, "404") {
+			return false, nil
+		}
+		return false, err
 	}
 	return true, nil
 }
