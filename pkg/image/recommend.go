@@ -115,10 +115,21 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 				Title: "Schedule s3lo clean to enforce lifecycle rules automatically",
 				Description: "Lifecycle rules are configured in s3lo.yaml but only enforced when\n" +
 					"s3lo clean is run. Schedule it to run automatically:\n\n" +
-					"  # GitHub Actions (nightly):\n" +
-					"  - cron: '0 2 * * *'\n" +
-					"    run: s3lo clean s3://" + bucket + "/ --confirm\n\n" +
-					"  # AWS EventBridge + Lambda: invoke s3lo clean as a scheduled task",
+					"  # GitHub Actions — add to .github/workflows/cleanup.yml:\n" +
+					"  on:\n" +
+					"    schedule:\n" +
+					"      - cron: '0 2 * * *'\n" +
+					"  jobs:\n" +
+					"    clean:\n" +
+					"      runs-on: ubuntu-latest\n" +
+					"      steps:\n" +
+					"        - uses: actions/checkout@v4\n" +
+					"        - run: s3lo clean s3://" + bucket + "/ --confirm\n\n" +
+					"  # AWS EventBridge — run nightly via aws CLI:\n" +
+					"  aws events put-rule --schedule-expression 'cron(0 2 * * ? *)' \\\n" +
+					"    --name s3lo-clean --state ENABLED\n" +
+					"  # Then attach a Lambda or ECS task target that runs:\n" +
+					"  #   s3lo clean s3://" + bucket + "/ --confirm",
 			})
 		} else {
 			result.Findings = append(result.Findings, Finding{"s3lo lifecycle config: not configured", false})
