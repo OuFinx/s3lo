@@ -22,7 +22,7 @@ type MigrateResult struct {
 //  - manifest files are moved to manifests/<image>/<tag>/
 //  - old per-tag objects are deleted
 func Migrate(ctx context.Context, s3BucketRef string) (*MigrateResult, error) {
-	bucket, prefix, err := parseBucketRef(s3BucketRef)
+	bucket, prefix, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}

@@ -1,6 +1,7 @@
 package s3
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"os"
@@ -92,6 +93,38 @@ func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath s
 	}
 	_, err = client.PutObject(ctx, input)
 	return err
+}
+
+// PutObject uploads raw bytes to an S3 key.
+func (c *Client) PutObject(ctx context.Context, bucket, key string, data []byte) error {
+	s3Client, err := c.ClientForBucket(ctx, bucket)
+	if err != nil {
+		return err
+	}
+	size := int64(len(data))
+	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket:        &bucket,
+		Key:           &key,
+		Body:          bytes.NewReader(data),
+		ContentLength: &size,
+	})
+	return err
+}
+
+// HeadObjectExists returns true if an S3 object exists.
+func (c *Client) HeadObjectExists(ctx context.Context, bucket, key string) (bool, error) {
+	s3Client, err := c.ClientForBucket(ctx, bucket)
+	if err != nil {
+		return false, err
+	}
+	_, err = s3Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		return false, nil // treat any error (including 404) as not exists
+	}
+	return true, nil
 }
 
 func buildS3Key(prefix, baseDir, localPath string) string {
