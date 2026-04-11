@@ -26,7 +26,9 @@ Lifecycle rules are read from the bucket's s3lo.yaml. Use --config to override
 with a local file.
 
 Use --tags to only prune tags, or --blobs to only collect blobs.`,
-	Example: `  s3lo clean s3://my-bucket/                  # dry run
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/clean/
+
+  s3lo clean s3://my-bucket/                  # dry run
   s3lo clean s3://my-bucket/ --confirm         # prune tags + gc blobs
   s3lo clean s3://my-bucket/ --tags       # dry run, tags only
   s3lo clean s3://my-bucket/ --blobs      # dry run, blobs only

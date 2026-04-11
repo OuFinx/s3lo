@@ -30,7 +30,9 @@ Available keys:
   lifecycle.keep_last    number (e.g. 10)
   lifecycle.max_age      duration (e.g. 30d, 7d, 168h)
   lifecycle.keep_tags    comma-separated tags (e.g. latest,stable)`,
-	Example: `  # Bucket defaults
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
+
+  # Bucket defaults
   s3lo config set s3://my-bucket/ immutable=false lifecycle.keep_last=10 lifecycle.max_age=90d
 
   # Per-image
@@ -82,7 +84,9 @@ Available keys:
 var configGetCmd = &cobra.Command{
 	Use:   "get <s3-ref>",
 	Short: "Show configuration for a bucket or image",
-	Example: `  s3lo config get s3://my-bucket/           # show all configs
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
+
+  s3lo config get s3://my-bucket/           # show all configs
   s3lo config get s3://my-bucket/myapp      # show effective config for an image`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -122,7 +126,9 @@ Without a key argument, removes all overrides for the image (reverts to defaults
 With a key, removes only that setting.
 
 Valid keys to remove: immutable, lifecycle`,
-	Example: `  s3lo config remove s3://my-bucket/myapp              # remove all overrides
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
+
+  s3lo config remove s3://my-bucket/myapp              # remove all overrides
   s3lo config remove s3://my-bucket/myapp immutable     # remove immutable override
   s3lo config remove s3://my-bucket/myapp lifecycle     # remove lifecycle override`,
 	Args: cobra.RangeArgs(1, 2),
@@ -322,7 +328,9 @@ func printImageConfigFields(img image.ImageConfig, indent string) {
 var configRecommendCmd = &cobra.Command{
 	Use:     "recommend <s3-bucket-ref>",
 	Short:   "Show S3 bucket configuration recommendations",
-	Example: `  s3lo config recommend s3://my-bucket/`,
+	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
+
+  s3lo config recommend s3://my-bucket/`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		result, err := image.Recommend(cmd.Context(), args[0])
