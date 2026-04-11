@@ -81,3 +81,4 @@ Add to the full access policy above:
 | `stats` | GetObject, ListBucket, GetBucketLocation |
 | `config set/get` | GetObject, PutObject, GetBucketLocation |
 | `config recommend` | GetBucketLocation, GetBucketVersioning, GetBucketLifecycleConfiguration, ListMultipartUploads |
+| `scan` | GetObject, HeadObject, ListBucket, GetBucketLocation |

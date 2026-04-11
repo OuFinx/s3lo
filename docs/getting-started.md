@@ -46,7 +46,7 @@ Verify the install:
 
 ```bash
 s3lo version
-# s3lo v1.3.0 (abc1234)
+# s3lo v1.5.0 (abc1234)
 ```
 
 ## 2. Create an S3 bucket

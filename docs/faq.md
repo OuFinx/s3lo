@@ -87,6 +87,26 @@ If a push is in progress and `clean --blobs` runs simultaneously, blobs that hav
 
 ---
 
+## Vulnerability scanning
+
+**Does s3lo include a vulnerability scanner?**
+
+Yes, since v1.5.0. `s3lo scan` downloads an image from S3 and scans it with [Trivy](https://trivy.dev). Trivy is auto-installed to `~/.local/bin/trivy` on first use — s3lo will prompt you, or you can pass `--install-trivy` to skip the prompt in CI.
+
+**Do I need to install Trivy separately?**
+
+No. If Trivy isn't found in `PATH` or `~/.local/bin/`, s3lo offers to download it. Use `--install-trivy` in CI workflows to enable auto-install without a prompt.
+
+**Can I fail a CI build when vulnerabilities are found?**
+
+Yes. Pass `--severity HIGH,CRITICAL` (or any subset of `LOW,MEDIUM,HIGH,CRITICAL`). s3lo exits non-zero when Trivy finds vulnerabilities at or above the requested severity, which fails the workflow step.
+
+**Does scanning require Docker?**
+
+No. `s3lo scan` downloads the image blobs directly from S3 — Docker is not involved.
+
+---
+
 ## Migration
 
 **How do I migrate from ECR?**

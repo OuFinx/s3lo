@@ -144,6 +144,61 @@ jobs:
     s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
     ```
 
+## Vulnerability scanning
+
+Scan an image for vulnerabilities after push. Trivy is auto-installed on first run via `--install-trivy`:
+
+```yaml
+name: Build, Push, Scan
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: OuFinx/s3lo-action@v1
+        with:
+          role-to-assume: arn:aws:iam::123456789012:role/ci-s3lo-role
+          aws-region: us-east-1
+
+      - name: Build and push
+        run: |
+          docker build --platform linux/amd64 -t myapp:${{ github.sha }} .
+          s3lo push myapp:${{ github.sha }} s3://my-bucket/myapp:${{ github.sha }}
+
+      - name: Scan for vulnerabilities
+        run: |
+          s3lo scan s3://my-bucket/myapp:${{ github.sha }} \
+            --severity HIGH,CRITICAL \
+            --install-trivy
+```
+
+The step exits non-zero if `HIGH` or `CRITICAL` vulnerabilities are found, failing the workflow. Remove `--severity` to report all severities without failing.
+
+To upload results to the GitHub Security tab, use `--format sarif`:
+
+```yaml
+      - name: Scan (SARIF)
+        run: |
+          s3lo scan s3://my-bucket/myapp:${{ github.sha }} \
+            --format sarif \
+            --install-trivy > trivy-results.sarif
+
+      - name: Upload SARIF to GitHub Security
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
+```
+
 ## Pull in deployment workflows
 
 ```yaml

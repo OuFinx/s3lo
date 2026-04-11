@@ -35,11 +35,11 @@
 
 ## v1.5.0 — Vulnerability Scanning
 
-- [ ] `s3lo scan` — vulnerability scanning with Trivy
-- [ ] Auto-install Trivy when not found (Y/N prompt, `--install-trivy` flag)
-- [ ] Multi-arch support: `--platform` flag to select platform
-- [ ] Severity filtering: `--severity HIGH,CRITICAL`
-- [ ] Output format control: `--format json|sarif|cyclonedx`
+- [x] `s3lo scan` — vulnerability scanning with Trivy
+- [x] Auto-install Trivy when not found (Y/N prompt, `--install-trivy` flag)
+- [x] Multi-arch support: `--platform` flag to select platform
+- [x] Severity filtering: `--severity HIGH,CRITICAL`
+- [x] Output format control: `--format json|sarif|cyclonedx`
 
 ## v2.0.0 — Security
 
