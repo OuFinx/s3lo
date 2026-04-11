@@ -36,7 +36,7 @@ func LoadBucketConfigFromFile(data []byte) (*BucketConfig, error) {
 	// Validate lifecycle durations.
 	validate := func(lc *LifecycleImageConfig) error {
 		if lc != nil && lc.MaxAge != "" {
-			if _, err := parseDuration(lc.MaxAge); err != nil {
+			if _, err := ParseDuration(lc.MaxAge); err != nil {
 				return err
 			}
 		}
@@ -139,7 +139,7 @@ func evaluateTags(lc *LifecycleImageConfig, tags []tagMeta) ([]tagMeta, error) {
 	var maxAge time.Duration
 	if lc.MaxAge != "" {
 		var err error
-		maxAge, err = parseDuration(lc.MaxAge)
+		maxAge, err = ParseDuration(lc.MaxAge)
 		if err != nil {
 			return nil, err
 		}
@@ -173,8 +173,8 @@ func evaluateTags(lc *LifecycleImageConfig, tags []tagMeta) ([]tagMeta, error) {
 	return toDelete, nil
 }
 
-// parseDuration parses durations like "7d", "30d". Standard Go durations (e.g. "24h") also work.
-func parseDuration(s string) (time.Duration, error) {
+// ParseDuration parses durations like "7d", "30d". Standard Go durations (e.g. "24h") also work.
+func ParseDuration(s string) (time.Duration, error) {
 	if strings.HasSuffix(s, "d") {
 		days, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
 		if err != nil {

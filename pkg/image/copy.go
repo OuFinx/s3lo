@@ -317,7 +317,10 @@ func fetchWithAuth(client *http.Client, rawURL, authToken, registry, image strin
 		if err != nil {
 			return nil, "", fmt.Errorf("auth challenge: %w", err)
 		}
-		req2, _ := http.NewRequest(http.MethodGet, rawURL, nil)
+		req2, err := http.NewRequest(http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, "", fmt.Errorf("create retry request: %w", err)
+		}
 		req2.Header.Set("Accept", req.Header.Get("Accept"))
 		req2.Header.Set("Authorization", "Bearer "+token)
 		resp2, err := client.Do(req2)

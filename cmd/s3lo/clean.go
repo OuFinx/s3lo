@@ -41,32 +41,9 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 		s3Ref := args[0]
 
 		if !cleanBlobs {
-			var cfg *image.BucketConfig
-
-			if cleanConfig != "" {
-				data, err := os.ReadFile(cleanConfig)
-				if err != nil {
-					return fmt.Errorf("read config file: %w", err)
-				}
-				var err2 error
-				cfg, err2 = image.LoadBucketConfigFromFile(data)
-				if err2 != nil {
-					return err2
-				}
-			} else {
-				bucket, _, err := image.ParseBucketRef(s3Ref)
-				if err != nil {
-					return err
-				}
-				client, err := s3client.NewClient(cmd.Context())
-				if err != nil {
-					return err
-				}
-				var err2 error
-				cfg, err2 = image.GetBucketConfig(cmd.Context(), client, bucket)
-				if err2 != nil {
-					return err2
-				}
+			cfg, err := loadCleanConfig(cmd, s3Ref)
+			if err != nil {
+				return err
 			}
 
 			lcResult, err := image.ApplyLifecycle(cmd.Context(), s3Ref, cfg, dryRun)
@@ -104,6 +81,25 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 
 		return nil
 	},
+}
+
+func loadCleanConfig(cmd *cobra.Command, s3Ref string) (*image.BucketConfig, error) {
+	if cleanConfig != "" {
+		data, err := os.ReadFile(cleanConfig)
+		if err != nil {
+			return nil, fmt.Errorf("read config file: %w", err)
+		}
+		return image.LoadBucketConfigFromFile(data)
+	}
+	bucket, _, err := image.ParseBucketRef(s3Ref)
+	if err != nil {
+		return nil, err
+	}
+	client, err := s3client.NewClient(cmd.Context())
+	if err != nil {
+		return nil, err
+	}
+	return image.GetBucketConfig(cmd.Context(), client, bucket)
 }
 
 func init() {

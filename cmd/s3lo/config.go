@@ -217,6 +217,9 @@ func applyToImageConfig(img *image.ImageConfig, key, val string) error {
 		}
 		img.Lifecycle.KeepLast = n
 	case "lifecycle.max_age":
+		if _, err := image.ParseDuration(val); err != nil {
+			return fmt.Errorf("lifecycle.max_age must be a duration like 30d or 168h, got %q", val)
+		}
 		if img.Lifecycle == nil {
 			img.Lifecycle = &image.LifecycleImageConfig{}
 		}
