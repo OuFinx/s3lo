@@ -11,11 +11,13 @@ Complete reference for all s3lo features, commands, and usage patterns.
 - [Commands](#commands)
   - [push](#push)
   - [pull](#pull)
+  - [copy](#copy)
   - [list](#list)
   - [inspect](#inspect)
   - [delete](#delete)
-  - [gc](#gc)
-  - [migrate](#migrate)
+  - [clean](#clean)
+  - [stats](#stats)
+  - [config](#config)
   - [version](#version)
 - [Authentication](#authentication)
 - [IAM Policies](#iam-policies)
@@ -33,16 +35,12 @@ s3lo exports a Docker image using the Docker daemon, converts it to an OCI Image
 
 The key insight is that every blob (image layer and config) is content-addressable by its SHA256 digest. This means:
 - A blob is never uploaded twice. If two images share a layer, it is stored once.
-- Downloads are parallelized - multiple blobs are fetched concurrently.
-- Integrity is verifiable - SHA256 is checked after download.
+- Downloads are parallelized — multiple blobs are fetched concurrently.
+- Integrity is verifiable — SHA256 is checked after download.
 
 ---
 
 ## S3 Storage Layout
-
-s3lo has two storage layouts. v1.1.0 is the current default. Both are fully supported.
-
-### v1.1.0 Layout (current)
 
 Blobs are stored globally, shared across all images in the bucket. Manifest metadata is stored per image tag.
 
@@ -59,7 +57,6 @@ s3://my-bucket/
         manifest.json     <- OCI manifest (references blob digests)
         index.json        <- OCI image index
         oci-layout        <- OCI layout marker
-    myapp/
       v2.0/
         manifest.json
         ...
@@ -67,31 +64,13 @@ s3://my-bucket/
       latest/
         manifest.json
         ...
+  s3lo.yaml               <- bucket config (immutability, lifecycle rules)
 ```
 
 Benefits:
 - Blobs are deduplicated bucket-wide. Two images sharing a base layer store it once.
-- Blobs use S3 Intelligent-Tiering automatically - infrequently accessed layers move to cheaper storage tiers.
+- Blobs use S3 Intelligent-Tiering automatically — infrequently accessed layers move to cheaper storage tiers.
 - Manifest metadata is cheap (tiny JSON files) and stays in S3 Standard.
-
-### v1.0.0 Layout (legacy, still supported)
-
-Everything was stored under a per-tag prefix. Each tag had its own copy of every blob.
-
-```
-s3://my-bucket/
-  myapp/
-    v1.0/
-      manifest.json
-      index.json
-      oci-layout
-      blobs/
-        sha256/
-          a1b2c3d4...     <- layer (per-tag copy)
-          e5f6g7h8...
-```
-
-This layout is still fully readable by s3lo and s3lo-operator. Use `s3lo migrate` to convert to v1.1.0.
 
 ---
 
@@ -109,11 +88,14 @@ s3lo push <local-image> <s3-ref>
 - `<local-image>` - image name and tag as it appears in `docker images`, e.g. `myapp:v1.0`
 - `<s3-ref>` - destination in `s3://bucket/image:tag` format
 
+**Flags:**
+- `--force` - overwrite an existing tag even if the image has immutability enabled
+
 **What it does:**
 1. Exports the image from the local Docker daemon as a tar archive.
 2. Parses the OCI Image Layout from the archive.
 3. Checks which blobs already exist in `blobs/sha256/` on S3 (deduplication check).
-4. Uploads missing blobs in parallel to `blobs/sha256/<digest>` with S3 Intelligent-Tiering.
+4. Uploads missing blobs to `blobs/sha256/<digest>` with S3 Intelligent-Tiering.
 5. Uploads manifest files to `manifests/<image>/<tag>/`.
 
 **Examples:**
@@ -121,17 +103,30 @@ s3lo push <local-image> <s3-ref>
 # Push by tag
 s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0
 
-# Push to a nested image name (mirrors docker hub-style paths)
+# Push to a nested image name
 s3lo push org/backend:latest s3://my-bucket/org/backend:latest
 
-# Push with an explicit version tag
+# Push with a git commit SHA tag
 s3lo push myapp:$(git rev-parse --short HEAD) s3://my-bucket/myapp:$(git rev-parse --short HEAD)
+
+# Force-overwrite an immutable tag
+s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --force
+```
+
+**Progress output:**
+```
+Pushing myapp:v1.0 to s3://my-bucket/myapp:v1.0
+  sha256:a1b2c3d4e5f67890  45.2 MB    uploaded
+  sha256:e5f6g7h8i9j01234  12.1 MB    skipped (exists)
+  sha256:i9j0k1l2m3n45678   1.3 MB    uploaded
+Done.
 ```
 
 **Notes:**
-- The local image must be available in Docker (`docker images` shows it). If it is not present, run `docker pull` first.
+- The local image must be available in Docker (`docker images`). If not, run `docker pull` first.
 - On Apple Silicon (arm64), push `linux/amd64` images for EKS compatibility: `docker pull --platform linux/amd64 myapp:v1.0`.
-- Pushing the same image twice is safe and fast - only changed or missing blobs are uploaded.
+- Pushing the same image twice is safe and fast — only changed or missing blobs are uploaded.
+- If the image has immutability enabled, pushing to an existing tag fails unless `--force` is passed.
 
 ---
 
@@ -148,7 +143,7 @@ s3lo pull <s3-ref> [image-tag]
 - `[image-tag]` - optional tag to apply after import (defaults to `image:tag` from the ref)
 
 **What it does:**
-1. Downloads `manifest.json` from S3 (tries v1.1.0 layout first, falls back to v1.0.0).
+1. Downloads `manifest.json` from S3.
 2. Downloads all blobs in parallel.
 3. Reconstructs a local OCI Image Layout on disk.
 4. Imports it into the local Docker daemon via `docker load`.
@@ -166,8 +161,76 @@ s3lo pull s3://my-bucket/myapp:v1.0 myapp:local
 s3lo pull s3://my-bucket/myapp:abc1234
 ```
 
-**Backward compatibility:**
-s3lo detects which layout the image was stored in. If `manifests/<image>/<tag>/manifest.json` does not exist, it falls back to `<image>/<tag>/manifest.json` (v1.0.0). No configuration needed - this is automatic.
+---
+
+### copy
+
+Copy an image to S3 without pulling it to the local Docker daemon.
+
+```
+s3lo copy <src> <s3-dest>
+```
+
+**Arguments:**
+- `<src>` - source image. Can be an S3 reference or an OCI registry reference.
+- `<s3-dest>` - destination in `s3://bucket/image:tag` format.
+
+**Source formats supported:**
+
+| Source | Example |
+|--------|---------|
+| S3 bucket | `s3://source-bucket/myapp:v1.0` |
+| ECR | `123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0` |
+| Docker Hub | `docker.io/library/nginx:latest` |
+| Any OCI registry | `registry.example.com/myapp:v1.0` |
+
+**Examples:**
+```bash
+# Copy between S3 buckets
+s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
+
+# Copy from ECR to S3 (auto-authenticates using your AWS credentials)
+s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
+
+# Copy from Docker Hub to S3
+s3lo copy docker.io/library/nginx:latest s3://my-bucket/nginx:latest
+
+# Copy from any OCI-compatible registry
+s3lo copy ghcr.io/owner/myapp:v1.0 s3://my-bucket/myapp:v1.0
+```
+
+**How it works:**
+
+*S3-to-S3 (same bucket):*
+Uses S3 server-side `CopyObject` for blobs — no data transfer, no cost, instant.
+
+*S3-to-S3 (different buckets):*
+Downloads each blob to a local temp file, uploads to the destination bucket.
+
+*ECR-to-S3:*
+Calls `ecr:GetAuthorizationToken` using your AWS credentials to get a temporary token, then pulls manifests and blobs from the ECR registry API and uploads them to S3.
+
+*Other OCI registries:*
+Attempts unauthenticated access first. On 401, performs the standard Bearer token challenge flow (`WWW-Authenticate` header).
+
+**Blob deduplication:**
+Before uploading each blob, copy checks whether it already exists at the destination. Existing blobs are skipped.
+
+**Output:**
+```
+Copying 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 to s3://my-bucket/myapp:v1.0
+Done. 4 blob(s) copied, 1 skipped (already exist).
+```
+
+**IAM requirements for ECR source:**
+```json
+{
+  "Effect": "Allow",
+  "Action": ["ecr:GetAuthorizationToken"],
+  "Resource": "*"
+}
+```
+Plus read access to the ECR repository.
 
 ---
 
@@ -179,18 +242,9 @@ List images stored in an S3 bucket.
 s3lo list <s3-bucket-ref>
 ```
 
-**Arguments:**
-- `<s3-bucket-ref>` - bucket reference in `s3://bucket/` format
-
-**What it does:**
-Scans both `manifests/` prefix (v1.1.0 images) and the root prefix (v1.0.0 images, skipping `blobs` and `manifests` keys). Results are merged and deduplicated.
-
 **Examples:**
 ```bash
-# List all images in the bucket
 s3lo list s3://my-bucket/
-
-# Pipe to grep to filter
 s3lo list s3://my-bucket/ | grep myapp
 ```
 
@@ -212,19 +266,9 @@ Show image metadata including size, layers, and creation time.
 s3lo inspect <s3-ref>
 ```
 
-**Arguments:**
-- `<s3-ref>` - image reference in `s3://bucket/image:tag` format
-
-**What it does:**
-Downloads and parses the OCI manifest and image config. Displays layers, total compressed size, architecture, OS, and creation timestamp.
-
 **Examples:**
 ```bash
-# Inspect a specific tag
 s3lo inspect s3://my-bucket/myapp:v1.0
-
-# Inspect to check architecture before deploying
-s3lo inspect s3://my-bucket/myapp:v1.0 | grep -i arch
 ```
 
 **Output example:**
@@ -246,127 +290,274 @@ Total: 58.7 MB
 
 ### delete
 
-Remove an image tag from S3. Only removes the manifest files, not the blobs.
+Remove an image tag from S3.
 
 ```
 s3lo delete <s3-ref>
 ```
 
-**Arguments:**
-- `<s3-ref>` - image reference in `s3://bucket/image:tag` format
-
 **What it does:**
-Deletes all files under `manifests/<image>/<tag>/`. The blobs themselves are not touched - they remain in `blobs/sha256/` and may be referenced by other image tags. To clean up unreferenced blobs, run `s3lo gc` after deleting tags.
+Deletes all files under `manifests/<image>/<tag>/`. Blobs are not touched — they remain in `blobs/sha256/` and may be referenced by other tags. Run `s3lo clean --blobs` after deleting tags to reclaim blob storage.
 
 **Examples:**
 ```bash
 # Delete a tag
 s3lo delete s3://my-bucket/myapp:v1.0
 
-# Delete and then garbage collect
+# Delete a tag then reclaim blob storage
 s3lo delete s3://my-bucket/myapp:v1.0
-s3lo gc s3://my-bucket/ --confirm
+s3lo clean s3://my-bucket/ --blobs --confirm
 ```
 
 **Notes:**
 - Deleting a tag that does not exist returns an error.
-- Only works on v1.1.0 layout images. For v1.0.0 images, run `s3lo migrate` first.
-- Deleting a tag that is still used by a running container does not affect the running container - the blobs remain available.
+- Deleting a tag does not affect running containers — the blobs remain available until gc removes them.
 
 ---
 
-### gc
+### clean
 
-Garbage collect unreferenced blobs from the global blob store.
+Prune old image tags according to lifecycle rules and garbage collect unreferenced blobs.
 
 ```
-s3lo gc <s3-bucket-ref> [--confirm]
+s3lo clean <s3-bucket-ref> [flags]
 ```
-
-**Arguments:**
-- `<s3-bucket-ref>` - bucket reference in `s3://bucket/` format
 
 **Flags:**
-- `--confirm` - actually delete unreferenced blobs. Without this flag, only a dry run is performed.
+- `--confirm` - actually delete (default is dry-run)
+- `--tags` - only prune old tags, skip blob GC
+- `--blobs` - only GC unreferenced blobs, skip tag pruning
+- `--config <file>` - path to a local BucketConfig YAML file (optional; defaults to bucket's `s3lo.yaml`)
 
 **What it does:**
-1. Reads all manifests under `manifests/` to collect referenced blob digests.
-2. Lists all keys under `blobs/sha256/`.
-3. Compares the two sets.
-4. Blobs not referenced by any manifest are candidates for deletion.
-5. Blobs uploaded within the last hour are always skipped (grace period for in-progress pushes).
-6. In dry-run mode, reports what would be deleted without making changes.
-7. With `--confirm`, deletes the unreferenced blobs in batches.
+
+*Tag pruning (default, skipped with `--blobs`):*
+1. Reads lifecycle rules from `s3lo.yaml` in the bucket (or `--config` file).
+2. For each image, evaluates all tags against the configured rules.
+3. Tags that violate `keep_last`, `max_age`, or are not in `keep_tags` are candidates for deletion.
+4. In dry-run mode, reports what would be deleted. With `--confirm`, deletes manifest files.
+
+*Blob GC (default, skipped with `--tags`):*
+1. Reads all `manifest.json` files in the bucket in parallel (20 concurrent workers).
+2. Builds a set of all referenced blob digests.
+3. Lists all blobs in `blobs/sha256/`.
+4. Blobs not referenced by any manifest and older than 1 hour are candidates for deletion.
+5. In dry-run mode, reports unreferenced blobs. With `--confirm`, deletes them.
 
 **Examples:**
 ```bash
-# Dry run - see what would be deleted
-s3lo gc s3://my-bucket/
+# Dry run — see what would be deleted (safe, no changes)
+s3lo clean s3://my-bucket/
 
-# Actually delete
-s3lo gc s3://my-bucket/ --confirm
+# Full cleanup — prune tags + GC blobs
+s3lo clean s3://my-bucket/ --confirm
+
+# Only prune old tags (don't touch blobs yet)
+s3lo clean s3://my-bucket/ --tags --confirm
+
+# Only GC unreferenced blobs (e.g. after manual deletes)
+s3lo clean s3://my-bucket/ --blobs --confirm
+
+# Use a local config file instead of the bucket's s3lo.yaml
+s3lo clean s3://my-bucket/ --config override.yaml --confirm
 ```
 
 **Output (dry run):**
 ```
-Dry run: 3 unreferenced blob(s) found (112.40 MB)
-Run with --confirm to delete them.
+Tags:  12 would be deleted (out of 47 evaluated)
+Blobs: 3 unreferenced (112.40 MB would be freed)
+
+Run with --confirm to apply changes.
 ```
 
 **Output (confirmed):**
 ```
-Deleted 3 blob(s), 112.40 MB freed
+Tags:  12 deleted (out of 47 evaluated)
+Blobs: 3 deleted (112.40 MB freed)
 ```
 
-**When to run gc:**
-- After `s3lo delete` to reclaim space from deleted tags.
-- Periodically as a scheduled task if you push frequently and delete old tags.
-- After `s3lo migrate` once you have verified the migration is complete.
+**Lifecycle rule fields:**
+- `keep_last` - keep the N most recently pushed tags. 0 or omitted means no limit.
+- `max_age` - delete tags older than this duration. Supports `Nd` (e.g. `7d`, `90d`) and Go duration strings (e.g. `168h`).
+- `keep_tags` - tag names never deleted regardless of other rules.
+
+When both `keep_last` and `max_age` are set, a tag is deleted if it violates either condition.
 
 **Safety:**
-- The 1-hour grace period prevents a race condition where a blob is being pushed while gc runs. A blob pushed less than an hour ago will not be deleted even if no manifest references it yet.
-- Always run without `--confirm` first to see what will be deleted.
+- Default is always dry-run. No deletions without `--confirm`.
+- The 1-hour blob grace period prevents race conditions with in-progress pushes.
+- Configure lifecycle rules with `s3lo config set` before running.
+
+**Scheduling:**
+`clean` does not run automatically. Schedule it via CI, cron, or Lambda to enforce lifecycle rules. See [CI Integration](#ci-integration) for examples.
 
 ---
 
-### migrate
+### stats
 
-Convert images from v1.0.0 per-tag layout to v1.1.0 global blob layout.
+Show storage usage, deduplication savings, and cost estimate for a bucket.
 
 ```
-s3lo migrate <s3-bucket-ref>
+s3lo stats <s3-bucket-ref>
 ```
-
-**Arguments:**
-- `<s3-bucket-ref>` - bucket reference in `s3://bucket/` format
 
 **What it does:**
-1. Scans the bucket root for v1.0.0 image prefixes (directories that are not `blobs` or `manifests`).
-2. For each image tag found:
-   - Copies all blobs from `<image>/<tag>/blobs/sha256/` to `blobs/sha256/`.
-   - Copies manifest files to `manifests/<image>/<tag>/`.
-   - Deletes the old per-tag prefix.
-3. Reports how many image tags and blobs were migrated.
+1. Scans all manifests under `manifests/` to count images, tags, and sum logical blob bytes.
+2. Lists all blobs under `blobs/sha256/` to get actual stored bytes and storage class breakdown.
+3. Calculates deduplication savings: logical bytes minus actual stored bytes.
+4. Estimates monthly cost vs ECR equivalent.
 
 **Examples:**
 ```bash
-# Migrate the whole bucket
-s3lo migrate s3://my-bucket/
-
-# Safe to run again if interrupted
-s3lo migrate s3://my-bucket/
+s3lo stats s3://my-bucket/
 ```
 
 **Output:**
 ```
-Migrated 5 image tag(s), 23 blob(s) moved to global store
+Bucket: s3://my-bucket/
+
+Images:       12
+Tags:         47
+Unique blobs: 89
+Total size:   2.4 GB
+
+Dedup savings: 1.8 GB (43% saved)
+
+Storage class breakdown:
+  INTELLIGENT_TIERING:           2.2 GB (91%)
+  STANDARD:                      0.2 GB (9%)
+
+Estimated monthly cost: $0.06
+vs ECR equivalent:      $0.24 (4.3x cheaper)
 ```
 
-**Notes:**
-- Idempotent - safe to run multiple times. CopyObject overwrites with the same content. If a tag was already migrated, it will be skipped (no old keys to delete).
-- Both old and new layouts remain readable during and after migration - the fallback in `pull`, `inspect`, and `list` ensures continuity.
-- Run `s3lo gc --confirm` after migration to clean up any blobs that were duplicated (same blob existed in multiple per-tag prefixes).
-- The migration does not affect running containers or nodes using s3lo-operator.
+---
+
+### config
+
+Manage per-bucket s3lo configuration stored at `s3://bucket/s3lo.yaml`.
+
+```
+s3lo config set <s3-ref> <key>=<value> [<key>=<value> ...]
+s3lo config get <s3-ref>
+s3lo config remove <s3-ref> [key]
+s3lo config recommend <s3-bucket-ref>
+```
+
+Configuration is stored per-image. Use `s3://bucket/` to set bucket-wide defaults, or `s3://bucket/myapp` to set overrides for a specific image. Glob patterns (e.g. `s3://bucket/dev/*`) are supported.
+
+**Available keys:**
+
+| Key | Values | Description |
+|-----|--------|-------------|
+| `immutable` | `true` / `false` | Reject pushes that would overwrite an existing tag |
+| `lifecycle.keep_last` | integer | Keep the N most recently pushed tags |
+| `lifecycle.max_age` | duration (e.g. `30d`, `168h`) | Delete tags older than this |
+| `lifecycle.keep_tags` | comma-separated tags | Tags never deleted by lifecycle |
+
+---
+
+#### config set
+
+```bash
+# Set bucket-wide defaults
+s3lo config set s3://my-bucket/ immutable=false lifecycle.keep_last=10 lifecycle.max_age=90d
+
+# Set per-image overrides
+s3lo config set s3://my-bucket/myapp immutable=true lifecycle.keep_last=5 lifecycle.keep_tags=stable,latest
+
+# Set for a glob pattern (all dev/* images)
+s3lo config set s3://my-bucket/dev/* lifecycle.max_age=7d lifecycle.keep_tags=latest
+```
+
+#### config get
+
+```bash
+# Show all config (defaults + per-image overrides)
+s3lo config get s3://my-bucket/
+
+# Show effective config for a specific image (with source labels)
+s3lo config get s3://my-bucket/myapp
+```
+
+**Output (`config get s3://my-bucket/`):**
+```
+Bucket: s3://my-bucket/
+
+Default:
+  immutable:                     false
+  lifecycle.keep_last:           10
+  lifecycle.max_age:             90d
+
+Images:
+  myapp
+    immutable:                   true
+    lifecycle.keep_last:         5
+    lifecycle.keep_tags:         stable, latest
+  dev/*
+    lifecycle.max_age:           7d
+    lifecycle.keep_tags:         latest
+```
+
+**Output (`config get s3://my-bucket/myapp`):**
+```
+Image: myapp (s3://my-bucket/)
+
+  immutable:                     true   [image]
+  lifecycle.keep_last:           5      [image]
+  lifecycle.max_age:             90d    [default]
+  lifecycle.keep_tags:           stable, latest  [image]
+```
+
+#### config remove
+
+```bash
+# Remove all overrides for an image (reverts to defaults)
+s3lo config remove s3://my-bucket/myapp
+
+# Remove a specific override
+s3lo config remove s3://my-bucket/myapp immutable
+s3lo config remove s3://my-bucket/myapp lifecycle
+```
+
+#### config recommend
+
+Analyzes the actual bucket state and provides data-driven recommendations.
+
+```bash
+s3lo config recommend s3://my-bucket/
+```
+
+**What it checks:**
+- Versioning status (should be disabled for s3lo buckets)
+- Existing S3 lifecycle rules
+- Incomplete multipart uploads
+- Whether lifecycle rules are configured in `s3lo.yaml`
+
+**Output:**
+```
+Analysis for s3://my-bucket/:
+
+  [good] Versioning: disabled
+  [bad]  S3 lifecycle rules: none
+  [good] Incomplete multipart uploads: none
+  [bad]  s3lo lifecycle config: not configured
+
+Recommendations:
+
+1. Add S3 lifecycle rule to abort incomplete multipart uploads
+   ...
+
+2. Configure lifecycle rules to automatically clean old tags
+   s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
+   s3lo clean s3://my-bucket/ --confirm
+```
+
+**Config storage:**
+The config is a YAML file stored at `s3://bucket/s3lo.yaml`. It is read on every `push` call and by `clean`. Requires `s3:GetObject` and `s3:PutObject` permissions.
+
+**Pattern matching:**
+When multiple patterns match an image, the most specific wins: exact matches take precedence over globs; longer patterns take precedence over shorter ones.
 
 ---
 
@@ -380,7 +571,7 @@ s3lo version
 
 **Output:**
 ```
-s3lo v1.1.0 (abc1234)
+s3lo v1.2.0 (abc1234)
 ```
 
 ---
@@ -394,9 +585,10 @@ s3lo uses the standard AWS SDK credential chain. It does not have its own authen
 3. `~/.aws/credentials` and `~/.aws/config` (default profile)
 4. IAM instance profile (EC2, ECS task role, etc.)
 5. EKS Pod Identity / IRSA
+6. OIDC web identity token (CI/CD)
 
 **Region:**
-s3lo auto-detects the bucket region using `s3:GetBucketLocation`. You do not need to specify a region. The environment variable `AWS_DEFAULT_REGION` is respected if set.
+s3lo auto-detects the bucket region using `s3:GetBucketLocation`. You do not need to specify a region.
 
 **Using named profiles:**
 ```bash
@@ -439,8 +631,6 @@ AWS_PROFILE=prod s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0
 }
 ```
 
-Required for: `push`, `delete`, `gc`, `migrate`.
-
 ### Read-only (pull only)
 
 ```json
@@ -464,19 +654,22 @@ Required for: `push`, `delete`, `gc`, `migrate`.
 }
 ```
 
-Required for: `pull`, `list`, `inspect`.
-
 ### Per-command breakdown
 
 | Command | Required S3 Actions |
 |---------|---------------------|
 | push | GetObject, PutObject, HeadObject, ListBucket, GetBucketLocation |
 | pull | GetObject, HeadObject, ListBucket, GetBucketLocation |
+| copy (S3 src) | GetObject, PutObject, HeadObject, ListBucket, GetBucketLocation |
+| copy (ECR src) | Same as push, plus `ecr:GetAuthorizationToken` |
 | list | ListBucket, GetBucketLocation |
 | inspect | GetObject, GetBucketLocation |
-| delete | GetObject, DeleteObject, ListBucket, GetBucketLocation |
-| gc | GetObject, DeleteObject, ListBucket, GetBucketLocation |
-| migrate | GetObject, PutObject, DeleteObject, ListBucket, GetBucketLocation |
+| delete | DeleteObject, ListBucket, GetBucketLocation |
+| clean | GetObject, DeleteObject, ListBucket, GetBucketLocation |
+| stats | GetObject, ListBucket, GetBucketLocation |
+| config set | GetObject, PutObject, GetBucketLocation |
+| config get | GetObject, GetBucketLocation |
+| config recommend | GetBucketLocation, GetBucketVersioning, GetBucketLifecycleConfiguration, ListMultipartUploads |
 
 ---
 
@@ -499,14 +692,8 @@ Manifest files (small JSON, accessed on every pull) are stored in **S3 Standard*
 | Storage Class | Per GB/month | Best for |
 |---------------|--------------|----------|
 | S3 Standard | $0.023 | Manifests, frequently pulled images |
-| S3 Intelligent-Tiering | $0.023 (frequent) to $0.004 (deep archive) | Blobs - automatic tiering |
+| S3 Intelligent-Tiering | $0.023 (frequent) to $0.004 (deep archive) | Blobs — automatic tiering |
 | ECR | $0.10 | (comparison baseline) |
-
-For a typical repository where most image versions are rarely pulled after the first month, Intelligent-Tiering reduces blob storage cost by 40-95% compared to S3 Standard, and 60-99% compared to ECR.
-
-### Deduplication additional savings
-
-With v1.1.0 global blob deduplication, every blob is stored once regardless of how many image tags reference it. If your images share a large base layer (e.g. a 200 MB Ubuntu layer), that 200 MB is stored and billed once, not once per tag.
 
 ---
 
@@ -521,7 +708,7 @@ s3lo deduplicates at the blob level using SHA256 content addressing.
 
 This means:
 - Two different image tags with the same base layer store that layer once.
-- Rebuilding an image with only code changes does not re-upload unchanged layers (OS layer, dependency layer, etc.).
+- Rebuilding an image with only code changes does not re-upload unchanged layers.
 - Pushing the same tag twice uploads nothing if the image is unchanged.
 
 **Scope:**
@@ -551,7 +738,7 @@ import (
     "github.com/OuFinx/s3lo/pkg/ref"   // Parse s3:// references
     "github.com/OuFinx/s3lo/pkg/oci"   // OCI manifest and image config types
     "github.com/OuFinx/s3lo/pkg/s3"    // S3 client with region auto-detection
-    "github.com/OuFinx/s3lo/pkg/image" // Push, pull, list, inspect, delete, gc, migrate
+    "github.com/OuFinx/s3lo/pkg/image" // Push, pull, list, inspect, delete, gc, stats, copy
 )
 ```
 
@@ -560,81 +747,47 @@ All functions accept `context.Context` as the first argument for cancellation an
 ### Push an image
 
 ```go
-package main
-
-import (
-    "context"
-    "log"
-
-    "github.com/OuFinx/s3lo/pkg/image"
-)
-
-func main() {
-    ctx := context.Background()
-    if err := image.Push(ctx, "myapp:v1.0", "s3://my-bucket/myapp:v1.0"); err != nil {
-        log.Fatal(err)
-    }
-}
+err := image.Push(ctx, "myapp:v1.0", "s3://my-bucket/myapp:v1.0", image.PushOptions{})
 ```
 
 ### Pull an image
 
 ```go
-// Pull and import into local Docker daemon
-if err := image.Pull(ctx, "s3://my-bucket/myapp:v1.0", "myapp:v1.0"); err != nil {
-    log.Fatal(err)
-}
+err := image.Pull(ctx, "s3://my-bucket/myapp:v1.0", "myapp:v1.0", image.PullOptions{})
 ```
 
 ### List images
 
 ```go
 images, err := image.List(ctx, "s3://my-bucket/")
-if err != nil {
-    log.Fatal(err)
-}
-for _, img := range images {
-    fmt.Println(img)
-}
 ```
 
 ### Inspect metadata
 
 ```go
 meta, err := image.Inspect(ctx, "s3://my-bucket/myapp:v1.0")
-if err != nil {
-    log.Fatal(err)
-}
 fmt.Printf("arch: %s, layers: %d\n", meta.Architecture, len(meta.Layers))
 ```
 
 ### Garbage collect
 
 ```go
-result, err := image.GC(ctx, "s3://my-bucket/", false) // true = dry run
-if err != nil {
-    log.Fatal(err)
-}
+result, err := image.GC(ctx, "s3://my-bucket/", false) // false = not dry run
 fmt.Printf("deleted %d blobs, freed %d bytes\n", result.Deleted, result.FreedBytes)
 ```
 
-### Migrate
+### Apply lifecycle rules
 
 ```go
-result, err := image.Migrate(ctx, "s3://my-bucket/")
-if err != nil {
-    log.Fatal(err)
-}
-fmt.Printf("migrated %d images, %d blobs moved\n", result.Images, result.BlobsMoved)
+cfg, err := image.GetBucketConfig(ctx, client, "my-bucket")
+result, err := image.ApplyLifecycle(ctx, "s3://my-bucket/", cfg, false)
+fmt.Printf("deleted %d tags out of %d evaluated\n", result.Deleted, result.Evaluated)
 ```
 
 ### Parse a reference
 
 ```go
 r, err := ref.Parse("s3://my-bucket/myapp:v1.0")
-if err != nil {
-    log.Fatal(err)
-}
 fmt.Println(r.Bucket) // "my-bucket"
 fmt.Println(r.Image)  // "myapp"
 fmt.Println(r.Tag)    // "v1.0"
@@ -644,7 +797,7 @@ fmt.Println(r.Tag)    // "v1.0"
 
 ## CI Integration
 
-### GitHub Actions
+### GitHub Actions — push on commit
 
 ```yaml
 name: Build and Push
@@ -684,6 +837,38 @@ jobs:
         run: s3lo push myapp:${{ github.sha }} s3://my-bucket/myapp:latest
 ```
 
+### GitHub Actions — scheduled cleanup
+
+```yaml
+name: Cleanup
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # nightly at 2 AM
+
+jobs:
+  clean:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::123456789:role/ci-s3lo-role
+          aws-region: us-east-1
+
+      - name: Install s3lo
+        run: |
+          curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_linux_amd64.tar.gz
+          tar xzf s3lo.tar.gz && chmod +x s3lo && sudo mv s3lo /usr/local/bin/
+
+      - name: Clean old tags and unreferenced blobs
+        run: s3lo clean s3://my-bucket/ --confirm
+```
+
 ### GitLab CI
 
 ```yaml
@@ -709,46 +894,13 @@ push-to-s3:
     - s3lo push $IMAGE_NAME:$CI_COMMIT_SHA s3://$S3_BUCKET/$IMAGE_NAME:$CI_COMMIT_SHA
 ```
 
-### Scheduled garbage collection
-
-A simple cron job or scheduled CI workflow to periodically reclaim space:
-
-```yaml
-# GitHub Actions scheduled workflow
-name: GC
-
-on:
-  schedule:
-    - cron: '0 3 * * *'  # daily at 3 AM
-
-jobs:
-  gc:
-    runs-on: ubuntu-latest
-    permissions:
-      id-token: write
-      contents: read
-    steps:
-      - uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: arn:aws:iam::123456789:role/ci-s3lo-role
-          aws-region: us-east-1
-
-      - name: Install s3lo
-        run: |
-          curl -Lo s3lo.tar.gz https://github.com/OuFinx/s3lo/releases/latest/download/s3lo_linux_amd64.tar.gz
-          tar xzf s3lo.tar.gz && chmod +x s3lo && sudo mv s3lo /usr/local/bin/
-
-      - name: Run GC
-        run: s3lo gc s3://my-bucket/ --confirm
-```
-
 ---
 
 ## FAQ
 
 **Q: Can I use s3lo without Docker?**
 
-Not currently. s3lo uses the Docker daemon to export images (`docker save`) and to import them (`docker load`). Docker must be running locally. Future versions may support direct OCI tarball operations without Docker.
+Not currently. s3lo uses the Docker daemon to export images (`docker save`) and to import them (`docker load`). Docker must be running locally.
 
 **Q: Does s3lo support multi-architecture images?**
 
@@ -756,28 +908,26 @@ Not yet. Multi-arch support (OCI Image Index) is planned for v1.3.0. Currently, 
 
 **Q: What happens if a push is interrupted?**
 
-Blobs uploaded before the interruption remain in S3. Re-running the push will skip those blobs and continue from where it left off. The manifest files are uploaded last - if the push is interrupted before the manifest is written, the image will not appear in `s3lo list` but the orphaned blobs will be cleaned up by `s3lo gc`.
+Blobs uploaded before the interruption remain in S3. Re-running the push will skip those blobs and continue. The manifest files are uploaded last — if the push is interrupted before the manifest is written, the image will not appear in `s3lo list` but the orphaned blobs will be cleaned up by `s3lo clean --blobs`.
 
 **Q: Can two pushes run in parallel to the same tag?**
 
-This is a race condition. The last manifest to be written wins. Blob uploads are safe to parallelize (same content, same key), but two simultaneous pushes of different images could result in an inconsistent state if they interleave. It is best to serialize pushes to the same tag.
+This is a race condition. The last manifest to be written wins. Blob uploads are safe to parallelize (same content, same key), but two simultaneous pushes of different images could result in an inconsistent manifest. Serialize pushes to the same tag.
 
 **Q: How do I delete all tags for an image?**
 
-Run `s3lo list` to find all tags, then delete each one:
 ```bash
 s3lo list s3://my-bucket/ | grep "myapp:" | while read ref; do
   s3lo delete "s3://my-bucket/$ref"
 done
-s3lo gc s3://my-bucket/ --confirm
+s3lo clean s3://my-bucket/ --blobs --confirm
 ```
 
 **Q: Is there a way to copy an image between buckets?**
 
-`s3lo copy` is planned for v1.2.0. Until then, you can pull to local Docker and push to the destination bucket:
+Yes, use `s3lo copy`:
 ```bash
-s3lo pull s3://source-bucket/myapp:v1.0 myapp:v1.0
-s3lo push myapp:v1.0 s3://dest-bucket/myapp:v1.0
+s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
 ```
 
 **Q: Why does pull show "image imported into Docker" but `docker images` shows nothing?**
@@ -786,7 +936,7 @@ The import uses `docker load` which should appear immediately. Check if Docker i
 
 **Q: Does s3lo work with S3-compatible storage (MinIO, Backblaze, etc.)?**
 
-Not officially yet. MinIO and other S3-compatible backends are planned for v2.2.0. The AWS SDK's endpoint override (`AWS_ENDPOINT_URL`) may work for testing, but this is unsupported.
+Not officially yet. The AWS SDK's endpoint override (`AWS_ENDPOINT_URL`) may work for testing, but this is unsupported.
 
 **Q: How do I see s3lo version?**
 
@@ -800,17 +950,19 @@ Yes. s3lo uses the AWS SDK directly and does not require the AWS CLI. You only n
 
 **Q: What is the maximum image size?**
 
-There is no hard limit in s3lo. S3 supports objects up to 5 TB. s3lo uploads each blob as a single S3 PutObject, which supports up to 5 GB per blob. For images with blobs larger than 5 GB, multipart upload would be needed (not currently implemented). In practice, individual image layers are rarely larger than a few hundred MB.
+There is no hard limit in s3lo. S3 supports objects up to 5 TB. s3lo uploads each blob as a single S3 PutObject, which supports up to 5 GB per blob. For images with blobs larger than 5 GB, multipart upload would be needed (not currently implemented).
 
 **Q: How do I migrate from ECR to S3?**
 
+Use `s3lo copy` — it authenticates automatically using your AWS credentials:
 ```bash
-# Pull from ECR, push to S3
-aws ecr get-login-password --region us-east-1 | docker login --username AWS --password-stdin 123456789.dkr.ecr.us-east-1.amazonaws.com
-docker pull 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0
-s3lo push 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
+s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
 ```
 
 **Q: What does the 1-hour gc grace period protect against?**
 
-If a push is in progress and gc runs at the same time, blobs that have been uploaded but whose manifest has not been written yet would be incorrectly identified as unreferenced. The grace period ensures blobs uploaded in the last hour are never deleted by gc, even if no manifest references them yet. This eliminates the race condition.
+If a push is in progress and `clean --blobs` runs at the same time, blobs that have been uploaded but whose manifest has not been written yet would be incorrectly identified as unreferenced. The grace period ensures blobs uploaded in the last hour are never deleted, eliminating this race condition.
+
+**Q: How do lifecycle rules work with per-image overrides?**
+
+Bucket-wide defaults apply to all images. Per-image overrides (set via `s3lo config set s3://bucket/myapp ...`) take precedence over defaults. When multiple glob patterns match an image, the most specific wins (exact matches before globs, longer patterns before shorter).

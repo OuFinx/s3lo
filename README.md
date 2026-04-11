@@ -75,11 +75,34 @@ s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0
 # Pull from S3 into local Docker
 s3lo pull s3://my-bucket/myapp:v1.0
 
+# Copy from ECR or another S3 bucket (no local Docker needed)
+s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
+s3lo copy s3://source-bucket/myapp:v1.0 s3://dest-bucket/myapp:v1.0
+
 # List images in a bucket
 s3lo list s3://my-bucket/
 
 # Inspect image metadata
 s3lo inspect s3://my-bucket/myapp:v1.0
+
+# Show storage stats and deduplication savings
+s3lo stats s3://my-bucket/
+
+# Delete a tag
+s3lo delete s3://my-bucket/myapp:v1.0
+
+# Configure lifecycle rules (keep last 10 tags, max 90 days)
+s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
+
+# Clean old tags and unreferenced blobs (dry run by default)
+s3lo clean s3://my-bucket/
+s3lo clean s3://my-bucket/ --confirm
+
+# Analyze bucket configuration and get recommendations
+s3lo config recommend s3://my-bucket/
+
+# Enable per-image tag immutability
+s3lo config set s3://my-bucket/myapp immutable=true
 ```
 
 ## How It Works

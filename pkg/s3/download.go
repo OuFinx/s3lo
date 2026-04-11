@@ -19,6 +19,7 @@ type ObjectMeta struct {
 	Key          string
 	Size         int64
 	LastModified time.Time
+	StorageClass string
 }
 
 // DownloadDirectory downloads all objects under prefix into destDir.
@@ -102,7 +103,7 @@ func (c *Client) ListObjectsWithMeta(ctx context.Context, bucket, prefix string)
 			return nil, fmt.Errorf("list objects: %w", err)
 		}
 		for _, obj := range page.Contents {
-			meta := ObjectMeta{Key: *obj.Key}
+			meta := ObjectMeta{Key: *obj.Key, StorageClass: string(obj.StorageClass)}
 			if obj.Size != nil {
 				meta.Size = *obj.Size
 			}

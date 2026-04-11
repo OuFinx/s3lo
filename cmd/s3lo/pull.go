@@ -19,8 +19,17 @@ var pullCmd = &cobra.Command{
 		if len(args) > 1 {
 			imageTag = args[1]
 		}
-		fmt.Printf("Pulling %s...\n", args[0])
-		if err := image.Pull(cmd.Context(), args[0], imageTag); err != nil {
+		fmt.Printf("Pulling %s\n", args[0])
+		opts := image.PullOptions{
+			OnBlob: func(digest string, size int64) {
+				short := digest
+				if len(short) > 19 {
+					short = short[:19]
+				}
+				fmt.Printf("  sha256:%s  %s\n", short, formatBytes(size))
+			},
+		}
+		if err := image.Pull(cmd.Context(), args[0], imageTag, opts); err != nil {
 			return err
 		}
 		fmt.Println("Done. Image imported into Docker.")
