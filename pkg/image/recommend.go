@@ -125,11 +125,10 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 					"      steps:\n" +
 					"        - uses: actions/checkout@v4\n" +
 					"        - run: s3lo clean s3://" + bucket + "/ --confirm\n\n" +
-					"  # AWS EventBridge — run nightly via aws CLI:\n" +
-					"  aws events put-rule --schedule-expression 'cron(0 2 * * ? *)' \\\n" +
-					"    --name s3lo-clean --state ENABLED\n" +
-					"  # Then attach a Lambda or ECS task target that runs:\n" +
-					"  #   s3lo clean s3://" + bucket + "/ --confirm",
+					"  # Other options:\n" +
+					"  #   cron on a server:   0 2 * * * s3lo clean s3://" + bucket + "/ --confirm\n" +
+					"  #   AWS Lambda + EventBridge: deploy s3lo as a Lambda, trigger nightly via EventBridge\n" +
+					"  #   Terraform: aws_lambda_function + aws_cloudwatch_event_rule + aws_cloudwatch_event_target",
 			})
 		} else {
 			result.Findings = append(result.Findings, Finding{"s3lo lifecycle config: not configured", false})
