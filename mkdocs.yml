@@ -72,6 +72,8 @@ nav:
     - stats: commands/stats.md
     - config: commands/config.md
     - scan: commands/scan.md
+    - sign: commands/sign.md
+    - verify: commands/verify.md
   - Concepts:
     - How It Works: concepts/how-it-works.md
     - Storage Layout: concepts/storage-layout.md
