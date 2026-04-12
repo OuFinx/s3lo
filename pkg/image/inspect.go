@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/OuFinx/s3lo/pkg/oci"
@@ -20,9 +21,17 @@ type ImageInfo struct {
 	// Single-arch fields (IsIndex == false).
 	Manifest  ocispec.Manifest `json:"-" yaml:"-"`
 	Layers    []LayerDetail    `json:"layers,omitempty" yaml:"layers,omitempty"`
-	TotalSize int64            `json:"total_size,omitempty" yaml:"total_size,omitempty"`
+	TotalSize  int64           `json:"total_size,omitempty" yaml:"total_size,omitempty"`
+	Signatures []SignatureInfo `json:"signatures,omitempty" yaml:"signatures,omitempty"`
 	// Multi-arch fields (IsIndex == true).
 	Platforms []PlatformInfo   `json:"platforms,omitempty" yaml:"platforms,omitempty"`
+}
+
+// SignatureInfo describes a stored signature for an image.
+type SignatureInfo struct {
+	KeyRef   string `json:"key_ref" yaml:"key_ref"`
+	KeyID    string `json:"key_id" yaml:"key_id"`
+	SignedAt string `json:"signed_at" yaml:"signed_at"`
 }
 
 // LayerDetail describes a single image layer.
@@ -129,6 +138,28 @@ func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 			})
 			info.TotalSize += layer.Size
 		}
+	}
+
+	// Load signatures (best-effort — absent signatures dir is not an error).
+	sigPrefix := parsed.ManifestsPrefix() + "signatures/"
+	sigKeys, _ := client.ListKeys(ctx, parsed.Bucket, sigPrefix)
+	for _, sk := range sigKeys {
+		if !strings.HasSuffix(sk, ".json") {
+			continue
+		}
+		sigData, err := client.GetObject(ctx, parsed.Bucket, sk)
+		if err != nil {
+			continue
+		}
+		var rec SignatureRecord
+		if err := json.Unmarshal(sigData, &rec); err != nil {
+			continue
+		}
+		info.Signatures = append(info.Signatures, SignatureInfo{
+			KeyRef:   rec.KeyRef,
+			KeyID:    rec.KeyID,
+			SignedAt: rec.SignedAt,
+		})
 	}
 
 	return info, nil
