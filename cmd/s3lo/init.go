@@ -86,7 +86,17 @@ func runLocalInit(localPath string) error {
 
 	fmt.Printf("✓ Created local storage at %s\n", localPath)
 	fmt.Printf("\nYour local storage is ready. Try:\n")
-	fmt.Printf("  s3lo push myapp:latest local://%s/myapp:latest\n", localPath)
+
+	// Build a usable reference hint. local:// only supports relative paths starting
+	// with "./" or simple names. For absolute paths, suggest cd + relative form.
+	absPath, err := filepath.Abs(localPath)
+	if err != nil {
+		absPath = localPath
+	}
+	parent := filepath.Dir(absPath)
+	base := filepath.Base(absPath)
+	fmt.Printf("  cd %s\n", parent)
+	fmt.Printf("  s3lo push myapp:latest local://./%s/myapp:latest\n", base)
 	return nil
 }
 

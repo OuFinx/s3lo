@@ -110,6 +110,16 @@ s3lo config set s3://my-bucket/myapp immutable=true
 s3lo history s3://my-bucket/
 s3lo history s3://my-bucket/myapp
 
+# Sign an image with AWS KMS (FIPS 140-2, CloudTrail audit log)
+s3lo sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+
+# Sign with a local key file
+COSIGN_PASSWORD=secret s3lo sign s3://my-bucket/myapp:v1.0 --key cosign.key
+
+# Verify a signature (exit 0 = valid, 1 = invalid/missing, 2 = infra error)
+s3lo verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json
+
 # --- Local storage (no AWS account needed) ---
 
 # Initialize local storage

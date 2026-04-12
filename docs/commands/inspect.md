@@ -1,6 +1,6 @@
 # inspect
 
-Show image metadata: layers, total size, and platform details for multi-arch images.
+Show image metadata: layers, total size, platform details for multi-arch images, and stored signatures.
 
 ```
 s3lo inspect <s3-ref>
@@ -53,4 +53,11 @@ s3lo inspect local://./local-s3/alpine:latest
       Layers:   4
       Size:     6.90 MB
       ...
+
+    Signatures:
+      3b780f64bd6940e1  (key: awskms:///alias/release-signer, signed: 2026-04-12T19:21:10Z)
+      21b44047667b31d3  (key: cosign.key, signed: 2026-04-12T19:21:21Z)
     ```
+
+The `Signatures` section appears only when at least one signature is stored for the image.
+Use [`s3lo sign`](sign.md) to sign an image and [`s3lo verify`](verify.md) to verify.

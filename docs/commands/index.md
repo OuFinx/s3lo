@@ -15,6 +15,8 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 | [`config`](config.md) | Manage per-image and bucket-wide configuration |
 | [`history`](history.md) | Show push history for a bucket or repository |
 | [`scan`](scan.md) | Scan an image for vulnerabilities with Trivy |
+| [`sign`](sign.md) | Sign an image manifest with AWS KMS or a local key |
+| [`verify`](verify.md) | Verify an image signature (exits 0/1/2 for CI gates) |
 
 ## Reference format
 

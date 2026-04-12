@@ -84,6 +84,12 @@ func printInspect(info *image.ImageInfo) {
 			fmt.Printf("  [%d] %s... (%.2f MB)\n", i+1, digestStr, float64(layer.Size)/1024/1024)
 		}
 	}
+	if len(info.Signatures) > 0 {
+		fmt.Println("\nSignatures:")
+		for _, sig := range info.Signatures {
+			fmt.Printf("  %s  (key: %s, signed: %s)\n", sig.KeyID, sig.KeyRef, sig.SignedAt)
+		}
+	}
 }
 
 func init() {

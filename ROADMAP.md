@@ -65,8 +65,8 @@
 
 ## v1.9.0 — Security
 
-- [ ] `s3lo sign` — sign images with cosign/Sigstore
-- [ ] `s3lo verify` — verify image signatures
+- [x] `s3lo sign` — sign images with cosign/Sigstore (AWS KMS, local key, HashiCorp Vault)
+- [x] `s3lo verify` — verify image signatures (exit 0/1/2 for CI gates)
 
 ## v1.10.0 — Multi-Cloud Support
 
