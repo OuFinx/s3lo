@@ -57,7 +57,7 @@ func Verify(ctx context.Context, s3Ref, keyRef string) (*VerifyResult, error) {
 	if err != nil {
 		sv, svErr := cosignsig.SignerVerifierFromKeyRef(ctx, keyRef, makePassFunc(), nil)
 		if svErr != nil {
-			return nil, fmt.Errorf("load verification key %q: %w", keyRef, err)
+			return nil, fmt.Errorf("load verification key %q: %w", keyRef, svErr)
 		}
 		verifier = sv
 	}
