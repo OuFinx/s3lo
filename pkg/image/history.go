@@ -23,7 +23,7 @@ type HistoryEntry struct {
 func GetHistory(ctx context.Context, s3Ref string) ([]HistoryEntry, error) {
 	parsed, err := ref.Parse(s3Ref)
 	if err != nil {
-		return nil, fmt.Errorf("invalid S3 reference: %w", err)
+		return nil, fmt.Errorf("invalid reference for history (need storage/image:tag, e.g. local://./local-s3/myapp:latest): %w", err)
 	}
 	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
