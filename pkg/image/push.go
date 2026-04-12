@@ -153,5 +153,18 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		}
 	}
 
+	// Record push history (best-effort — don't fail the push on history errors).
+	var totalSize int64
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			if info, err := entry.Info(); err == nil {
+				totalSize += info.Size()
+			}
+		}
+	}
+	if err := recordHistory(ctx, client, parsed, manifestData, totalSize); err != nil {
+		slog.Debug("record history failed (non-fatal)", "error", err)
+	}
+
 	return nil
 }
