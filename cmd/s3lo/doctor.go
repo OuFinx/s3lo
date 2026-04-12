@@ -61,6 +61,7 @@ func printDoctorResult(r *image.DoctorResult) {
 		fmt.Printf("Checking for orphaned blobs...  none\n")
 	} else {
 		fmt.Printf("Checking for orphaned blobs...  %d blobs (%s)\n", r.OrphanedBlobs, formatBytes(r.OrphanedBytes))
+		fmt.Printf("  Note: clean skips blobs uploaded within the last hour (grace period).\n")
 	}
 
 	if len(r.ManifestIssues) > 0 || r.OrphanedBlobs > 0 {

@@ -38,8 +38,23 @@ var inspectCmd = &cobra.Command{
 func printInspect(info *image.ImageInfo) {
 	fmt.Printf("Reference: %s\n", info.Reference)
 	if info.IsIndex {
-		fmt.Printf("Type:      multi-arch image index (%d platform(s))\n\n", len(info.Platforms))
+		var platforms, attestations int
 		for _, p := range info.Platforms {
+			if image.IsAttestationPlatform(p.Platform) {
+				attestations++
+			} else {
+				platforms++
+			}
+		}
+		if attestations > 0 {
+			fmt.Printf("Type:      multi-arch image index (%d platform(s), %d attestation(s))\n\n", platforms, attestations)
+		} else {
+			fmt.Printf("Type:      multi-arch image index (%d platform(s))\n\n", platforms)
+		}
+		for _, p := range info.Platforms {
+			if image.IsAttestationPlatform(p.Platform) {
+				continue
+			}
 			digestStr := p.Digest
 			if len(digestStr) > 19 {
 				digestStr = digestStr[:19]

@@ -214,6 +214,9 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 		if err := destClient.PutObject(ctx, destParsed.Bucket, destPrefix+"oci-layout", ociLayout); err != nil {
 			return nil, fmt.Errorf("write oci-layout: %w", err)
 		}
+
+		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, totalManifestSize(writeManifestData))
+
 		return &CopyResult{
 			Platforms:    len(selected),
 			BlobsCopied:  int(blobsCopied.Load()),
@@ -271,6 +274,8 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 			}
 		}
 	}
+	_ = recordHistory(ctx, destClient, destParsed, manifestData, totalManifestSize(manifestData))
+
 	return &CopyResult{
 		Platforms:    1,
 		BlobsCopied:  int(blobsCopied.Load()),

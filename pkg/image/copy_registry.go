@@ -240,6 +240,9 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"oci-layout", ociLayout); err != nil {
 			return nil, fmt.Errorf("write oci-layout: %w", err)
 		}
+
+		_ = recordHistory(ctx, s3c, destParsed, writeManifestData, totalManifestSize(writeManifestData))
+
 		return &CopyResult{
 			Platforms:    len(selected),
 			BlobsCopied:  int(blobsCopied.Load()),
@@ -279,6 +282,9 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"oci-layout", ociLayout); err != nil {
 		return nil, fmt.Errorf("write oci-layout: %w", err)
 	}
+
+	_ = recordHistory(ctx, s3c, destParsed, manifestData, totalManifestSize(manifestData))
+
 	return &CopyResult{
 		Platforms:    1,
 		BlobsCopied:  int(blobsCopied.Load()),

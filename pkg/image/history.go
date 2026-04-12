@@ -172,6 +172,23 @@ func ListTagHistory(ctx context.Context, rawRef, imageName string) ([]TagHistory
 	return result, nil
 }
 
+// totalManifestSize computes the total layer+config size from a manifest JSON.
+// Used by copy to record history without needing the full Push path.
+func totalManifestSize(manifestData []byte) int64 {
+	var m struct {
+		Config struct{ Size int64 `json:"size"` } `json:"config"`
+		Layers []struct{ Size int64 `json:"size"` } `json:"layers"`
+	}
+	if json.Unmarshal(manifestData, &m) != nil {
+		return 0
+	}
+	total := m.Config.Size
+	for _, l := range m.Layers {
+		total += l.Size
+	}
+	return total
+}
+
 // readHistory reads history.json for the given image tag.
 func readHistory(ctx context.Context, client s3client.Backend, parsed ref.Reference) ([]HistoryEntry, error) {
 	key := parsed.ManifestsPrefix() + "history.json"

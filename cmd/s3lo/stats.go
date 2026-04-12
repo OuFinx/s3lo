@@ -57,13 +57,13 @@ func printStats(bucketRef string, r *image.StatsResult) {
 	c := r.Cost
 	if r.BlobBytes > 0 {
 		fmt.Println("\nEstimated monthly cost:")
-		fmt.Printf("  %-26s $%.2f/month\n", "S3 (current):", c.S3Monthly)
+		fmt.Printf("  %-26s %s/month\n", "S3 (current):", formatCost(c.S3Monthly))
 		if savings > 0 {
-			fmt.Printf("  %-26s $%.2f/month\n", "S3 (no dedup):", c.S3NoDedupMonthly)
+			fmt.Printf("  %-26s %s/month\n", "S3 (no dedup):", formatCost(c.S3NoDedupMonthly))
 		}
-		fmt.Printf("  %-26s $%.2f/month\n", "ECR equivalent:", c.ECRMonthly)
+		fmt.Printf("  %-26s %s/month\n", "ECR equivalent:", formatCost(c.ECRMonthly))
 		if c.SavingsVsECR > 0 {
-			fmt.Printf("  %-26s $%.2f/month (%.0f%% cheaper)\n", "Savings vs ECR:", c.SavingsVsECR, c.SavingsPct)
+			fmt.Printf("  %-26s %s/month (%.0f%% cheaper)\n", "Savings vs ECR:", formatCost(c.SavingsVsECR), c.SavingsPct)
 		}
 	}
 }

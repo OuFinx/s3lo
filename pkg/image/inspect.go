@@ -18,7 +18,7 @@ type ImageInfo struct {
 	Reference string           `json:"reference" yaml:"reference"`
 	IsIndex   bool             `json:"is_index" yaml:"is_index"`
 	// Single-arch fields (IsIndex == false).
-	Manifest  ocispec.Manifest `json:"manifest,omitempty" yaml:"manifest,omitempty"`
+	Manifest  ocispec.Manifest `json:"-" yaml:"-"`
 	Layers    []LayerDetail    `json:"layers,omitempty" yaml:"layers,omitempty"`
 	TotalSize int64            `json:"total_size,omitempty" yaml:"total_size,omitempty"`
 	// Multi-arch fields (IsIndex == true).

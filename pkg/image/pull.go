@@ -3,8 +3,10 @@ package image
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
@@ -32,6 +34,12 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 		return fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
+	if strings.HasPrefix(s3Ref, "local://") {
+		if _, statErr := os.Stat(parsed.Bucket); os.IsNotExist(statErr) {
+			return fmt.Errorf("local storage directory not found: %s", parsed.Bucket)
+		}
+	}
+
 	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return fmt.Errorf("create storage client: %w", err)
@@ -42,6 +50,8 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 		return fmt.Errorf("create temp dir: %w", err)
 	}
 	defer os.RemoveAll(tmpDir)
+
+	slog.Debug("pulling image", "bucket", parsed.Bucket, "image", parsed.Image, "tag", parsed.Tag)
 
 	// Try v1.1.0 layout first.
 	manifestKey := parsed.ManifestsPrefix() + "manifest.json"

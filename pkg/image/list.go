@@ -3,6 +3,8 @@ package image
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
@@ -28,11 +30,14 @@ func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
+	slog.Debug("listing images", "bucket", bucket, "prefix", prefix)
+
 	// v1.1.0: scan manifests/<image>/<tag>/manifest.json
 	manifestKeys, err := client.ListKeys(ctx, bucket, prefix+"manifests/")
 	if err != nil {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
+	slog.Debug("found manifest keys", "count", len(manifestKeys))
 
 	imageMap := make(map[string][]string) // image → tags
 	manifestsPrefix := prefix + "manifests/"
@@ -89,6 +94,13 @@ func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 	}
 	for name, tags := range v100Map {
 		entries = append(entries, ImageEntry{Name: name, Tags: tags})
+	}
+
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name < entries[j].Name
+	})
+	for i := range entries {
+		sort.Strings(entries[i].Tags)
 	}
 
 	return entries, nil
