@@ -3,9 +3,10 @@ package image
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
 )
 
@@ -15,147 +16,92 @@ type ImageEntry struct {
 	Tags []string `json:"tags" yaml:"tags"`
 }
 
-// List lists all images in an S3 bucket path.
+// List lists all images in a storage path.
 // Supports both v1.1.0 (manifests/ prefix) and v1.0.0 (per-tag root) layouts.
-// s3Ref should be like "s3://my-bucket/" or "s3://my-bucket/prefix/".
+// s3Ref should be like "s3://my-bucket/" or "local:///path/to/store/".
 func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
-	if !strings.HasPrefix(s3Ref, "s3://") {
-		return nil, fmt.Errorf("invalid s3 reference %q: must start with s3://", s3Ref)
-	}
-
-	rest := strings.TrimPrefix(s3Ref, "s3://")
-	slashIdx := strings.Index(rest, "/")
-	var bucket, prefix string
-	if slashIdx < 0 {
-		bucket = rest
-		prefix = ""
-	} else {
-		bucket = rest[:slashIdx]
-		prefix = rest[slashIdx+1:]
-	}
-
-	if bucket == "" {
-		return nil, fmt.Errorf("invalid s3 reference %q: empty bucket", s3Ref)
-	}
-
-	client, err := s3client.NewClient(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("create S3 client: %w", err)
-	}
-	s3c, err := client.ClientForBucket(ctx, bucket)
-	if err != nil {
-		return nil, fmt.Errorf("get S3 client for bucket: %w", err)
-	}
-
-	// v1.1.0: images under manifests/<image>/<tag>/
-	v110Entries, err := listFromManifestsPrefix(ctx, s3c, bucket, prefix+"manifests/", prefix)
+	bucket, prefix, err := ParseBucketRef(s3Ref)
 	if err != nil {
 		return nil, err
 	}
 
-	// v1.0.0: images at <image>/<tag>/ (skip blobs/ and manifests/ reserved prefixes)
-	v100Entries, err := listFromRootPrefix(ctx, s3c, bucket, prefix)
+	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
-	// Merge, deduplicating by name (v1.1.0 takes precedence).
-	seen := make(map[string]bool)
-	var entries []ImageEntry
-	for _, e := range v110Entries {
-		seen[e.Name] = true
-		entries = append(entries, e)
-	}
-	for _, e := range v100Entries {
-		if !seen[e.Name] {
-			entries = append(entries, e)
-		}
-	}
+	slog.Debug("listing images", "bucket", bucket, "prefix", prefix)
 
-	return entries, nil
-}
-
-func listFromManifestsPrefix(ctx context.Context, s3c *s3.Client, bucket, v110Prefix, userPrefix string) ([]ImageEntry, error) {
-	imageNames, err := listCommonPrefixes(ctx, s3c, bucket, v110Prefix, "/")
+	// v1.1.0: scan manifests/<image>/<tag>/manifest.json
+	manifestKeys, err := client.ListKeys(ctx, bucket, prefix+"manifests/")
 	if err != nil {
-		return nil, fmt.Errorf("list v1.1.0 images: %w", err)
+		return nil, fmt.Errorf("list manifests: %w", err)
 	}
+	slog.Debug("found manifest keys", "count", len(manifestKeys))
 
-	var entries []ImageEntry
-	for _, imagePfx := range imageNames {
-		name := strings.TrimPrefix(imagePfx, v110Prefix)
-		name = strings.TrimSuffix(name, "/")
-
-		tagPrefixes, err := listCommonPrefixes(ctx, s3c, bucket, imagePfx, "/")
-		if err != nil {
-			return nil, fmt.Errorf("list tags for %s: %w", name, err)
-		}
-
-		var tags []string
-		for _, tagPfx := range tagPrefixes {
-			tag := strings.TrimPrefix(tagPfx, imagePfx)
-			tag = strings.TrimSuffix(tag, "/")
-			tags = append(tags, tag)
-		}
-		if len(tags) > 0 {
-			entries = append(entries, ImageEntry{Name: name, Tags: tags})
-		}
-	}
-	return entries, nil
-}
-
-func listFromRootPrefix(ctx context.Context, s3c *s3.Client, bucket, prefix string) ([]ImageEntry, error) {
-	imageNames, err := listCommonPrefixes(ctx, s3c, bucket, prefix, "/")
-	if err != nil {
-		return nil, fmt.Errorf("list v1.0.0 images: %w", err)
-	}
-
-	var entries []ImageEntry
-	for _, imagePfx := range imageNames {
-		name := strings.TrimPrefix(imagePfx, prefix)
-		name = strings.TrimSuffix(name, "/")
-
-		// Skip v1.1.0 reserved prefixes.
-		if name == "blobs" || name == "manifests" {
+	imageMap := make(map[string][]string) // image → tags
+	manifestsPrefix := prefix + "manifests/"
+	for _, key := range manifestKeys {
+		if !strings.HasSuffix(key, "/manifest.json") {
 			continue
 		}
-
-		tagPrefixes, err := listCommonPrefixes(ctx, s3c, bucket, imagePfx, "/")
-		if err != nil {
-			return nil, fmt.Errorf("list tags for %s: %w", name, err)
+		// key = manifests/<image>/<tag>/manifest.json
+		rel := strings.TrimPrefix(key, manifestsPrefix)
+		rel = strings.TrimSuffix(rel, "/manifest.json")
+		// rel = <image>/<tag>
+		lastSlash := strings.LastIndex(rel, "/")
+		if lastSlash < 0 {
+			continue
 		}
+		imgName := rel[:lastSlash]
+		tag := rel[lastSlash+1:]
+		imageMap[imgName] = append(imageMap[imgName], tag)
+	}
 
-		var tags []string
-		for _, tagPfx := range tagPrefixes {
-			tag := strings.TrimPrefix(tagPfx, imagePfx)
-			tag = strings.TrimSuffix(tag, "/")
-			tags = append(tags, tag)
+	var entries []ImageEntry
+	seen := make(map[string]bool)
+	for name, tags := range imageMap {
+		seen[name] = true
+		entries = append(entries, ImageEntry{Name: name, Tags: tags})
+	}
+
+	// v1.0.0 fallback: scan <image>/<tag>/manifest.json at root
+	allKeys, err := client.ListKeys(ctx, bucket, prefix)
+	if err != nil {
+		return nil, fmt.Errorf("list root: %w", err)
+	}
+	v100Map := make(map[string][]string)
+	for _, key := range allKeys {
+		if !strings.HasSuffix(key, "/manifest.json") {
+			continue
 		}
-		if len(tags) > 0 {
-			entries = append(entries, ImageEntry{Name: name, Tags: tags})
+		rel := strings.TrimPrefix(key, prefix)
+		// Skip v1.1.0 prefixes
+		if strings.HasPrefix(rel, "blobs/") || strings.HasPrefix(rel, "manifests/") {
+			continue
+		}
+		rel = strings.TrimSuffix(rel, "/manifest.json")
+		// rel = <image>/<tag>
+		lastSlash := strings.LastIndex(rel, "/")
+		if lastSlash < 0 {
+			continue
+		}
+		imgName := rel[:lastSlash]
+		tag := rel[lastSlash+1:]
+		if !seen[imgName] {
+			v100Map[imgName] = append(v100Map[imgName], tag)
 		}
 	}
-	return entries, nil
-}
+	for name, tags := range v100Map {
+		entries = append(entries, ImageEntry{Name: name, Tags: tags})
+	}
 
-func listCommonPrefixes(ctx context.Context, client *s3.Client, bucket, prefix, delimiter string) ([]string, error) {
-	var prefixes []string
-	paginator := s3.NewListObjectsV2Paginator(client, &s3.ListObjectsV2Input{
-		Bucket:    &bucket,
-		Prefix:    &prefix,
-		Delimiter: &delimiter,
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name < entries[j].Name
 	})
-
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("list objects: %w", err)
-		}
-		for _, cp := range page.CommonPrefixes {
-			if cp.Prefix != nil {
-				prefixes = append(prefixes, *cp.Prefix)
-			}
-		}
+	for i := range entries {
+		sort.Strings(entries[i].Tags)
 	}
-	return prefixes, nil
+
+	return entries, nil
 }

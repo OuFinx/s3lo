@@ -10,8 +10,8 @@ s3lo copy <src> <s3-dest> [flags]
 
 | Argument | Description |
 |----------|-------------|
-| `<src>` | Source image. S3 reference or OCI registry reference (see formats below). |
-| `<s3-dest>` | Destination in `s3://bucket/image:tag` format. |
+| `<src>` | Source image. S3/local reference or OCI registry reference (see formats below). |
+| `<s3-dest>` | Destination in `s3://bucket/image:tag` or `local://path/image:tag` format. Tag is required for both S3/local source and destination. |
 
 ## Flags
 
@@ -28,6 +28,7 @@ s3lo copy <src> <s3-dest> [flags]
 | Full registry | `ghcr.io/owner/image:tag` |
 | ECR | `123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0` |
 | S3 | `s3://source-bucket/myapp:v1.0` |
+| Local | `local://./local-s3/myapp:v1.0` |
 
 Bare names resolve exactly like `docker pull` — `alpine` becomes `docker.io/library/alpine:latest`.
 
@@ -49,6 +50,9 @@ s3lo copy ghcr.io/owner/myapp:v1.0 s3://my-bucket/myapp:v1.0
 
 # Promote between S3 buckets (server-side copy within same bucket — free and instant)
 s3lo copy s3://staging-bucket/myapp:v1.0 s3://prod-bucket/myapp:v1.0
+
+# Copy from local storage to S3
+s3lo copy local://./local-s3/myapp:v1.0 s3://my-bucket/myapp:v1.0
 ```
 
 ## Multi-arch behavior

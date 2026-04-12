@@ -4,9 +4,9 @@ Get s3lo running and push your first image in under 5 minutes.
 
 ## Prerequisites
 
-- AWS account with an S3 bucket
 - Docker running locally
-- AWS credentials configured (`~/.aws/credentials`, environment variables, or IAM role)
+- For S3 storage: AWS account with an S3 bucket and credentials configured (`~/.aws/credentials`, environment variables, or IAM role)
+- For local storage: no cloud account needed — s3lo can use a local directory
 
 ## 1. Install s3lo
 
@@ -134,6 +134,23 @@ s3lo pull s3://my-bucket/myapp:v1.0
 
 docker run --rm myapp:v1.0
 ```
+
+## Try without AWS: local storage
+
+You can test s3lo without an AWS account using local storage:
+
+```bash
+# Initialize a local storage directory
+s3lo init --local ./local-s3
+
+# Push, pull, and list — same commands, just use local://
+s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
+s3lo pull local://./local-s3/myapp:v1.0
+s3lo list local://./local-s3/
+s3lo history local://./local-s3/
+```
+
+Local storage uses the same OCI layout as S3 storage — it's a great way to learn s3lo or run it in development.
 
 ---
 

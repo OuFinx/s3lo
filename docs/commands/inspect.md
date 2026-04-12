@@ -6,11 +6,14 @@ Show image metadata: layers, total size, and platform details for multi-arch ima
 s3lo inspect <s3-ref>
 ```
 
+The reference must include an explicit tag. Both `s3://` and `local://` references are supported.
+
 ## Examples
 
 ```bash
 s3lo inspect s3://my-bucket/myapp:v1.0
 s3lo inspect s3://my-bucket/alpine:latest
+s3lo inspect local://./local-s3/alpine:latest
 ```
 
 ## Output

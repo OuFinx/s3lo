@@ -74,6 +74,20 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 
 ---
 
+## Local storage
+
+No AWS account? Use `local://` to store images on your filesystem:
+
+```bash
+s3lo init --local ./local-s3
+s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
+s3lo pull local://./local-s3/myapp:v1.0
+```
+
+Local storage uses the same OCI layout as S3. All commands work with both `s3://` and `local://` references.
+
+---
+
 ## Next steps
 
 - [**Getting Started**](getting-started.md) — install, create a bucket, push your first image

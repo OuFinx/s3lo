@@ -92,15 +92,26 @@ func matchesPlatform(desc ocispec.Descriptor, platform string) bool {
 }
 
 // platformString formats an ocispec.Platform as "os/arch[/variant]".
+// Attestation manifests (e.g. SLSA provenance) have platform with "unknown" OS
+// or nil platform; these are labeled "(attestation)".
 func platformString(p *ocispec.Platform) string {
 	if p == nil {
-		return "unknown"
+		return "(attestation)"
+	}
+	if p.OS == "" || p.OS == "unknown" {
+		return "(attestation)"
 	}
 	s := p.OS + "/" + p.Architecture
 	if p.Variant != "" {
 		s += "/" + p.Variant
 	}
 	return s
+}
+
+// IsAttestationPlatform returns true if the platform represents an attestation
+// manifest rather than a runnable image.
+func IsAttestationPlatform(p string) bool {
+	return p == "(attestation)"
 }
 
 // acceptHeader returns the Accept header value for manifest requests, including index types.

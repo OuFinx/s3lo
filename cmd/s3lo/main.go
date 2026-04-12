@@ -1,13 +1,14 @@
 package main
 
 import (
-	"fmt"
 	"os"
 )
 
 func main() {
-	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+	propagateSilenceErrors(rootCmd)
+	cmd, err := rootCmd.ExecuteC()
+	if err != nil {
+		reportExecutionError(cmd, err)
 		os.Exit(1)
 	}
 }

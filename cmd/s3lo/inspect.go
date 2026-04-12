@@ -16,6 +16,9 @@ var inspectCmd = &cobra.Command{
   s3lo inspect s3://my-bucket/myapp:v1.0 --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTag(args[0]); err != nil {
+			return err
+		}
 		outputFmt, _ := cmd.Flags().GetString("output")
 		info, err := image.Inspect(cmd.Context(), args[0])
 		if err != nil {
@@ -35,8 +38,23 @@ var inspectCmd = &cobra.Command{
 func printInspect(info *image.ImageInfo) {
 	fmt.Printf("Reference: %s\n", info.Reference)
 	if info.IsIndex {
-		fmt.Printf("Type:      multi-arch image index (%d platform(s))\n\n", len(info.Platforms))
+		var platforms, attestations int
 		for _, p := range info.Platforms {
+			if image.IsAttestationPlatform(p.Platform) {
+				attestations++
+			} else {
+				platforms++
+			}
+		}
+		if attestations > 0 {
+			fmt.Printf("Type:      multi-arch image index (%d platform(s), %d attestation(s))\n\n", platforms, attestations)
+		} else {
+			fmt.Printf("Type:      multi-arch image index (%d platform(s))\n\n", platforms)
+		}
+		for _, p := range info.Platforms {
+			if image.IsAttestationPlatform(p.Platform) {
+				continue
+			}
 			digestStr := p.Digest
 			if len(digestStr) > 19 {
 				digestStr = digestStr[:19]

@@ -60,6 +60,14 @@ func (c *Client) UploadFile(ctx context.Context, localPath, bucket, key string, 
 }
 
 func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string, storageClass s3types.StorageClass) error {
+	info, err := os.Stat(localPath)
+	if err != nil {
+		return err
+	}
+	if info.Size() > multipartThreshold {
+		return uploadFileMultipart(ctx, client, bucket, key, localPath, storageClass)
+	}
+
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err

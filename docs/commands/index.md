@@ -13,22 +13,32 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 | [`clean`](clean.md) | Prune old tags and garbage collect unreferenced blobs |
 | [`stats`](stats.md) | Show storage usage, deduplication savings, and cost estimate |
 | [`config`](config.md) | Manage per-image and bucket-wide configuration |
+| [`history`](history.md) | Show push history for a bucket or repository |
 | [`scan`](scan.md) | Scan an image for vulnerabilities with Trivy |
 
-## S3 reference format
+## Reference format
 
-All commands that reference an image on S3 use the same format:
+All commands that reference an image use the same format:
 
 ```
 s3://bucket/image:tag
-s3://bucket/org/image:tag
+local://path/image:tag
 ```
 
 Examples:
 ```
 s3://my-bucket/myapp:v1.0
 s3://my-bucket/org/backend:latest
-s3://my-bucket/myapp:sha-abc1234
+local://./local-s3/alpine:latest
 ```
 
-The bucket prefix (`s3://`) is always required.
+The scheme prefix (`s3://` or `local://`) is always required. Commands that operate on
+a specific image (push, pull, delete, inspect, scan, copy) require an explicit tag —
+omitting the tag is an error.
+
+Bucket-level commands (list, history, stats, clean, config) accept a reference without a tag:
+
+```
+s3://my-bucket/
+local://./local-s3/
+```

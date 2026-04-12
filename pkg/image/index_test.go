@@ -125,7 +125,9 @@ func TestPlatformString(t *testing.T) {
 		p    *ocispec.Platform
 		want string
 	}{
-		{nil, "unknown"},
+		{nil, "(attestation)"},
+		{&ocispec.Platform{OS: "unknown", Architecture: "unknown"}, "(attestation)"},
+		{&ocispec.Platform{OS: "", Architecture: ""}, "(attestation)"},
 		{&ocispec.Platform{OS: "linux", Architecture: "amd64"}, "linux/amd64"},
 		{&ocispec.Platform{OS: "linux", Architecture: "arm", Variant: "v7"}, "linux/arm/v7"},
 	}

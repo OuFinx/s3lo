@@ -5,7 +5,7 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/OuFinx/s3lo)](https://goreportcard.com/report/github.com/OuFinx/s3lo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Use AWS S3 as a container image registry. Faster pulls, cheaper storage, no registry to manage.
+Use AWS S3 (or local storage) as a container image registry. Faster pulls, cheaper storage, no registry to manage.
 
 ## Why s3lo?
 
@@ -105,6 +105,21 @@ s3lo config recommend s3://my-bucket/
 
 # Enable per-image tag immutability
 s3lo config set s3://my-bucket/myapp immutable=true
+
+# Show push history
+s3lo history s3://my-bucket/
+s3lo history s3://my-bucket/myapp
+
+# --- Local storage (no AWS account needed) ---
+
+# Initialize local storage
+s3lo init --local ./local-s3
+
+# Push and pull with local://
+s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
+s3lo pull local://./local-s3/myapp:v1.0
+s3lo list local://./local-s3/
+s3lo history local://./local-s3/
 ```
 
 ## How It Works

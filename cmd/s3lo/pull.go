@@ -18,6 +18,9 @@ var pullCmd = &cobra.Command{
   s3lo pull s3://my-bucket/myapp:v1.0 myapp:v1.0`,
 	Args: cobra.RangeArgs(1, 2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTag(args[0]); err != nil {
+			return err
+		}
 		platform, _ := cmd.Flags().GetString("platform")
 		imageTag := ""
 		if len(args) > 1 {

@@ -97,7 +97,7 @@ func loadCleanConfig(cmd *cobra.Command, s3Ref string) (*image.BucketConfig, err
 	if err != nil {
 		return nil, err
 	}
-	client, err := s3client.NewClient(cmd.Context())
+	client, err := s3client.NewBackendFromRef(cmd.Context(), s3Ref)
 	if err != nil {
 		return nil, err
 	}

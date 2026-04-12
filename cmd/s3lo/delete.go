@@ -15,6 +15,9 @@ var deleteCmd = &cobra.Command{
   s3lo delete s3://my-bucket/myapp:v1.0`,
 	Args:    cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTag(args[0]); err != nil {
+			return err
+		}
 		if err := image.Delete(cmd.Context(), args[0]); err != nil {
 			return err
 		}

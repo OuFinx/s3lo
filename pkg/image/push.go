@@ -53,9 +53,9 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return fmt.Errorf("write OCI layout: %w", err)
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return fmt.Errorf("create S3 client: %w", err)
+		return fmt.Errorf("create storage client: %w", err)
 	}
 
 	// Immutability check: reject push if tag exists and image is configured immutable.
@@ -151,6 +151,19 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		if err := client.UploadFile(ctx, localPath, parsed.Bucket, key, ""); err != nil {
 			return fmt.Errorf("upload %s: %w", name, err)
 		}
+	}
+
+	// Record push history (best-effort — don't fail the push on history errors).
+	var totalSize int64
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			if info, err := entry.Info(); err == nil {
+				totalSize += info.Size()
+			}
+		}
+	}
+	if err := recordHistory(ctx, client, parsed, manifestData, totalSize); err != nil {
+		slog.Debug("record history failed (non-fatal)", "error", err)
 	}
 
 	return nil

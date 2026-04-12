@@ -3,11 +3,9 @@ package image
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sync"
 
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
@@ -20,7 +18,7 @@ type ImageInfo struct {
 	Reference string           `json:"reference" yaml:"reference"`
 	IsIndex   bool             `json:"is_index" yaml:"is_index"`
 	// Single-arch fields (IsIndex == false).
-	Manifest  ocispec.Manifest `json:"manifest,omitempty" yaml:"manifest,omitempty"`
+	Manifest  ocispec.Manifest `json:"-" yaml:"-"`
 	Layers    []LayerDetail    `json:"layers,omitempty" yaml:"layers,omitempty"`
 	TotalSize int64            `json:"total_size,omitempty" yaml:"total_size,omitempty"`
 	// Multi-arch fields (IsIndex == true).
@@ -50,17 +48,16 @@ func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 		return nil, fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return nil, fmt.Errorf("create S3 client: %w", err)
+		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
 	// Try v1.1.0 layout first.
 	key := parsed.ManifestsPrefix() + "manifest.json"
 	data, err := client.GetObject(ctx, parsed.Bucket, key)
 	if err != nil {
-		var noSuchKey *s3types.NoSuchKey
-		if !errors.As(err, &noSuchKey) {
+		if !s3client.IsNotFound(err) {
 			return nil, fmt.Errorf("download manifest: %w", err)
 		}
 		// Fall back to v1.0.0 layout.

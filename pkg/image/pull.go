@@ -2,12 +2,12 @@ package image
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
@@ -34,9 +34,15 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 		return fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewClient(ctx)
+	if strings.HasPrefix(s3Ref, "local://") {
+		if _, statErr := os.Stat(parsed.Bucket); os.IsNotExist(statErr) {
+			return fmt.Errorf("local storage directory not found: %s", parsed.Bucket)
+		}
+	}
+
+	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return fmt.Errorf("create S3 client: %w", err)
+		return fmt.Errorf("create storage client: %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "s3lo-pull-*")
@@ -45,12 +51,13 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
+	slog.Debug("pulling image", "bucket", parsed.Bucket, "image", parsed.Image, "tag", parsed.Tag)
+
 	// Try v1.1.0 layout first.
 	manifestKey := parsed.ManifestsPrefix() + "manifest.json"
 	manifestData, err := client.GetObject(ctx, parsed.Bucket, manifestKey)
 	if err != nil {
-		var noSuchKey *s3types.NoSuchKey
-		if !errors.As(err, &noSuchKey) {
+		if !s3client.IsNotFound(err) {
 			return fmt.Errorf("fetch manifest: %w", err)
 		}
 		// v1.1.0 not found — fall back to v1.0.0 per-tag layout.
@@ -83,7 +90,7 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 
 // resolvePlatformManifest selects a platform from an Image Index and returns its manifest bytes.
 // If platform is empty, the host platform is used.
-func resolvePlatformManifest(ctx context.Context, client *s3client.Client, bucket string, indexData []byte, platform string) ([]byte, error) {
+func resolvePlatformManifest(ctx context.Context, client s3client.Backend, bucket string, indexData []byte, platform string) ([]byte, error) {
 	idx, err := parseIndex(indexData)
 	if err != nil {
 		return nil, fmt.Errorf("parse image index: %w", err)
@@ -110,7 +117,7 @@ func resolvePlatformManifest(ctx context.Context, client *s3client.Client, bucke
 
 // pullV110 downloads a v1.1.0 image into tmpDir, reconstructing the local OCI layout
 // that oci.ImportImage expects: tmpDir/manifest.json + tmpDir/blobs/sha256/<digest>.
-func pullV110(ctx context.Context, client *s3client.Client, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64), onStart func(int64)) error {
+func pullV110(ctx context.Context, client s3client.Backend, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64), onStart func(int64)) error {
 	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), manifestData, 0o644); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}

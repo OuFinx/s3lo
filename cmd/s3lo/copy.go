@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/OuFinx/s3lo/pkg/image"
 	"github.com/schollz/progressbar/v3"
@@ -35,8 +36,16 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
   s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
-		platform, _ := cmd.Flags().GetString("platform")
 		src, dest := args[0], args[1]
+		if strings.HasPrefix(src, "s3://") || strings.HasPrefix(src, "local://") {
+			if err := requireTag(src); err != nil {
+				return err
+			}
+		}
+		if err := requireTag(dest); err != nil {
+			return err
+		}
+		platform, _ := cmd.Flags().GetString("platform")
 		fmt.Printf("Copying %s to %s\n", src, dest)
 		var bar *progressbar.ProgressBar
 		opts := image.CopyOptions{

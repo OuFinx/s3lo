@@ -3,8 +3,10 @@
 Prune old image tags according to lifecycle rules and garbage collect unreferenced blobs.
 
 ```
-s3lo clean <s3-bucket-ref> [flags]
+s3lo clean <bucket-ref> [flags]
 ```
+
+Both `s3://` and `local://` references are supported.
 
 ## Flags
 

@@ -2,13 +2,11 @@ package image
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"path"
 	"sort"
 	"strings"
 
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
 	"gopkg.in/yaml.v3"
 )
@@ -94,12 +92,11 @@ func (c *BucketConfig) IsImmutable(imageName string) bool {
 	return eff.Immutable != nil && *eff.Immutable
 }
 
-// GetBucketConfig reads the bucket config from S3. Returns an empty config if not set.
-func GetBucketConfig(ctx context.Context, client *s3client.Client, bucket string) (*BucketConfig, error) {
+// GetBucketConfig reads the bucket config from storage. Returns an empty config if not set.
+func GetBucketConfig(ctx context.Context, client s3client.Backend, bucket string) (*BucketConfig, error) {
 	data, err := client.GetObject(ctx, bucket, bucketConfigKey)
 	if err != nil {
-		var noSuchKey *s3types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
+		if s3client.IsNotFound(err) {
 			return &BucketConfig{}, nil
 		}
 		return nil, fmt.Errorf("read bucket config: %w", err)
@@ -111,8 +108,8 @@ func GetBucketConfig(ctx context.Context, client *s3client.Client, bucket string
 	return &cfg, nil
 }
 
-// SetBucketConfig writes the bucket config to S3.
-func SetBucketConfig(ctx context.Context, client *s3client.Client, bucket string, cfg *BucketConfig) error {
+// SetBucketConfig writes the bucket config to storage.
+func SetBucketConfig(ctx context.Context, client s3client.Backend, bucket string, cfg *BucketConfig) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal bucket config: %w", err)
@@ -121,14 +118,39 @@ func SetBucketConfig(ctx context.Context, client *s3client.Client, bucket string
 }
 
 // ParseConfigRef parses an s3 config reference into bucket and optional image name.
-// s3://bucket/        -> bucket="bucket", image=""
-// s3://bucket/myapp   -> bucket="bucket", image="myapp"
-// s3://bucket/dev/*   -> bucket="bucket", image="dev/*"
+// s3://bucket/          -> bucket="bucket",    image=""
+// s3://bucket/myapp     -> bucket="bucket",    image="myapp"
+// s3://bucket/dev/*     -> bucket="bucket",    image="dev/*"
+// local://./store/      -> bucket="./store",   image=""
+// local://./store/myapp -> bucket="./store",   image="myapp"
 func ParseConfigRef(s3Ref string) (bucket, image string, err error) {
-	if !strings.HasPrefix(s3Ref, "s3://") {
-		return "", "", fmt.Errorf("invalid reference %q: must start with s3://", s3Ref)
+	var rest string
+	var isLocal bool
+	switch {
+	case strings.HasPrefix(s3Ref, "s3://"):
+		rest = strings.TrimPrefix(s3Ref, "s3://")
+	case strings.HasPrefix(s3Ref, "local://"):
+		rest = strings.TrimPrefix(s3Ref, "local://")
+		isLocal = true
+	default:
+		return "", "", fmt.Errorf("invalid reference %q: must start with s3:// or local://", s3Ref)
 	}
-	rest := strings.TrimPrefix(s3Ref, "s3://")
+
+	if isLocal && (strings.HasPrefix(rest, "./") || strings.HasPrefix(rest, "../")) {
+		firstSlash := strings.Index(rest, "/")
+		after := rest[firstSlash+1:]
+		secondSlash := strings.Index(after, "/")
+		if secondSlash < 0 {
+			return rest, "", nil
+		}
+		bucket = rest[:firstSlash+1+secondSlash]
+		image = strings.TrimSuffix(after[secondSlash+1:], "/")
+		if bucket == "" {
+			return "", "", fmt.Errorf("invalid reference %q: empty bucket", s3Ref)
+		}
+		return bucket, image, nil
+	}
+
 	slashIdx := strings.Index(rest, "/")
 	if slashIdx < 0 {
 		return rest, "", nil

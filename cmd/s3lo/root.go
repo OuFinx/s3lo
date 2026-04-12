@@ -18,6 +18,9 @@ var rootCmd = &cobra.Command{
 	Use:   "s3lo",
 	Short: "Store and retrieve OCI container images on AWS S3",
 	Long:  "s3lo is a CLI tool for pushing, pulling, listing, and inspecting OCI container images stored on AWS S3.",
+	// Errors and usage are printed in main (red ERROR, then usage) for clearer separation.
+	SilenceErrors: true,
+	SilenceUsage:  true,
 	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		if verbose {
 			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{

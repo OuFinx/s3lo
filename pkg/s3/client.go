@@ -24,8 +24,16 @@ func NewClient(ctx context.Context) (*Client, error) {
 		return nil, fmt.Errorf("load AWS config: %w", err)
 	}
 
+	// GetBucketLocation works against the global S3 endpoint. If the user's
+	// profile has no region configured, the SDK fails with a cryptic DNS error.
+	// Default the base client to us-east-1 so the initial API call always works.
+	baseCfg := cfg
+	if baseCfg.Region == "" {
+		baseCfg.Region = "us-east-1"
+	}
+
 	return &Client{
-		baseClient:  s3.NewFromConfig(cfg),
+		baseClient:  s3.NewFromConfig(baseCfg),
 		baseCfg:     cfg,
 		regionCache: make(map[string]string),
 		clientCache: make(map[string]*s3.Client),

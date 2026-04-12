@@ -45,9 +45,9 @@ func Scan(ctx context.Context, s3Ref string, opts ScanOptions) (int, error) {
 		return 0, fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return 0, fmt.Errorf("create S3 client: %w", err)
+		return 0, fmt.Errorf("create storage client: %w", err)
 	}
 
 	tmpDir, err := os.MkdirTemp("", "s3lo-scan-*")

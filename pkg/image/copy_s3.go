@@ -29,24 +29,28 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 		return nil, fmt.Errorf("invalid destination S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewClient(ctx)
+	srcClient, err := s3client.NewBackendFromRef(ctx, srcRef)
 	if err != nil {
-		return nil, fmt.Errorf("create S3 client: %w", err)
+		return nil, fmt.Errorf("create source storage client: %w", err)
+	}
+	destClient, err := s3client.NewBackendFromRef(ctx, destRef)
+	if err != nil {
+		return nil, fmt.Errorf("create destination storage client: %w", err)
 	}
 
 	manifestKey := srcParsed.ManifestsPrefix() + "manifest.json"
-	manifestData, err := client.GetObject(ctx, srcParsed.Bucket, manifestKey)
+	manifestData, err := srcClient.GetObject(ctx, srcParsed.Bucket, manifestKey)
 	if err != nil {
 		return nil, fmt.Errorf("fetch source manifest: %w", err)
 	}
 
-	sameBucket := srcParsed.Bucket == destParsed.Bucket
+	sameBucket := srcParsed.Bucket == destParsed.Bucket && srcParsed.Scheme == destParsed.Scheme
 	var blobsCopied, blobsSkipped atomic.Int64
 
 	copyBlob := func(ctx context.Context, digest string, size int64, platform string) error {
 		srcKey := "blobs/sha256/" + digest
 		destKey := "blobs/sha256/" + digest
-		exists, _ := client.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		exists, _ := destClient.HeadObjectExists(ctx, destParsed.Bucket, destKey)
 		if exists {
 			blobsSkipped.Add(1)
 			if platform != "" && opts.OnBlob != nil {
@@ -56,7 +60,7 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 			return nil
 		}
 		if sameBucket {
-			if err := client.CopyObject(ctx, srcParsed.Bucket, srcKey, destKey); err != nil {
+			if err := destClient.CopyObject(ctx, destParsed.Bucket, srcKey, destKey); err != nil {
 				return fmt.Errorf("copy blob %s: %w", digest[:12], err)
 			}
 		} else {
@@ -67,10 +71,10 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 			tmpName := tmp.Name()
 			tmp.Close()
 			defer os.Remove(tmpName)
-			if err := client.DownloadObjectToFile(ctx, srcParsed.Bucket, srcKey, tmpName); err != nil {
+			if err := srcClient.DownloadObjectToFile(ctx, srcParsed.Bucket, srcKey, tmpName); err != nil {
 				return fmt.Errorf("download blob %s: %w", digest[:12], err)
 			}
-			if err := client.UploadFile(ctx, tmpName, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
+			if err := destClient.UploadFile(ctx, tmpName, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
 				return fmt.Errorf("upload blob %s: %w", digest[:12], err)
 			}
 		}
@@ -137,7 +141,7 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 				i, desc := i, desc
 				g.Go(func() error {
 					d := desc.Digest.Encoded()
-					data, err := client.GetObject(gCtx, srcParsed.Bucket, "blobs/sha256/"+d)
+					data, err := srcClient.GetObject(gCtx, srcParsed.Bucket, "blobs/sha256/"+d)
 					if err != nil {
 						return fmt.Errorf("fetch manifest %s: %w", platformString(desc.Platform), err)
 					}
@@ -204,12 +208,15 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 		} else {
 			writeManifestData = manifestData
 		}
-		if err := client.PutObject(ctx, destParsed.Bucket, destPrefix+"manifest.json", writeManifestData); err != nil {
+		if err := destClient.PutObject(ctx, destParsed.Bucket, destPrefix+"manifest.json", writeManifestData); err != nil {
 			return nil, fmt.Errorf("write manifest.json: %w", err)
 		}
-		if err := client.PutObject(ctx, destParsed.Bucket, destPrefix+"oci-layout", ociLayout); err != nil {
+		if err := destClient.PutObject(ctx, destParsed.Bucket, destPrefix+"oci-layout", ociLayout); err != nil {
 			return nil, fmt.Errorf("write oci-layout: %w", err)
 		}
+
+		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, totalManifestSize(writeManifestData))
+
 		return &CopyResult{
 			Platforms:    len(selected),
 			BlobsCopied:  int(blobsCopied.Load()),
@@ -246,7 +253,7 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 
 	// Copy manifest files.
 	srcManifestPrefix := srcParsed.ManifestsPrefix()
-	manifestKeys, err := client.ListKeys(ctx, srcParsed.Bucket, srcManifestPrefix)
+	manifestKeys, err := srcClient.ListKeys(ctx, srcParsed.Bucket, srcManifestPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list source manifest files: %w", err)
 	}
@@ -254,19 +261,21 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 		rel := strings.TrimPrefix(key, srcManifestPrefix)
 		destKey := destPrefix + rel
 		if sameBucket {
-			if err := client.CopyObject(ctx, srcParsed.Bucket, key, destKey); err != nil {
+			if err := destClient.CopyObject(ctx, destParsed.Bucket, key, destKey); err != nil {
 				return nil, fmt.Errorf("copy manifest file %s: %w", rel, err)
 			}
 		} else {
-			data, err := client.GetObject(ctx, srcParsed.Bucket, key)
+			data, err := srcClient.GetObject(ctx, srcParsed.Bucket, key)
 			if err != nil {
 				return nil, fmt.Errorf("download manifest file %s: %w", rel, err)
 			}
-			if err := client.PutObject(ctx, destParsed.Bucket, destKey, data); err != nil {
+			if err := destClient.PutObject(ctx, destParsed.Bucket, destKey, data); err != nil {
 				return nil, fmt.Errorf("upload manifest file %s: %w", rel, err)
 			}
 		}
 	}
+	_ = recordHistory(ctx, destClient, destParsed, manifestData, totalManifestSize(manifestData))
+
 	return &CopyResult{
 		Platforms:    1,
 		BlobsCopied:  int(blobsCopied.Load()),

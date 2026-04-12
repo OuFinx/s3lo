@@ -1,16 +1,19 @@
 # list
 
-List all images and tags stored in an S3 bucket.
+List all images and tags stored in an S3 bucket or local storage.
 
 ```
-s3lo list <s3-bucket-ref>
+s3lo list <bucket-ref>
 ```
 
 ## Examples
 
 ```bash
-# List all images
+# List all images (S3)
 s3lo list s3://my-bucket/
+
+# List all images (local storage)
+s3lo list local://./local-s3/
 
 # Filter with grep
 s3lo list s3://my-bucket/ | grep myapp

@@ -53,3 +53,12 @@ func formatBytes(b int64) string {
 		return fmt.Sprintf("%d B", b)
 	}
 }
+
+// formatCost returns a human-readable monthly cost string.
+// For amounts between 0 (exclusive) and 0.01, shows "< $0.01" to avoid misleading "$0.00".
+func formatCost(amount float64) string {
+	if amount > 0 && amount < 0.01 {
+		return "< $0.01"
+	}
+	return fmt.Sprintf("$%.2f", amount)
+}

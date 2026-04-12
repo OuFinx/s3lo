@@ -45,7 +45,7 @@ Available keys:
 			return err
 		}
 
-		client, err := s3client.NewClient(cmd.Context())
+		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -70,9 +70,10 @@ Available keys:
 			return err
 		}
 
-		target := "s3://" + bucket + "/"
+		scheme := refScheme(args[0])
+		target := scheme + bucket + "/"
 		if imageName != "" {
-			target = "s3://" + bucket + "/" + imageName
+			target = scheme + bucket + "/" + imageName
 		}
 		fmt.Printf("Config updated for %s\n", target)
 		return nil
@@ -97,7 +98,7 @@ var configGetCmd = &cobra.Command{
 			return err
 		}
 
-		client, err := s3client.NewClient(cmd.Context())
+		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -128,10 +129,11 @@ var configGetCmd = &cobra.Command{
 			}
 		}
 
+		scheme := refScheme(args[0])
 		if imageName == "" {
-			printBucketConfig(bucket, cfg)
+			printBucketConfig(scheme, bucket, cfg)
 		} else {
-			printImageConfig(bucket, imageName, cfg)
+			printImageConfig(scheme, bucket, imageName, cfg)
 		}
 		return nil
 	},
@@ -164,7 +166,7 @@ Valid keys to remove: immutable, lifecycle`,
 			return fmt.Errorf("image name required (use s3://bucket/image, not s3://bucket/)")
 		}
 
-		client, err := s3client.NewClient(cmd.Context())
+		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -270,8 +272,8 @@ func applyToImageConfig(img *image.ImageConfig, key, val string) error {
 
 // --- output formatting ---
 
-func printBucketConfig(bucket string, cfg *image.BucketConfig) {
-	fmt.Printf("Bucket: s3://%s/\n", bucket)
+func printBucketConfig(scheme, bucket string, cfg *image.BucketConfig) {
+	fmt.Printf("Bucket: %s%s/\n", scheme, bucket)
 
 	fmt.Println("\nDefault:")
 	printImageConfigFields(cfg.Default, "  ")
@@ -285,8 +287,8 @@ func printBucketConfig(bucket string, cfg *image.BucketConfig) {
 	}
 }
 
-func printImageConfig(bucket, imageName string, cfg *image.BucketConfig) {
-	fmt.Printf("Image: %s (s3://%s/)\n", imageName, bucket)
+func printImageConfig(scheme, bucket, imageName string, cfg *image.BucketConfig) {
+	fmt.Printf("Image: %s (%s%s/)\n", imageName, scheme, bucket)
 	eff := cfg.EffectiveConfig(imageName)
 	imgOverride, hasOverride := cfg.Images[imageName]
 
@@ -387,6 +389,14 @@ var configRecommendCmd = &cobra.Command{
 	},
 }
 
+
+// refScheme returns the scheme prefix (e.g. "s3://" or "local://") from a raw reference.
+func refScheme(rawRef string) string {
+	if strings.HasPrefix(rawRef, "local://") {
+		return "local://"
+	}
+	return "s3://"
+}
 
 func init() {
 	configGetCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
