@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/OuFinx/s3lo/pkg/image"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -15,18 +16,25 @@ var pushCmd = &cobra.Command{
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/push/
 
   s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0`,
-	Args:    cobra.ExactArgs(2),
+	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Pushing %s to %s\n", args[0], args[1])
-		bar := newProgressBar("  uploading")
+		var bar *progressbar.ProgressBar
 		opts := image.PushOptions{
 			Force: pushForce,
+			OnStart: func(total int64) {
+				bar = newProgressBar("  uploading", total)
+			},
 			OnBlob: func(_ string, size int64, _ bool) {
-				bar.Add64(size)
+				if bar != nil {
+					bar.Add64(size)
+				}
 			},
 		}
 		err := image.Push(cmd.Context(), args[0], args[1], opts)
-		bar.Finish()
+		if bar != nil {
+			bar.Finish()
+		}
 		if err != nil {
 			return err
 		}

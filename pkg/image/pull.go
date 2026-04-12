@@ -19,6 +19,8 @@ type PullOptions struct {
 	// Platform selects a specific platform from a multi-arch image (e.g. "linux/amd64").
 	// Empty means auto-detect the host platform.
 	Platform string
+	// OnStart is called once with the total blob bytes before any downloads begin.
+	OnStart func(totalBytes int64)
 	// OnBlob is called for each blob after it is downloaded.
 	// digest is the sha256 hex digest, size in bytes.
 	OnBlob func(digest string, size int64)
@@ -63,7 +65,7 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 				return err
 			}
 		}
-		if err := pullV110(ctx, client, parsed, manifestData, tmpDir, opts.OnBlob); err != nil {
+		if err := pullV110(ctx, client, parsed, manifestData, tmpDir, opts.OnBlob, opts.OnStart); err != nil {
 			return err
 		}
 	}
@@ -108,7 +110,7 @@ func resolvePlatformManifest(ctx context.Context, client *s3client.Client, bucke
 
 // pullV110 downloads a v1.1.0 image into tmpDir, reconstructing the local OCI layout
 // that oci.ImportImage expects: tmpDir/manifest.json + tmpDir/blobs/sha256/<digest>.
-func pullV110(ctx context.Context, client *s3client.Client, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64)) error {
+func pullV110(ctx context.Context, client *s3client.Client, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64), onStart func(int64)) error {
 	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), manifestData, 0o644); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}
@@ -116,6 +118,17 @@ func pullV110(ctx context.Context, client *s3client.Client, parsed ref.Reference
 	manifest, err := oci.ParseManifest(manifestData)
 	if err != nil {
 		return fmt.Errorf("parse manifest: %w", err)
+	}
+
+	// Report total download size for deterministic progress bar.
+	if onStart != nil {
+		totalBytes := manifest.Config.Size
+		for _, layer := range manifest.Layers {
+			totalBytes += layer.Size
+		}
+		if totalBytes > 0 {
+			onStart(totalBytes)
+		}
 	}
 
 	blobsDir := filepath.Join(tmpDir, "blobs", "sha256")

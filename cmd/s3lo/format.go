@@ -8,12 +8,23 @@ import (
 	"github.com/schollz/progressbar/v3"
 )
 
-// newProgressBar creates a bytes-based indeterminate progress bar that writes to stderr.
-// Use bar.Add64(size) to advance it, bar.Finish() when done.
+// newProgressBar creates a progress bar that writes to stderr.
+// If total > 0, shows a deterministic percentage bar; otherwise shows an indeterminate spinner.
 // In non-TTY environments (CI, piped output) it is automatically silenced.
-func newProgressBar(description string) *progressbar.ProgressBar {
+func newProgressBar(description string, total int64) *progressbar.ProgressBar {
+	if total > 0 {
+		return progressbar.NewOptions64(
+			total,
+			progressbar.OptionSetWriter(os.Stderr),
+			progressbar.OptionSetDescription(description),
+			progressbar.OptionShowBytes(true),
+			progressbar.OptionThrottle(50*time.Millisecond),
+			progressbar.OptionSetRenderBlankState(true),
+			progressbar.OptionOnCompletion(func() { fmt.Fprint(os.Stderr, "\n") }),
+		)
+	}
 	return progressbar.NewOptions64(
-		-1, // indeterminate — total is unknown upfront
+		-1, // indeterminate
 		progressbar.OptionSetWriter(os.Stderr),
 		progressbar.OptionSetDescription(description),
 		progressbar.OptionShowBytes(true),
