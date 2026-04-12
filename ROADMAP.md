@@ -41,6 +41,15 @@
 - [x] Severity filtering: `--severity HIGH,CRITICAL`
 - [x] Output format control: `--format json|sarif|cyclonedx`
 
+## v1.6.0 — Code Quality & Reliability
+
+- [x] Refactor: split copy.go into focused files (copy_s3.go, copy_registry.go, registry_auth.go, registry_ref.go)
+- [x] Performance: stream registry blobs directly to temp files (no in-memory buffer)
+- [x] Performance: cache Bearer token per registry, skip repeated 401 round-trips
+- [x] Reliability: retry registry HTTP calls on transient errors with exponential backoff
+- [x] UX: deterministic progress bar showing transferred / total bytes for push, pull, copy, scan
+- [x] Observability: `--verbose` flag with `slog` debug output for HTTP requests, auth, retries
+
 ## v2.0.0 — Security
 
 - [ ] `s3lo sign` — sign images with cosign/Sigstore

@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/OuFinx/s3lo/pkg/image"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
 )
@@ -45,19 +46,26 @@ Use --install-trivy to skip the confirmation prompt.`,
 		}
 
 		fmt.Printf("Scanning %s\n", args[0])
-		bar := newProgressBar("  downloading")
+		var bar *progressbar.ProgressBar
 		opts := image.ScanOptions{
 			Platform:  platform,
 			Severity:  severity,
 			Format:    format,
 			TrivyPath: trivyPath,
+			OnStart: func(total int64) {
+				bar = newProgressBar("  downloading", total)
+			},
 			OnBlob: func(_ string, size int64) {
-				bar.Add64(size)
+				if bar != nil {
+					bar.Add64(size)
+				}
 			},
 		}
 
 		exitCode, err := image.Scan(cmd.Context(), args[0], opts)
-		bar.Finish()
+		if bar != nil {
+			bar.Finish()
+		}
 		if err != nil {
 			return err
 		}

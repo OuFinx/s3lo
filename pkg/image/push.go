@@ -3,6 +3,7 @@ package image
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"sync"
@@ -21,6 +22,8 @@ var manifestFiles = []string{"manifest.json", "config.json", "index.json", "oci-
 type PushOptions struct {
 	// Force overwrites an existing tag even if the bucket has immutability enabled.
 	Force bool
+	// OnStart is called once with the total blob bytes before any uploads begin.
+	OnStart func(totalBytes int64)
 	// OnBlob is called for each blob after it is processed (uploaded or skipped).
 	// digest is the sha256 digest (without "sha256:" prefix), size in bytes, skipped=true if already existed.
 	OnBlob func(digest string, size int64, skipped bool)
@@ -79,6 +82,22 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return fmt.Errorf("read blobs dir: %w", err)
 	}
 
+	// Sum blob sizes for deterministic progress reporting.
+	if opts.OnStart != nil {
+		var totalBytes int64
+		for _, entry := range entries {
+			if entry.IsDir() {
+				continue
+			}
+			if info, err := entry.Info(); err == nil {
+				totalBytes += info.Size()
+			}
+		}
+		if totalBytes > 0 {
+			opts.OnStart(totalBytes)
+		}
+	}
+
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(10)
 	var onBlobMu sync.Mutex
@@ -101,9 +120,12 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 			// but we need to know the outcome for OnBlob reporting.
 			exists, _ := client.HeadObjectExists(gCtx, parsed.Bucket, key)
 			if !exists {
+				slog.Debug("uploading blob", "digest", entry.Name()[:12], "size", info.Size())
 				if err := client.UploadFile(gCtx, localPath, parsed.Bucket, key, s3types.StorageClassIntelligentTiering); err != nil {
 					return fmt.Errorf("upload blob %s: %w", entry.Name(), err)
 				}
+			} else {
+				slog.Debug("blob already exists, skipping", "digest", entry.Name()[:12])
 			}
 
 			if opts.OnBlob != nil {

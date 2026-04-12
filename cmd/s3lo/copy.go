@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/OuFinx/s3lo/pkg/image"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -37,15 +38,22 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 		platform, _ := cmd.Flags().GetString("platform")
 		src, dest := args[0], args[1]
 		fmt.Printf("Copying %s to %s\n", src, dest)
-		bar := newProgressBar("  copying")
+		var bar *progressbar.ProgressBar
 		opts := image.CopyOptions{
 			Platform: platform,
+			OnStart: func(total int64) {
+				bar = newProgressBar("  copying", total)
+			},
 			OnBlob: func(_ string, _ string, size int64, _ bool) {
-				bar.Add64(size)
+				if bar != nil {
+					bar.Add64(size)
+				}
 			},
 		}
 		result, err := image.Copy(cmd.Context(), src, dest, opts)
-		bar.Finish()
+		if bar != nil {
+			bar.Finish()
+		}
 		if err != nil {
 			return err
 		}

@@ -30,6 +30,8 @@ type ScanOptions struct {
 	Format string
 	// TrivyPath is the absolute path to the trivy binary.
 	TrivyPath string
+	// OnStart is called once with the total blob bytes before any downloads begin.
+	OnStart func(totalBytes int64)
 	// OnBlob is called after each blob is downloaded.
 	OnBlob func(digest string, size int64)
 }
@@ -70,7 +72,7 @@ func Scan(ctx context.Context, s3Ref string, opts ScanOptions) (int, error) {
 	}
 
 	// Download config + layer blobs to tmpDir/blobs/sha256/.
-	if err := pullV110(ctx, client, parsed, manifestData, tmpDir, opts.OnBlob); err != nil {
+	if err := pullV110(ctx, client, parsed, manifestData, tmpDir, opts.OnBlob, opts.OnStart); err != nil {
 		return 0, fmt.Errorf("download image: %w", err)
 	}
 

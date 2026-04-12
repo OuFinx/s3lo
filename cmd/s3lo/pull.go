@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/OuFinx/s3lo/pkg/image"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
 
@@ -23,15 +24,22 @@ var pullCmd = &cobra.Command{
 			imageTag = args[1]
 		}
 		fmt.Printf("Pulling %s\n", args[0])
-		bar := newProgressBar("  downloading")
+		var bar *progressbar.ProgressBar
 		opts := image.PullOptions{
 			Platform: platform,
+			OnStart: func(total int64) {
+				bar = newProgressBar("  downloading", total)
+			},
 			OnBlob: func(_ string, size int64) {
-				bar.Add64(size)
+				if bar != nil {
+					bar.Add64(size)
+				}
 			},
 		}
 		err := image.Pull(cmd.Context(), args[0], imageTag, opts)
-		bar.Finish()
+		if bar != nil {
+			bar.Finish()
+		}
 		if err != nil {
 			return err
 		}
