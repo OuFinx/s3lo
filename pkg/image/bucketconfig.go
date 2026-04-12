@@ -118,19 +118,39 @@ func SetBucketConfig(ctx context.Context, client s3client.Backend, bucket string
 }
 
 // ParseConfigRef parses an s3 config reference into bucket and optional image name.
-// s3://bucket/        -> bucket="bucket", image=""
-// s3://bucket/myapp   -> bucket="bucket", image="myapp"
-// s3://bucket/dev/*   -> bucket="bucket", image="dev/*"
+// s3://bucket/          -> bucket="bucket",    image=""
+// s3://bucket/myapp     -> bucket="bucket",    image="myapp"
+// s3://bucket/dev/*     -> bucket="bucket",    image="dev/*"
+// local://./store/      -> bucket="./store",   image=""
+// local://./store/myapp -> bucket="./store",   image="myapp"
 func ParseConfigRef(s3Ref string) (bucket, image string, err error) {
 	var rest string
+	var isLocal bool
 	switch {
 	case strings.HasPrefix(s3Ref, "s3://"):
 		rest = strings.TrimPrefix(s3Ref, "s3://")
 	case strings.HasPrefix(s3Ref, "local://"):
 		rest = strings.TrimPrefix(s3Ref, "local://")
+		isLocal = true
 	default:
 		return "", "", fmt.Errorf("invalid reference %q: must start with s3:// or local://", s3Ref)
 	}
+
+	if isLocal && (strings.HasPrefix(rest, "./") || strings.HasPrefix(rest, "../")) {
+		firstSlash := strings.Index(rest, "/")
+		after := rest[firstSlash+1:]
+		secondSlash := strings.Index(after, "/")
+		if secondSlash < 0 {
+			return rest, "", nil
+		}
+		bucket = rest[:firstSlash+1+secondSlash]
+		image = strings.TrimSuffix(after[secondSlash+1:], "/")
+		if bucket == "" {
+			return "", "", fmt.Errorf("invalid reference %q: empty bucket", s3Ref)
+		}
+		return bucket, image, nil
+	}
+
 	slashIdx := strings.Index(rest, "/")
 	if slashIdx < 0 {
 		return rest, "", nil

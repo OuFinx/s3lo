@@ -20,6 +20,7 @@ type DoctorIssue struct {
 // DoctorResult holds the findings of a bucket health check.
 type DoctorResult struct {
 	Bucket         string        `json:"bucket"`
+	Scheme         string        `json:"scheme"`
 	LayoutOK       bool          `json:"layout_ok"`
 	ConfigOK       bool          `json:"config_ok"`
 	ManifestIssues []DoctorIssue `json:"manifest_issues,omitempty"`
@@ -41,7 +42,11 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
-	result := &DoctorResult{Bucket: bucket}
+	scheme := "s3://"
+	if strings.HasPrefix(s3BucketRef, "local://") {
+		scheme = "local://"
+	}
+	result := &DoctorResult{Bucket: bucket, Scheme: scheme}
 
 	// --- Layout check ---
 	manifestKeys, err := client.ListKeys(ctx, bucket, prefix+"manifests/")
@@ -128,7 +133,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 				mu.Lock()
 				issues = append(issues, DoctorIssue{
 					Image:   imageTag,
-					Message: fmt.Sprintf("missing blob(s): %s (image cannot be repaired — delete with: s3lo delete s3://%s/%s)", strings.Join(missing, ", "), bucket, imageTag),
+					Message: fmt.Sprintf("missing blob(s): %s (image cannot be repaired — delete with: s3lo delete %s%s/%s)", strings.Join(missing, ", "), scheme, bucket, imageTag),
 				})
 				mu.Unlock()
 			}

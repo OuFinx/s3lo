@@ -55,8 +55,7 @@ var initCmd = &cobra.Command{
 
 // localInitConfig is the s3lo.yaml written for local mode.
 var localInitConfig = `# s3lo local storage configuration
-# This directory mirrors the S3 layout used by s3lo.
-# Note: local:// scheme is not yet supported — this scaffolding is for reference only.
+# See: https://oufinx.github.io/s3lo/commands/config/
 
 default:
   lifecycle:
@@ -86,7 +85,8 @@ func runLocalInit(localPath string) error {
 	}
 
 	fmt.Printf("✓ Created local storage at %s\n", localPath)
-	fmt.Printf("\nNote: local:// scheme is not yet supported. Use this layout as a reference or for testing.\n")
+	fmt.Printf("\nYour local storage is ready. Try:\n")
+	fmt.Printf("  s3lo push myapp:latest local://%s/myapp:latest\n", localPath)
 	return nil
 }
 

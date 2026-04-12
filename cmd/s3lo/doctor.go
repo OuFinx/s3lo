@@ -68,11 +68,11 @@ func printDoctorResult(r *image.DoctorResult) {
 		if len(r.ManifestIssues) > 0 {
 			fmt.Println("Corrupted images found. Run:")
 			for _, issue := range r.ManifestIssues {
-				fmt.Printf("  s3lo delete s3://%s/%s\n", r.Bucket, issue.Image)
+				fmt.Printf("  s3lo delete %s%s/%s\n", r.Scheme, r.Bucket, issue.Image)
 			}
 		}
 		if r.OrphanedBlobs > 0 {
-			fmt.Printf("  s3lo clean s3://%s/ --blobs --confirm\n", r.Bucket)
+			fmt.Printf("  s3lo clean %s%s/ --blobs --confirm\n", r.Scheme, r.Bucket)
 		}
 	}
 }
