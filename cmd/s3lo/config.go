@@ -87,9 +87,11 @@ var configGetCmd = &cobra.Command{
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
 
   s3lo config get s3://my-bucket/           # show all configs
-  s3lo config get s3://my-bucket/myapp      # show effective config for an image`,
+  s3lo config get s3://my-bucket/myapp      # show effective config for an image
+  s3lo config get s3://my-bucket/ --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		outputFmt, _ := cmd.Flags().GetString("output")
 		bucket, imageName, err := image.ParseConfigRef(args[0])
 		if err != nil {
 			return err
@@ -103,6 +105,27 @@ var configGetCmd = &cobra.Command{
 		cfg, err := image.GetBucketConfig(cmd.Context(), client, bucket)
 		if err != nil {
 			return err
+		}
+
+		if outputFmt != "" && outputFmt != "table" {
+			if imageName != "" {
+				eff := cfg.EffectiveConfig(imageName)
+				ok, err := writeOutput(outputFmt, eff)
+				if err != nil {
+					return err
+				}
+				if ok {
+					return nil
+				}
+			} else {
+				ok, err := writeOutput(outputFmt, cfg)
+				if err != nil {
+					return err
+				}
+				if ok {
+					return nil
+				}
+			}
 		}
 
 		if imageName == "" {
@@ -366,6 +389,7 @@ var configRecommendCmd = &cobra.Command{
 
 
 func init() {
+	configGetCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configRemoveCmd)

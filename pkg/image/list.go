@@ -11,8 +11,8 @@ import (
 
 // ImageEntry represents an image and its available tags in the registry.
 type ImageEntry struct {
-	Name string
-	Tags []string
+	Name string   `json:"name" yaml:"name"`
+	Tags []string `json:"tags" yaml:"tags"`
 }
 
 // List lists all images in an S3 bucket path.

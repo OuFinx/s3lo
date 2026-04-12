@@ -17,29 +17,29 @@ import (
 
 // ImageInfo holds metadata about an image stored on S3.
 type ImageInfo struct {
-	Reference string
-	IsIndex   bool
+	Reference string           `json:"reference" yaml:"reference"`
+	IsIndex   bool             `json:"is_index" yaml:"is_index"`
 	// Single-arch fields (IsIndex == false).
-	Manifest  ocispec.Manifest
-	Layers    []LayerDetail
-	TotalSize int64
+	Manifest  ocispec.Manifest `json:"manifest,omitempty" yaml:"manifest,omitempty"`
+	Layers    []LayerDetail    `json:"layers,omitempty" yaml:"layers,omitempty"`
+	TotalSize int64            `json:"total_size,omitempty" yaml:"total_size,omitempty"`
 	// Multi-arch fields (IsIndex == true).
-	Platforms []PlatformInfo
+	Platforms []PlatformInfo   `json:"platforms,omitempty" yaml:"platforms,omitempty"`
 }
 
 // LayerDetail describes a single image layer.
 type LayerDetail struct {
-	Digest    string
-	Size      int64
-	MediaType string
+	Digest    string `json:"digest" yaml:"digest"`
+	Size      int64  `json:"size" yaml:"size"`
+	MediaType string `json:"media_type" yaml:"media_type"`
 }
 
 // PlatformInfo holds metadata for one platform in a multi-arch image.
 type PlatformInfo struct {
-	Platform  string
-	Digest    string
-	Layers    []LayerDetail
-	TotalSize int64
+	Platform  string        `json:"platform" yaml:"platform"`
+	Digest    string        `json:"digest" yaml:"digest"`
+	Layers    []LayerDetail `json:"layers,omitempty" yaml:"layers,omitempty"`
+	TotalSize int64         `json:"total_size" yaml:"total_size"`
 }
 
 // Inspect fetches and returns metadata about an image on S3.
