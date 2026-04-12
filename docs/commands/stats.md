@@ -6,10 +6,11 @@ Show storage usage, deduplication savings, and estimated monthly cost.
 s3lo stats <s3-bucket-ref>
 ```
 
-## Example
+## Examples
 
 ```bash
 s3lo stats s3://my-bucket/
+s3lo stats local://./local-s3/
 ```
 
 ## Output

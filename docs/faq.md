@@ -30,6 +30,10 @@ Blobs uploaded before the interruption stay in S3. Re-running the push will skip
 
 Blob uploads are safe (same content, same key). However, two simultaneous pushes of different images to the same tag create a race — the last manifest written wins. Serialize pushes to the same tag.
 
+**Why does s3lo require an explicit tag?**
+
+Commands like `pull`, `push`, `delete`, `inspect`, `scan`, and `copy` require an explicit tag (e.g. `s3://my-bucket/myapp:v1.0`). Writing `s3://my-bucket/myapp` without a tag is an error. This prevents accidental operations that silently default to `:latest`.
+
 **Why does pull show "Done" but `docker images` shows nothing?**
 
 Check that Docker is running. Also verify the image was pushed with the correct platform — on Apple Silicon, Docker produces `linux/arm64` images, which won't run on `linux/amd64` nodes. Use `--platform linux/amd64` when building or use `s3lo copy` to mirror a multi-arch image.
@@ -58,6 +62,10 @@ s3lo clean s3://my-bucket/ --blobs --confirm
 **Does s3lo work with S3-compatible storage (MinIO, Backblaze, etc.)?**
 
 Not officially. The AWS SDK's `AWS_ENDPOINT_URL` override may work for testing but is unsupported.
+
+**Can I use s3lo without an AWS account?**
+
+Yes. Use `s3lo init --local ./my-store` to create a local directory with the OCI layout, then use `local://` references (e.g. `local://./my-store/myapp:v1.0`). All commands — push, pull, list, history, inspect, delete, copy — work with local storage.
 
 ---
 

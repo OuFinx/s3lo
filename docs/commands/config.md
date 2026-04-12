@@ -1,13 +1,15 @@
 # config
 
-Manage per-image and bucket-wide configuration stored at `s3://bucket/s3lo.yaml`.
+Manage per-image and bucket-wide configuration stored in `s3lo.yaml`.
 
 ```
-s3lo config set <s3-ref> <key>=<value> [<key>=<value> ...]
-s3lo config get <s3-ref>
-s3lo config remove <s3-ref> [key]
-s3lo config recommend <s3-bucket-ref>
+s3lo config set <ref> <key>=<value> [<key>=<value> ...]
+s3lo config get <ref>
+s3lo config remove <ref> [key]
+s3lo config recommend <bucket-ref>
 ```
+
+Both `s3://` and `local://` references are supported.
 
 ## Configuration keys
 
@@ -22,8 +24,8 @@ s3lo config recommend <s3-bucket-ref>
 
 Config is per-image but inherits from bucket-wide defaults. Use:
 
-- `s3://bucket/` — bucket-wide defaults (apply to all images)
-- `s3://bucket/myapp` — overrides for a specific image
+- `s3://bucket/` or `local://./store/` — bucket-wide defaults (apply to all images)
+- `s3://bucket/myapp` or `local://./store/myapp` — overrides for a specific image
 - `s3://bucket/dev/*` — glob pattern (matches all images under `dev/`)
 
 More specific patterns take precedence over less specific ones.

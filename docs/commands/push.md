@@ -11,7 +11,7 @@ s3lo push <local-image> <s3-ref> [flags]
 | Argument | Description |
 |----------|-------------|
 | `<local-image>` | Image name and tag as shown in `docker images`, e.g. `myapp:v1.0` |
-| `<s3-ref>` | Destination in `s3://bucket/image:tag` format |
+| `<s3-ref>` | Destination in `s3://bucket/image:tag` or `local://path/image:tag` format. Tag is required. |
 
 ## Flags
 
@@ -43,6 +43,9 @@ s3lo push backend:latest s3://my-bucket/org/backend:latest
 
 # Force-overwrite an immutable tag
 s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --force
+
+# Push to local storage
+s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
 ```
 
 ## Output
@@ -71,3 +74,6 @@ The progress bar shows bytes uploaded and elapsed time. It's hidden automaticall
 
 !!! tip "Idempotent"
     Pushing the same image twice is safe and fast. The second push skips all blobs and only re-uploads the manifest (a few bytes).
+
+!!! warning "Explicit tag required"
+    The destination tag must be specified explicitly — `s3lo push myapp:v1.0 s3://my-bucket/myapp` (without `:tag`) is an error.

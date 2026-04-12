@@ -6,6 +6,8 @@ Download an image from S3 and scan it for vulnerabilities using [Trivy](https://
 s3lo scan <s3-ref> [flags]
 ```
 
+The reference must include an explicit tag. Both `s3://` and `local://` references are supported.
+
 ## Flags
 
 | Flag | Default | Description |

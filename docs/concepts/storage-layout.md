@@ -1,6 +1,8 @@
 # Storage Layout
 
-s3lo stores images in a well-defined layout inside your S3 bucket. Understanding the layout makes it easy to reason about costs, permissions, and interoperability.
+s3lo stores images in a well-defined layout inside your S3 bucket or local directory. Understanding the layout makes it easy to reason about costs, permissions, and interoperability.
+
+The layout is identical for S3 (`s3://`) and local storage (`local://`).
 
 ## Top-level structure
 

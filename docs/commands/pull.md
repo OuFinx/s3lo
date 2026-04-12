@@ -10,8 +10,8 @@ s3lo pull <s3-ref> [image-tag] [flags]
 
 | Argument | Description |
 |----------|-------------|
-| `<s3-ref>` | Source in `s3://bucket/image:tag` format |
-| `[image-tag]` | Optional tag to apply after import. Defaults to `image:tag` from the S3 ref. |
+| `<s3-ref>` | Source in `s3://bucket/image:tag` or `local://path/image:tag` format. Tag is required. |
+| `[image-tag]` | Optional tag to apply after import. Defaults to `image:tag` from the ref. |
 
 ## Flags
 
@@ -42,6 +42,9 @@ s3lo pull s3://my-bucket/alpine:latest --platform linux/amd64
 
 # Pull and run immediately
 s3lo pull s3://my-bucket/myapp:v1.0 && docker run --rm myapp:v1.0
+
+# Pull from local storage
+s3lo pull local://./local-s3/alpine:latest
 ```
 
 ## Output
@@ -65,3 +68,6 @@ On macOS, `darwin/arm64` is automatically normalized to `linux/arm64` — contai
 
 !!! note
     If the image is single-arch (not an OCI Image Index), `--platform` is ignored and the single manifest is always used.
+
+!!! warning "Explicit tag required"
+    The tag must be specified explicitly — `s3lo pull s3://my-bucket/myapp` (without `:tag`) is an error. This prevents accidental pulls that silently default to `:latest`.
