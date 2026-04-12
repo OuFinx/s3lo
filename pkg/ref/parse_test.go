@@ -37,6 +37,16 @@ func TestParse(t *testing.T) {
 			want:  Reference{Scheme: "local", Bucket: "mystore", Image: "myapp", Tag: "v1.0"},
 		},
 		{
+			name:  "local relative ./path",
+			input: "local://./my-store/myapp:v1.0",
+			want:  Reference{Scheme: "local", Bucket: "./my-store", Image: "myapp", Tag: "v1.0"},
+		},
+		{
+			name:  "local relative ./path nested image",
+			input: "local://./my-store/org/myapp:v1.0",
+			want:  Reference{Scheme: "local", Bucket: "./my-store", Image: "org/myapp", Tag: "v1.0"},
+		},
+		{
 			name:    "missing bucket",
 			input:   "s3:///myapp:v1.0",
 			wantErr: true,

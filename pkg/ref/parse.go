@@ -14,7 +14,7 @@ type Reference struct {
 	Digest string
 }
 
-// Parse parses an S3 or local image reference like "s3://my-bucket/myapp:v1.0" or "local:///tmp/store/myapp:v1.0".
+// Parse parses an S3 or local image reference like "s3://my-bucket/myapp:v1.0" or "local://./store/myapp:v1.0".
 func Parse(raw string) (Reference, error) {
 	var scheme, rest string
 	switch {
@@ -28,17 +28,13 @@ func Parse(raw string) (Reference, error) {
 		return Reference{}, fmt.Errorf("invalid reference %q: must start with s3:// or local://", raw)
 	}
 
-	slashIdx := strings.Index(rest, "/")
-	if slashIdx < 0 {
-		return Reference{}, fmt.Errorf("invalid reference %q: missing image path", raw)
+	bucket, imageAndTag, err := splitBucketPath(scheme, rest)
+	if err != nil {
+		return Reference{}, fmt.Errorf("invalid reference %q: %w", raw, err)
 	}
-
-	bucket := rest[:slashIdx]
 	if bucket == "" {
 		return Reference{}, fmt.Errorf("invalid reference %q: empty bucket", raw)
 	}
-
-	imageAndTag := rest[slashIdx+1:]
 	if imageAndTag == "" || imageAndTag == "/" {
 		return Reference{}, fmt.Errorf("invalid reference %q: missing image name", raw)
 	}
@@ -62,6 +58,31 @@ func Parse(raw string) (Reference, error) {
 	}
 
 	return ref, nil
+}
+
+// splitBucketPath splits a path (after the scheme://) into (bucket, imageAndTag).
+// For local:// refs, relative prefixes like "./" and "../" are consumed as part
+// of the bucket name so that "local://./store/img:tag" gives bucket="./store".
+// For s3://, the first slash is always the bucket boundary.
+func splitBucketPath(scheme, rest string) (bucket, remainder string, err error) {
+	if scheme == "local" {
+		switch {
+		case strings.HasPrefix(rest, "./"), strings.HasPrefix(rest, "../"):
+			// Find the slash that ends the first directory component after the prefix.
+			after := rest[strings.Index(rest, "/")+1:]
+			i := strings.Index(after, "/")
+			if i < 0 {
+				return "", "", fmt.Errorf("missing image path after storage root %q", rest)
+			}
+			boundary := len(rest) - len(after) + i
+			return rest[:boundary], rest[boundary+1:], nil
+		}
+	}
+	i := strings.Index(rest, "/")
+	if i < 0 {
+		return "", "", fmt.Errorf("missing image path")
+	}
+	return rest[:i], rest[i+1:], nil
 }
 
 // S3Prefix returns the S3 key prefix for this image: "image/tag".
