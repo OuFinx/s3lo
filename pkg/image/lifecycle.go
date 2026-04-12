@@ -63,9 +63,9 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, 
 		return nil, err
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := s3client.NewBackendFromRef(ctx, s3BucketRef)
 	if err != nil {
-		return nil, fmt.Errorf("create S3 client: %w", err)
+		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
 	// Collect all tags with their LastModified time.

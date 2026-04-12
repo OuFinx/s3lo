@@ -14,22 +14,27 @@ func TestParse(t *testing.T) {
 		{
 			name:  "full reference",
 			input: "s3://my-bucket/myapp:v1.0",
-			want:  Reference{Bucket: "my-bucket", Image: "myapp", Tag: "v1.0"},
+			want:  Reference{Scheme: "s3", Bucket: "my-bucket", Image: "myapp", Tag: "v1.0"},
 		},
 		{
 			name:  "nested path",
 			input: "s3://my-bucket/org/myapp:v1.0",
-			want:  Reference{Bucket: "my-bucket", Image: "org/myapp", Tag: "v1.0"},
+			want:  Reference{Scheme: "s3", Bucket: "my-bucket", Image: "org/myapp", Tag: "v1.0"},
 		},
 		{
 			name:  "no tag defaults to latest",
 			input: "s3://my-bucket/myapp",
-			want:  Reference{Bucket: "my-bucket", Image: "myapp", Tag: "latest"},
+			want:  Reference{Scheme: "s3", Bucket: "my-bucket", Image: "myapp", Tag: "latest"},
 		},
 		{
 			name:  "sha256 digest",
 			input: "s3://my-bucket/myapp@sha256:abc123",
-			want:  Reference{Bucket: "my-bucket", Image: "myapp", Digest: "sha256:abc123"},
+			want:  Reference{Scheme: "s3", Bucket: "my-bucket", Image: "myapp", Digest: "sha256:abc123"},
+		},
+		{
+			name:  "local reference",
+			input: "local://mystore/myapp:v1.0",
+			want:  Reference{Scheme: "local", Bucket: "mystore", Image: "myapp", Tag: "v1.0"},
 		},
 		{
 			name:    "missing bucket",
@@ -76,8 +81,16 @@ func TestReference_S3Prefix(t *testing.T) {
 }
 
 func TestReference_String(t *testing.T) {
-	ref := Reference{Bucket: "my-bucket", Image: "myapp", Tag: "v1.0"}
+	ref := Reference{Scheme: "s3", Bucket: "my-bucket", Image: "myapp", Tag: "v1.0"}
 	want := "s3://my-bucket/myapp:v1.0"
+	if got := ref.String(); got != want {
+		t.Errorf("String() = %q, want %q", got, want)
+	}
+}
+
+func TestReference_StringLocal(t *testing.T) {
+	ref := Reference{Scheme: "local", Bucket: "mystore", Image: "myapp", Tag: "v1.0"}
+	want := "local://mystore/myapp:v1.0"
 	if got := ref.String(); got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}

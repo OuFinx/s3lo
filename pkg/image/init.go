@@ -3,6 +3,7 @@ package image
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
@@ -35,6 +36,10 @@ default:
 // Init verifies bucket access, checks Intelligent-Tiering, and writes a default s3lo.yaml.
 // It returns an InitResult describing what was found and done.
 func Init(ctx context.Context, s3BucketRef string) (*InitResult, error) {
+	if strings.HasPrefix(s3BucketRef, "local://") {
+		return nil, fmt.Errorf("use s3lo init --local for local storage")
+	}
+
 	bucket, _, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err

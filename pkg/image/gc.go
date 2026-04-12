@@ -32,9 +32,9 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 		return nil, err
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := s3client.NewBackendFromRef(ctx, s3BucketRef)
 	if err != nil {
-		return nil, fmt.Errorf("create S3 client: %w", err)
+		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
 	// Step 1: collect all blob digests referenced by any manifest.
@@ -80,7 +80,7 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 
 // collectReferencedDigests fetches all manifests in parallel and returns the set
 // of blob digests (without sha256: prefix) they reference.
-func collectReferencedDigests(ctx context.Context, client *s3client.Client, bucket, prefix string) (map[string]bool, error) {
+func collectReferencedDigests(ctx context.Context, client s3client.Backend, bucket, prefix string) (map[string]bool, error) {
 	manifestsPrefix := prefix + "manifests/"
 	manifestKeys, err := client.ListKeys(ctx, bucket, manifestsPrefix)
 	if err != nil {

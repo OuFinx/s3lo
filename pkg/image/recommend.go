@@ -3,6 +3,7 @@ package image
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -30,6 +31,10 @@ type RecommendResult struct {
 
 // Recommend analyzes the actual state of a bucket and returns data-driven recommendations.
 func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error) {
+	if strings.HasPrefix(s3BucketRef, "local://") {
+		return nil, fmt.Errorf("s3lo recommend is not supported for local storage")
+	}
+
 	bucket, _, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err

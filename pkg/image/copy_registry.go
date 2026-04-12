@@ -46,9 +46,9 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		return nil, fmt.Errorf("fetch manifest from registry: %w", err)
 	}
 
-	s3c, err := s3client.NewClient(ctx)
+	s3c, err := s3client.NewBackendFromRef(ctx, destRef)
 	if err != nil {
-		return nil, fmt.Errorf("create S3 client: %w", err)
+		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
 	var blobsCopied, blobsSkipped atomic.Int64

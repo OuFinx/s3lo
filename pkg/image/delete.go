@@ -16,9 +16,9 @@ func Delete(ctx context.Context, s3Ref string) error {
 		return fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return fmt.Errorf("create S3 client: %w", err)
+		return fmt.Errorf("create storage client: %w", err)
 	}
 
 	prefix := parsed.ManifestsPrefix()

@@ -53,9 +53,9 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return fmt.Errorf("write OCI layout: %w", err)
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return fmt.Errorf("create S3 client: %w", err)
+		return fmt.Errorf("create storage client: %w", err)
 	}
 
 	// Immutability check: reject push if tag exists and image is configured immutable.

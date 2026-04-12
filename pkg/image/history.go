@@ -4,11 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	s3client "github.com/OuFinx/s3lo/pkg/s3"
 )
@@ -27,20 +25,19 @@ func GetHistory(ctx context.Context, s3Ref string) ([]HistoryEntry, error) {
 	if err != nil {
 		return nil, fmt.Errorf("invalid S3 reference: %w", err)
 	}
-	client, err := s3client.NewClient(ctx)
+	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return nil, fmt.Errorf("create S3 client: %w", err)
+		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 	return readHistory(ctx, client, parsed)
 }
 
 // readHistory reads history.json for the given image tag.
-func readHistory(ctx context.Context, client *s3client.Client, parsed ref.Reference) ([]HistoryEntry, error) {
+func readHistory(ctx context.Context, client s3client.Backend, parsed ref.Reference) ([]HistoryEntry, error) {
 	key := parsed.ManifestsPrefix() + "history.json"
 	data, err := client.GetObject(ctx, parsed.Bucket, key)
 	if err != nil {
-		var noSuchKey *s3types.NoSuchKey
-		if errors.As(err, &noSuchKey) {
+		if s3client.IsNotFound(err) {
 			return nil, nil // no history yet
 		}
 		return nil, fmt.Errorf("read history: %w", err)
@@ -54,7 +51,7 @@ func readHistory(ctx context.Context, client *s3client.Client, parsed ref.Refere
 
 // recordHistory prepends a new push event to the tag's history.json.
 // Called from Push after a successful upload.
-func recordHistory(ctx context.Context, client *s3client.Client, parsed ref.Reference, manifestData []byte, sizeBytes int64) error {
+func recordHistory(ctx context.Context, client s3client.Backend, parsed ref.Reference, manifestData []byte, sizeBytes int64) error {
 	h := sha256.Sum256(manifestData)
 	entry := HistoryEntry{
 		PushedAt:  time.Now().UTC().Truncate(time.Second),

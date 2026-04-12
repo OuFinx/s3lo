@@ -45,7 +45,7 @@ Available keys:
 			return err
 		}
 
-		client, err := s3client.NewClient(cmd.Context())
+		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -97,7 +97,7 @@ var configGetCmd = &cobra.Command{
 			return err
 		}
 
-		client, err := s3client.NewClient(cmd.Context())
+		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -164,7 +164,7 @@ Valid keys to remove: immutable, lifecycle`,
 			return fmt.Errorf("image name required (use s3://bucket/image, not s3://bucket/)")
 		}
 
-		client, err := s3client.NewClient(cmd.Context())
+		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
