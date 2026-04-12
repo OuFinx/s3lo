@@ -72,6 +72,18 @@
 
 - [ ] Google Cloud Storage backend
 - [ ] MinIO / S3-compatible backend
+- [ ] Cloudflare R2 / Azure Blob (S3-compatible)
+
+## v1.11.0 — Policy & SBOM
+
+- [ ] `s3lo config validate` — policy rules and compliance checks
+- [ ] `s3lo sbom` — generate Software Bill of Materials
+
+## v1.12.0 — Long-Term Vision
+
+- [ ] `s3lo serve` — OCI Distribution Spec proxy over S3
+- [ ] Interactive TUI for browsing images and managing lifecycle
+- [ ] Terraform provider for s3lo bucket config and lifecycle
 
 ## v2.0.0 — Stable Release
 
