@@ -50,6 +50,11 @@
 - [x] UX: deterministic progress bar showing transferred / total bytes for push, pull, copy, scan
 - [x] Observability: `--verbose` flag with `slog` debug output for HTTP requests, auth, retries
 
+## v1.7.0 — UX & Output Formats
+
+- [x] `--output json|yaml|table` flag on `list`, `inspect`, `stats`, `config get`
+- [x] Enhanced cost comparison in `stats`: S3 current, S3 no-dedup, ECR equivalent, savings vs ECR
+
 ## v2.0.0 — Security
 
 - [ ] `s3lo sign` — sign images with cosign/Sigstore

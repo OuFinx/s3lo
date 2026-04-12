@@ -11,14 +11,29 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+const (
+	s3PricePerGBMonth  = 0.023 // US East (N. Virginia) standard
+	ecrPricePerGBMonth = 0.10
+)
+
+// CostEstimate holds projected monthly cost figures for a bucket.
+type CostEstimate struct {
+	S3Monthly        float64 `json:"s3_monthly" yaml:"s3_monthly"`
+	S3NoDedupMonthly float64 `json:"s3_no_dedup_monthly" yaml:"s3_no_dedup_monthly"`
+	ECRMonthly       float64 `json:"ecr_monthly" yaml:"ecr_monthly"`
+	SavingsVsECR     float64 `json:"savings_vs_ecr" yaml:"savings_vs_ecr"`
+	SavingsPct       float64 `json:"savings_pct" yaml:"savings_pct"`
+}
+
 // StatsResult holds storage statistics for a bucket.
 type StatsResult struct {
-	Images         int
-	Tags           int
-	UniqueBlobs    int
-	BlobBytes      int64            // actual bytes stored in blobs/sha256/
-	LogicalBytes   int64            // bytes referenced by manifests (pre-dedup total)
-	StorageByClass map[string]int64 // storage class -> bytes
+	Images         int              `json:"images" yaml:"images"`
+	Tags           int              `json:"tags" yaml:"tags"`
+	UniqueBlobs    int              `json:"unique_blobs" yaml:"unique_blobs"`
+	BlobBytes      int64            `json:"blob_bytes" yaml:"blob_bytes"`
+	LogicalBytes   int64            `json:"logical_bytes" yaml:"logical_bytes"`
+	StorageByClass map[string]int64 `json:"storage_by_class" yaml:"storage_by_class"`
+	Cost           CostEstimate     `json:"cost" yaml:"cost"`
 }
 
 // DedupSavings returns bytes saved by cross-image blob deduplication.
@@ -141,6 +156,24 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 		result.StorageByClass[sc] += blob.Size
 	}
 
+	// Compute cost projections.
+	actualGB := float64(result.BlobBytes) / (1 << 30)
+	logicalGB := float64(result.LogicalBytes) / (1 << 30)
+	s3Cost := actualGB * s3PricePerGBMonth
+	s3NoDedupCost := logicalGB * s3PricePerGBMonth
+	ecrCost := logicalGB * ecrPricePerGBMonth
+	savingsVsECR := ecrCost - s3Cost
+	savingsPct := 0.0
+	if ecrCost > 0 {
+		savingsPct = savingsVsECR / ecrCost * 100
+	}
+	result.Cost = CostEstimate{
+		S3Monthly:        s3Cost,
+		S3NoDedupMonthly: s3NoDedupCost,
+		ECRMonthly:       ecrCost,
+		SavingsVsECR:     savingsVsECR,
+		SavingsPct:       savingsPct,
+	}
+
 	return result, nil
 }
-

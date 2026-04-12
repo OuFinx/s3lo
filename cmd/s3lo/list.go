@@ -12,20 +12,28 @@ var listCmd = &cobra.Command{
 	Short: "List images in an S3 bucket",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/list/
 
-  s3lo list s3://my-bucket/`,
+  s3lo list s3://my-bucket/
+  s3lo list s3://my-bucket/ --output json | jq '.[].tags'`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		outputFmt, _ := cmd.Flags().GetString("output")
 		entries, err := image.List(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
-		if len(entries) == 0 {
-			fmt.Println("No images found.")
-			return nil
+		ok, err := writeOutput(outputFmt, entries)
+		if err != nil {
+			return err
 		}
-		for _, entry := range entries {
-			for _, tag := range entry.Tags {
-				fmt.Printf("%s:%s\n", entry.Name, tag)
+		if !ok {
+			if len(entries) == 0 {
+				fmt.Println("No images found.")
+				return nil
+			}
+			for _, entry := range entries {
+				for _, tag := range entry.Tags {
+					fmt.Printf("%s:%s\n", entry.Name, tag)
+				}
 			}
 		}
 		return nil
@@ -33,5 +41,6 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
+	listCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
 	rootCmd.AddCommand(listCmd)
 }

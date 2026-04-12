@@ -17,23 +17,23 @@ const bucketConfigKey = "s3lo.yaml"
 
 // LifecycleImageConfig holds lifecycle retention settings for an image.
 type LifecycleImageConfig struct {
-	KeepLast int      `yaml:"keep_last,omitempty"`
-	MaxAge   string   `yaml:"max_age,omitempty"`
-	KeepTags []string `yaml:"keep_tags,omitempty"`
+	KeepLast int      `yaml:"keep_last,omitempty" json:"keep_last,omitempty"`
+	MaxAge   string   `yaml:"max_age,omitempty" json:"max_age,omitempty"`
+	KeepTags []string `yaml:"keep_tags,omitempty" json:"keep_tags,omitempty"`
 }
 
 // ImageConfig holds per-image s3lo configuration.
 // All fields are pointers so we can distinguish "not set" from zero/false.
 type ImageConfig struct {
-	Immutable *bool                `yaml:"immutable,omitempty"`
-	Lifecycle *LifecycleImageConfig `yaml:"lifecycle,omitempty"`
+	Immutable *bool                 `yaml:"immutable,omitempty" json:"immutable,omitempty"`
+	Lifecycle *LifecycleImageConfig `yaml:"lifecycle,omitempty" json:"lifecycle,omitempty"`
 }
 
 // BucketConfig holds the full s3lo configuration for a bucket, stored at s3://bucket/s3lo.yaml.
 // Default applies to all images. Images contains per-image overrides keyed by name or glob pattern.
 type BucketConfig struct {
-	Default ImageConfig            `yaml:"default,omitempty"`
-	Images  map[string]ImageConfig `yaml:"images,omitempty"`
+	Default ImageConfig            `yaml:"default,omitempty" json:"default,omitempty"`
+	Images  map[string]ImageConfig `yaml:"images,omitempty" json:"images,omitempty"`
 }
 
 // EffectiveConfig returns the resolved configuration for imageName by merging

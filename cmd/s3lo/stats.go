@@ -12,14 +12,22 @@ var statsCmd = &cobra.Command{
 	Short:   "Show storage usage and deduplication savings",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/stats/
 
-  s3lo stats s3://my-bucket/`,
-	Args:    cobra.ExactArgs(1),
+  s3lo stats s3://my-bucket/
+  s3lo stats s3://my-bucket/ --output json`,
+	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		outputFmt, _ := cmd.Flags().GetString("output")
 		result, err := image.Stats(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
-		printStats(args[0], result)
+		ok, err := writeOutput(outputFmt, result)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			printStats(args[0], result)
+		}
 		return nil
 	},
 }
@@ -28,15 +36,15 @@ func printStats(bucketRef string, r *image.StatsResult) {
 	fmt.Printf("Bucket: %s\n\n", bucketRef)
 	fmt.Printf("Images:       %d\n", r.Images)
 	fmt.Printf("Tags:         %d\n", r.Tags)
-	fmt.Printf("Unique blobs: %d\n", r.UniqueBlobs)
-	fmt.Printf("Total size:   %s\n", formatBytes(r.BlobBytes))
+	fmt.Printf("Storage:      %s across %d unique blobs\n", formatBytes(r.BlobBytes), r.UniqueBlobs)
 
 	savings := r.DedupSavings()
 	if savings > 0 {
-		fmt.Printf("\nDedup savings: %s (%.0f%% saved)\n", formatBytes(savings), r.DedupPercent())
+		fmt.Printf("Dedup savings: %s (%.1f%% — without dedup: %s)\n",
+			formatBytes(savings), r.DedupPercent(), formatBytes(r.LogicalBytes))
 	}
 
-	if len(r.StorageByClass) > 0 {
+	if len(r.StorageByClass) > 1 {
 		fmt.Println("\nStorage class breakdown:")
 		for class, bytes := range r.StorageByClass {
 			if r.BlobBytes > 0 {
@@ -46,17 +54,21 @@ func printStats(bucketRef string, r *image.StatsResult) {
 		}
 	}
 
+	c := r.Cost
 	if r.BlobBytes > 0 {
-		gb := float64(r.BlobBytes) / 1024 / 1024 / 1024
-		s3Cost := gb * 0.023
-		ecrCost := gb * 0.10
-		fmt.Printf("\nEstimated monthly cost: $%.2f\n", s3Cost)
-		if s3Cost > 0 {
-			fmt.Printf("vs ECR equivalent:      $%.2f (%.1fx cheaper)\n", ecrCost, ecrCost/s3Cost)
+		fmt.Println("\nEstimated monthly cost:")
+		fmt.Printf("  %-26s $%.2f/month\n", "S3 (current):", c.S3Monthly)
+		if savings > 0 {
+			fmt.Printf("  %-26s $%.2f/month\n", "S3 (no dedup):", c.S3NoDedupMonthly)
+		}
+		fmt.Printf("  %-26s $%.2f/month\n", "ECR equivalent:", c.ECRMonthly)
+		if c.SavingsVsECR > 0 {
+			fmt.Printf("  %-26s $%.2f/month (%.0f%% cheaper)\n", "Savings vs ECR:", c.SavingsVsECR, c.SavingsPct)
 		}
 	}
 }
 
 func init() {
+	statsCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
 	rootCmd.AddCommand(statsCmd)
 }
