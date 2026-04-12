@@ -24,6 +24,7 @@ var historyCmd = &cobra.Command{
 
   s3lo history s3://my-bucket/                      # all repositories
   s3lo history s3://my-bucket/myapp                  # all tags for myapp
+  s3lo history s3://my-bucket/myapp --all            # include overridden pushes
   s3lo history local://./local-s3/                   # local bucket
   s3lo history local://./local-s3/alpine --limit 5
   s3lo history s3://my-bucket/ --output json`,
@@ -31,6 +32,7 @@ var historyCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFmt, _ := cmd.Flags().GetString("output")
 		limit, _ := cmd.Flags().GetInt("limit")
+		showAll, _ := cmd.Flags().GetBool("all")
 		rawRef := args[0]
 
 		_, imageName, err := image.ParseConfigRef(rawRef)
@@ -46,7 +48,7 @@ var historyCmd = &cobra.Command{
 		if imageName == "" {
 			return runBucketHistory(cmd, rawRef, outputFmt, limit)
 		}
-		return runRepoHistory(cmd, rawRef, imageName, outputFmt, limit)
+		return runRepoHistory(cmd, rawRef, imageName, outputFmt, limit, showAll)
 	},
 }
 
@@ -84,11 +86,23 @@ func runBucketHistory(cmd *cobra.Command, bucketRef, outputFmt string, limit int
 	return nil
 }
 
-// runRepoHistory shows all tag push events for a single repository (Mode B).
-func runRepoHistory(cmd *cobra.Command, bucketRef, imageName, outputFmt string, limit int) error {
+// runRepoHistory shows tag push events for a single repository (Mode B).
+// By default only the current (latest) push per tag is shown.
+// With showAll=true, overridden pushes are included and marked.
+func runRepoHistory(cmd *cobra.Command, bucketRef, imageName, outputFmt string, limit int, showAll bool) error {
 	entries, err := image.ListTagHistory(cmd.Context(), bucketRef, imageName)
 	if err != nil {
 		return err
+	}
+
+	if !showAll {
+		filtered := entries[:0]
+		for _, e := range entries {
+			if !e.Superseded {
+				filtered = append(filtered, e)
+			}
+		}
+		entries = filtered
 	}
 
 	if limit > 0 && len(entries) > limit {
@@ -104,15 +118,19 @@ func runRepoHistory(cmd *cobra.Command, bucketRef, imageName, outputFmt string, 
 			fmt.Printf("No push history recorded for %s.\n", imageName)
 			return nil
 		}
-		fmt.Printf("%-12s  %-20s  %-10s  %s\n", "TAG", "PUSHED", "SIZE", "DIGEST")
-		fmt.Println(strings.Repeat("-", 72))
+		fmt.Printf("%-20s  %-20s  %-10s  %s\n", "TAG", "PUSHED", "SIZE", "DIGEST")
+		fmt.Println(strings.Repeat("-", 80))
 		for _, e := range entries {
 			digest := e.Digest
 			if len(digest) > 19 {
 				digest = digest[:19] + "..."
 			}
-			fmt.Printf("%-12s  %-20s  %-10s  %s\n",
-				e.Tag,
+			tag := e.Tag
+			if e.Superseded {
+				tag += " (overridden)"
+			}
+			fmt.Printf("%-20s  %-20s  %-10s  %s\n",
+				tag,
 				e.PushedAt.Format("2006-01-02 15:04:05"),
 				formatBytes(e.SizeBytes),
 				digest,
@@ -125,5 +143,6 @@ func runRepoHistory(cmd *cobra.Command, bucketRef, imageName, outputFmt string, 
 func init() {
 	historyCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
 	historyCmd.Flags().Int("limit", 10, "Maximum number of entries to show (0 = all)")
+	historyCmd.Flags().Bool("all", false, "Show full push history including overridden tag pushes")
 	rootCmd.AddCommand(historyCmd)
 }

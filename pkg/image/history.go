@@ -29,11 +29,13 @@ type ImageHistorySummary struct {
 }
 
 // TagHistoryEntry is the Mode B (repository-level) output: one row per push across all tags.
+// Superseded is true for older pushes of the same tag that have been overwritten.
 type TagHistoryEntry struct {
-	Tag       string    `json:"tag" yaml:"tag"`
-	PushedAt  time.Time `json:"pushed_at" yaml:"pushed_at"`
-	Digest    string    `json:"digest" yaml:"digest"`
-	SizeBytes int64     `json:"size_bytes" yaml:"size_bytes"`
+	Tag        string    `json:"tag" yaml:"tag"`
+	PushedAt   time.Time `json:"pushed_at" yaml:"pushed_at"`
+	Digest     string    `json:"digest" yaml:"digest"`
+	SizeBytes  int64     `json:"size_bytes" yaml:"size_bytes"`
+	Superseded bool      `json:"superseded,omitempty" yaml:"superseded,omitempty"`
 }
 
 // ListImageHistory returns push-history summaries for every image in the bucket (Mode A).
@@ -139,7 +141,6 @@ func ListTagHistory(ctx context.Context, rawRef, imageName string) ([]TagHistory
 		if !strings.HasSuffix(key, "/history.json") {
 			continue
 		}
-		// key = <prefix>manifests/<image>/<tag>/history.json
 		rel := strings.TrimPrefix(key, imagePrefix)
 		tagName := strings.TrimSuffix(rel, "/history.json")
 		if strings.Contains(tagName, "/") {
@@ -154,12 +155,13 @@ func ListTagHistory(ctx context.Context, rawRef, imageName string) ([]TagHistory
 		if err := json.Unmarshal(data, &entries); err != nil {
 			continue
 		}
-		for _, e := range entries {
+		for i, e := range entries {
 			result = append(result, TagHistoryEntry{
-				Tag:       tagName,
-				PushedAt:  e.PushedAt,
-				Digest:    e.Digest,
-				SizeBytes: e.SizeBytes,
+				Tag:        tagName,
+				PushedAt:   e.PushedAt,
+				Digest:     e.Digest,
+				SizeBytes:  e.SizeBytes,
+				Superseded: i > 0, // entries[0] is the current version; the rest are overridden
 			})
 		}
 	}
