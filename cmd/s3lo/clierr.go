@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -47,4 +48,16 @@ func stderrColorEnabled() bool {
 		return false
 	}
 	return term.IsTerminal(int(os.Stderr.Fd()))
+}
+
+// requireTag returns an error if the s3/local ref does not contain an explicit tag.
+// Refs like "s3://bucket/image" silently default to ":latest" in ref.Parse,
+// which is almost always a mistake — callers should write the tag out explicitly.
+func requireTag(s3Ref string) error {
+	// Find the last ":" — but skip the "://" in the scheme.
+	i := strings.LastIndex(s3Ref, ":")
+	if i < 0 || strings.HasPrefix(s3Ref[i:], "://") {
+		return fmt.Errorf("missing tag in %q (e.g. %s:latest)", s3Ref, s3Ref)
+	}
+	return nil
 }

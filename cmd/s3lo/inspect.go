@@ -16,6 +16,9 @@ var inspectCmd = &cobra.Command{
   s3lo inspect s3://my-bucket/myapp:v1.0 --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTag(args[0]); err != nil {
+			return err
+		}
 		outputFmt, _ := cmd.Flags().GetString("output")
 		info, err := image.Inspect(cmd.Context(), args[0])
 		if err != nil {

@@ -18,6 +18,9 @@ var pushCmd = &cobra.Command{
   s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTag(args[1]); err != nil {
+			return err
+		}
 		fmt.Printf("Pushing %s to %s\n", args[0], args[1])
 		var bar *progressbar.ProgressBar
 		opts := image.PushOptions{

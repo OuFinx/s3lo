@@ -35,6 +35,9 @@ Use --install-trivy to skip the confirmation prompt.`,
   s3lo scan s3://my-bucket/myapp:v1.0 --platform linux/arm64`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
+		if err := requireTag(args[0]); err != nil {
+			return err
+		}
 		installFlag, _ := cmd.Flags().GetBool("install-trivy")
 		platform, _ := cmd.Flags().GetString("platform")
 		severity, _ := cmd.Flags().GetString("severity")
