@@ -61,14 +61,20 @@
 - [x] `s3lo history` — push history per tag (timestamp, digest, size; stored in `history.json`)
 - [x] `s3lo doctor` — bucket health check: layout, manifest integrity, orphaned blobs, config validity
 - [x] `s3lo init` — bucket initialization: verify access, check Intelligent-Tiering, write default `s3lo.yaml`
+- [x] `local://` storage backend — all commands work against a local directory without AWS
 
-## v2.0.0 — Security
+## v1.9.0 — Security
 
 - [ ] `s3lo sign` — sign images with cosign/Sigstore
 - [ ] `s3lo verify` — verify image signatures
 
-## v2.1.0 — Multi-Cloud Support
+## v1.10.0 — Multi-Cloud Support
 
-- [ ] Abstract storage backend interface
 - [ ] Google Cloud Storage backend
 - [ ] MinIO / S3-compatible backend
+
+## v2.0.0 — Stable Release
+
+- [ ] Final API and CLI stability review
+- [ ] Full documentation pass
+- [ ] Official stable release
