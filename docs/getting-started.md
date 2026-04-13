@@ -6,6 +6,9 @@ Get s3lo running and push your first image in under 5 minutes.
 
 - Docker running locally
 - For S3 storage: AWS account with an S3 bucket and credentials configured (`~/.aws/credentials`, environment variables, or IAM role)
+- For GCS storage: Google Cloud project with a bucket, credentials via `gcloud auth application-default login` or `GOOGLE_APPLICATION_CREDENTIALS`
+- For Azure Blob storage: Azure storage account, `AZURE_STORAGE_ACCOUNT` env var set, credentials via `az login` or service principal env vars
+- For MinIO / R2 / Ceph: `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + `--endpoint` flag
 - For local storage: no cloud account needed — s3lo can use a local directory
 
 ## 1. Install s3lo

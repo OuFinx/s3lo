@@ -1,15 +1,21 @@
 # s3lo
 
-**Use AWS S3 as a container image registry.** Faster pulls on EC2, up to 4× cheaper than ECR, nothing to manage.
+**Use object storage as a container image registry.** AWS S3, Google Cloud Storage, Azure Blob, MinIO, Cloudflare R2 — faster pulls, cheaper storage, no registry to manage.
 
 ```bash
-# Push
+# Push to S3
 s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0
 
-# Pull
-s3lo pull s3://my-bucket/myapp:v1.0
+# Push to GCS
+s3lo push myapp:v1.0 gs://my-gcs-bucket/myapp:v1.0
 
-# Mirror any image from Docker Hub, ECR, or GHCR directly to S3
+# Push to Azure Blob
+s3lo push myapp:v1.0 az://my-container/myapp:v1.0
+
+# Push to MinIO or Cloudflare R2
+s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --endpoint http://localhost:9000
+
+# Mirror any image from Docker Hub, ECR, or GHCR directly to storage
 s3lo copy alpine:latest s3://my-bucket/alpine:latest
 ```
 
@@ -25,8 +31,9 @@ Container registries are a solved problem — but ECR and Docker Hub are generic
 | **Storage cost** | $0.10/GB/month | $0.023/GB/month |
 | **Deduplication** | None | Bucket-wide, SHA256 |
 | **Multi-arch** | Yes | Yes (OCI Image Index) |
-| **Registry to manage** | Lifecycle policies, permissions, replication | Just an S3 bucket |
-| **Auth** | ECR token (expires in 12h) | Standard AWS credentials |
+| **Registry to manage** | Lifecycle policies, permissions, replication | Just a bucket |
+| **Auth** | ECR token (expires in 12h) | Standard cloud credentials |
+| **Cloud support** | AWS only | AWS, GCP, Azure, MinIO, R2, Ceph |
 
 S3 has no concept of a "registry" — s3lo stores images using the [OCI Image Layout](https://github.com/opencontainers/image-spec/blob/main/image-layout.md) format, with each layer as a separate object. Layers are content-addressed by SHA256, so they're never uploaded twice.
 
@@ -74,9 +81,19 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 
 ---
 
+## Supported backends
+
+| Scheme | Backend | Auth |
+|--------|---------|------|
+| `s3://` | AWS S3 | Standard AWS credentials |
+| `s3://` + `--endpoint` | MinIO / Cloudflare R2 / Ceph | `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` |
+| `gs://` | Google Cloud Storage | Application Default Credentials |
+| `az://` | Azure Blob Storage | DefaultAzureCredential + `AZURE_STORAGE_ACCOUNT` |
+| `local://` | Local filesystem | None |
+
 ## Local storage
 
-No AWS account? Use `local://` to store images on your filesystem:
+No cloud account? Use `local://` to store images on your filesystem:
 
 ```bash
 s3lo init --local ./local-s3
@@ -84,7 +101,7 @@ s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
 s3lo pull local://./local-s3/myapp:v1.0
 ```
 
-Local storage uses the same OCI layout as S3. All commands work with both `s3://` and `local://` references.
+Local storage uses the same OCI layout as all other backends. All commands work identically across schemes.
 
 ---
 
