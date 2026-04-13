@@ -35,9 +35,15 @@ default:
 
 // Init verifies bucket access, checks Intelligent-Tiering, and writes a default s3lo.yaml.
 // It returns an InitResult describing what was found and done.
+// Currently only supports S3 buckets (requires S3-specific APIs like GetBucketLocation).
 func Init(ctx context.Context, s3BucketRef string) (*InitResult, error) {
-	if strings.HasPrefix(s3BucketRef, "local://") {
+	switch {
+	case strings.HasPrefix(s3BucketRef, "local://"):
 		return nil, fmt.Errorf("use s3lo init --local for local storage")
+	case strings.HasPrefix(s3BucketRef, "gs://"):
+		return nil, fmt.Errorf("s3lo init is not yet supported for Google Cloud Storage")
+	case strings.HasPrefix(s3BucketRef, "az://"):
+		return nil, fmt.Errorf("s3lo init is not yet supported for Azure Blob Storage")
 	}
 
 	bucket, _, err := ParseBucketRef(s3BucketRef)

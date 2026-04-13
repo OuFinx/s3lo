@@ -15,10 +15,10 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// copyS3ToS3 copies an image between S3 locations.
-// Uses server-side S3 CopyObject within the same bucket; streams cross-bucket via temp files.
+// copyBetweenBackends copies an image between storage backends (S3, GCS, Azure, local).
+// Uses server-side CopyObject within the same bucket/scheme; streams cross-backend via temp files.
 // All blobs are copied in parallel (up to 10 concurrent workers).
-func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (*CopyResult, error) {
+func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyOptions) (*CopyResult, error) {
 	srcParsed, err := ref.Parse(srcRef)
 	if err != nil {
 		return nil, fmt.Errorf("invalid source S3 reference: %w", err)

@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
@@ -55,10 +56,19 @@ func NewBackendFromRef(ctx context.Context, ref string) (Backend, error) {
 	endpoint := endpointFromContext(ctx)
 	switch {
 	case strings.HasPrefix(ref, "local://"):
+		if endpoint != "" {
+			return nil, fmt.Errorf("--endpoint is not supported with local:// references")
+		}
 		return NewLocalClient(), nil
 	case strings.HasPrefix(ref, "gs://"):
+		if endpoint != "" {
+			return nil, fmt.Errorf("--endpoint is not supported with gs:// references (GCS uses Application Default Credentials)")
+		}
 		return newGCSBackend(ctx)
 	case strings.HasPrefix(ref, "az://"):
+		if endpoint != "" {
+			return nil, fmt.Errorf("--endpoint is not supported with az:// references (Azure uses DefaultAzureCredential)")
+		}
 		return newAzureBackend(ctx)
 	default:
 		return newS3Client(ctx, endpoint)

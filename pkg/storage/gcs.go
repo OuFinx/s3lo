@@ -122,7 +122,7 @@ func (c *GCSClient) DeleteObjects(ctx context.Context, bucket string, keys []str
 	return errors.Join(errs...)
 }
 
-func (c *GCSClient) UploadFile(ctx context.Context, localPath, bucket, key string, _ StorageClass) error {
+func (c *GCSClient) UploadFile(ctx context.Context, localPath, bucket, key string, sc StorageClass) error {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", localPath, err)
@@ -130,6 +130,9 @@ func (c *GCSClient) UploadFile(ctx context.Context, localPath, bucket, key strin
 	defer f.Close()
 
 	wc := c.client.Bucket(bucket).Object(key).NewWriter(ctx)
+	if gcsSC := toGCSStorageClass(sc); gcsSC != "" {
+		wc.StorageClass = gcsSC
+	}
 	if _, err := io.Copy(wc, f); err != nil {
 		_ = wc.Close()
 		return fmt.Errorf("gcs upload %s → %s/%s: %w", localPath, bucket, key, err)
@@ -138,6 +141,19 @@ func (c *GCSClient) UploadFile(ctx context.Context, localPath, bucket, key strin
 		return fmt.Errorf("gcs close writer %s/%s: %w", bucket, key, err)
 	}
 	return nil
+}
+
+// toGCSStorageClass maps our StorageClass to a GCS storage class string.
+// Empty return means use the bucket's default class.
+func toGCSStorageClass(sc StorageClass) string {
+	switch sc {
+	case StorageClassStandard:
+		return "STANDARD"
+	case StorageClassIntelligentTiering:
+		return "NEARLINE"
+	default:
+		return ""
+	}
 }
 
 func (c *GCSClient) DownloadObjectToFile(ctx context.Context, bucket, key, localPath string) error {

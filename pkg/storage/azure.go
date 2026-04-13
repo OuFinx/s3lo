@@ -7,10 +7,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 )
 
 // Compile-time assertion that AzureClient implements Backend.
@@ -137,33 +139,58 @@ func (c *AzureClient) DeleteObjects(ctx context.Context, bucket string, keys []s
 	return errors.Join(errs...)
 }
 
-func (c *AzureClient) UploadFile(ctx context.Context, localPath, bucket, key string, _ StorageClass) error {
+func (c *AzureClient) UploadFile(ctx context.Context, localPath, bucket, key string, sc StorageClass) error {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return fmt.Errorf("open %s: %w", localPath, err)
 	}
 	defer f.Close()
-	if _, err := c.client.UploadFile(ctx, bucket, key, f, nil); err != nil {
+	opts := toAzureUploadOptions(sc)
+	if _, err := c.client.UploadFile(ctx, bucket, key, f, opts); err != nil {
 		return fmt.Errorf("azure upload %s → %s/%s: %w", localPath, bucket, key, err)
 	}
 	return nil
+}
+
+// toAzureUploadOptions maps our StorageClass to Azure upload options with an access tier.
+// INTELLIGENT_TIERING → Cool (cheaper storage, like S3 IT's infrequent tier).
+// STANDARD → Hot (default, frequent access).
+func toAzureUploadOptions(sc StorageClass) *azblob.UploadFileOptions {
+	switch sc {
+	case StorageClassIntelligentTiering:
+		tier := blob.AccessTierCool
+		return &azblob.UploadFileOptions{AccessTier: &tier}
+	case StorageClassStandard:
+		tier := blob.AccessTierHot
+		return &azblob.UploadFileOptions{AccessTier: &tier}
+	default:
+		return nil
+	}
 }
 
 func (c *AzureClient) DownloadObjectToFile(ctx context.Context, bucket, key, localPath string) error {
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return err
 	}
-	f, err := os.Create(localPath)
+	f, err := os.CreateTemp(filepath.Dir(localPath), ".s3lo-download-*")
 	if err != nil {
-		return fmt.Errorf("create %s: %w", localPath, err)
+		return fmt.Errorf("create temp file: %w", err)
 	}
-	defer f.Close()
+	tmpPath := f.Name()
+	defer func() {
+		f.Close()
+		os.Remove(tmpPath)
+	}()
 
 	if _, err := c.client.DownloadFile(ctx, bucket, key, f, nil); err != nil {
 		if isAzureNotFound(err) {
 			return &azureNotFoundError{container: bucket, blob: key}
 		}
 		return fmt.Errorf("azure download %s/%s → %s: %w", bucket, key, localPath, err)
+	}
+	f.Close()
+	if err := os.Rename(tmpPath, localPath); err != nil {
+		return fmt.Errorf("rename %s → %s: %w", tmpPath, localPath, err)
 	}
 	return nil
 }
@@ -194,15 +221,36 @@ func (c *AzureClient) CopyObject(ctx context.Context, bucket, srcKey, destKey st
 	if err != nil {
 		return fmt.Errorf("azure copy %s/%s → %s: %w", bucket, srcKey, destKey, err)
 	}
-	// Wait for the copy to complete if it's still pending.
 	if resp.CopyStatus != nil && *resp.CopyStatus == "pending" {
+		backoff := 500 * time.Millisecond
+		const maxBackoff = 10 * time.Second
 		for {
+			select {
+			case <-ctx.Done():
+				return fmt.Errorf("azure copy %s/%s → %s: %w", bucket, srcKey, destKey, ctx.Err())
+			case <-time.After(backoff):
+			}
 			props, err := destBlobClient.GetProperties(ctx, nil)
 			if err != nil {
 				return fmt.Errorf("azure copy poll %s/%s → %s: %w", bucket, srcKey, destKey, err)
 			}
-			if props.CopyStatus == nil || string(*props.CopyStatus) != "pending" {
-				break
+			status := ""
+			if props.CopyStatus != nil {
+				status = string(*props.CopyStatus)
+			}
+			switch status {
+			case "pending":
+				if backoff < maxBackoff {
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+				}
+				continue
+			case "failed":
+				return fmt.Errorf("azure copy %s/%s → %s: server-side copy failed", bucket, srcKey, destKey)
+			default:
+				return nil
 			}
 		}
 	}

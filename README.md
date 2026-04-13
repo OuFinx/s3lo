@@ -176,10 +176,6 @@ s3lo uses the standard credential chain for each cloud:
 
 ### AWS S3 — Minimum IAM Policy
 
-s3lo uses the standard AWS credentials chain --- environment variables, `~/.aws/credentials`, IAM instance profiles, SSO, etc.
-
-### Minimum IAM Policy
-
 ```json
 {
   "Version": "2012-10-17",
