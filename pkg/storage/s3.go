@@ -13,6 +13,7 @@ import (
 type Client struct {
 	baseClient  *s3.Client
 	baseCfg     aws.Config
+	endpoint    string // non-empty for S3-compatible backends; skips region detection
 	mu          sync.RWMutex
 	regionCache map[string]string
 	clientCache map[string]*s3.Client
@@ -24,7 +25,7 @@ func NewS3Client(ctx context.Context) (*Client, error) {
 }
 
 // newS3Client is the internal constructor. endpoint is empty for AWS S3, non-empty for S3-compatible backends.
-// Full endpoint support (UsePathStyle etc.) will be added in a later task.
+// When endpoint is set, path-style addressing is enabled and region detection is skipped (us-east-1 is used).
 func newS3Client(ctx context.Context, endpoint string) (*Client, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
@@ -39,6 +40,34 @@ func newS3Client(ctx context.Context, endpoint string) (*Client, error) {
 		baseCfg.Region = "us-east-1"
 	}
 
+	// When using an S3-compatible endpoint (MinIO, R2, Ceph, etc.), force us-east-1
+	// and skip region detection entirely — the custom server handles routing itself.
+	if endpoint != "" {
+		baseCfg.Region = "us-east-1"
+		cfg.Region = "us-east-1"
+	}
+
+	baseClientOpts := func(o *s3.Options) {
+		if endpoint != "" {
+			o.BaseEndpoint = aws.String(endpoint)
+			o.UsePathStyle = true
+		}
+	}
+
+	// For S3-compatible backends, bypass region detection by using a pre-wired
+	// clientForBucket that always returns the same endpoint-aware client.
+	if endpoint != "" {
+		endpointClient := s3.NewFromConfig(baseCfg, baseClientOpts)
+		c := &Client{
+			baseClient:  endpointClient,
+			baseCfg:     baseCfg,
+			endpoint:    endpoint,
+			regionCache: make(map[string]string),
+			clientCache: map[string]*s3.Client{"us-east-1": endpointClient},
+		}
+		return c, nil
+	}
+
 	return &Client{
 		baseClient:  s3.NewFromConfig(baseCfg),
 		baseCfg:     cfg,
@@ -49,7 +78,16 @@ func newS3Client(ctx context.Context, endpoint string) (*Client, error) {
 
 // ClientForBucket returns an S3 client configured for the bucket's region (public).
 // Clients are cached per-region to avoid re-loading AWS config on every call.
+// For S3-compatible backends (endpoint set), region detection is skipped and the
+// pre-configured endpoint client is returned directly.
 func (c *Client) ClientForBucket(ctx context.Context, bucket string) (*s3.Client, error) {
+	if c.endpoint != "" {
+		c.mu.RLock()
+		client := c.clientCache["us-east-1"]
+		c.mu.RUnlock()
+		return client, nil
+	}
+
 	region, ok := c.cachedRegion(bucket)
 	if !ok {
 		var err error
