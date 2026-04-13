@@ -235,3 +235,117 @@ func TestGetManifestByDigestMissing(t *testing.T) {
 		t.Errorf("body missing MANIFEST_UNKNOWN, got: %s", body)
 	}
 }
+
+// presigningBackend wraps fakeBackend and implements Presigner.
+type presigningBackend struct {
+	*fakeBackend
+	presignURL string
+}
+
+func (p *presigningBackend) PresignGetObject(_ context.Context, _, _ string, _ time.Duration) (string, error) {
+	return p.presignURL, nil
+}
+
+func TestGetBlobPresignedRedirect(t *testing.T) {
+	blobData := []byte("fake blob content")
+	// Serve a fake blob endpoint to receive the redirect
+	blobSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Write(blobData)
+	}))
+	defer blobSrv.Close()
+
+	fb := newFakeBackend()
+	h := sha256.Sum256(blobData)
+	hexStr := hex.EncodeToString(h[:])
+	fb.set("testbucket", "blobs/sha256/"+hexStr, blobData)
+
+	b := &presigningBackend{fakeBackend: fb, presignURL: blobSrv.URL + "/presigned-blob"}
+	srv := &Server{Client: b, Bucket: "testbucket", PresignTTL: time.Hour}
+	ts := httptest.NewServer(srv)
+	defer ts.Close()
+
+	// Don't follow redirect — assert the 303 itself
+	noRedirectClient := &http.Client{
+		CheckRedirect: func(_ *http.Request, _ []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	resp, err := noRedirectClient.Get(ts.URL + "/v2/myapp/blobs/sha256:" + hexStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusSeeOther {
+		t.Errorf("GET blob (presigned) = %d, want 303", resp.StatusCode)
+	}
+	loc := resp.Header.Get("Location")
+	if !strings.Contains(loc, "presigned-blob") {
+		t.Errorf("Location = %q, want presigned URL", loc)
+	}
+}
+
+func TestGetBlobStream(t *testing.T) {
+	b := newFakeBackend()
+	blobData := []byte("streamed blob content")
+	h := sha256.Sum256(blobData)
+	hexStr := hex.EncodeToString(h[:])
+	b.set("testbucket", "blobs/sha256/"+hexStr, blobData)
+	ts := newTestServer(t, b) // fakeBackend does NOT implement Presigner → streaming
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/myapp/blobs/sha256:" + hexStr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET blob (stream) = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != string(blobData) {
+		t.Errorf("blob body mismatch: got %q, want %q", body, blobData)
+	}
+}
+
+func TestGetBlobMissing(t *testing.T) {
+	b := newFakeBackend()
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/myapp/blobs/sha256:deadbeef1234")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("GET missing blob = %d, want 404", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "BLOB_UNKNOWN") {
+		t.Errorf("body missing BLOB_UNKNOWN, got: %s", body)
+	}
+}
+
+func TestHeadBlob(t *testing.T) {
+	b := newFakeBackend()
+	blobData := []byte("some blob")
+	h := sha256.Sum256(blobData)
+	hexStr := hex.EncodeToString(h[:])
+	b.set("testbucket", "blobs/sha256/"+hexStr, blobData)
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodHead, ts.URL+"/v2/myapp/blobs/sha256:"+hexStr, nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("HEAD blob = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if len(body) != 0 {
+		t.Errorf("HEAD blob must have no body, got %d bytes", len(body))
+	}
+}

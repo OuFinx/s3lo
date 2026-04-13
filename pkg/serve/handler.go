@@ -84,9 +84,58 @@ func mediaTypeFromManifest(data []byte) string {
 	return "application/vnd.oci.image.manifest.v1+json"
 }
 
-// handleBlob stub — replaced in Task 4.
 func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request, digest string) {
-	writeOCIError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
-	_ = r
-	_ = digest
+	ctx := r.Context()
+
+	if !strings.HasPrefix(digest, "sha256:") {
+		writeOCIError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
+		return
+	}
+	hexDigest := strings.TrimPrefix(digest, "sha256:")
+	key := "blobs/sha256/" + hexDigest
+
+	exists, err := s.Client.HeadObjectExists(ctx, s.Bucket, key)
+	if err != nil {
+		writeOCIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "storage error")
+		return
+	}
+	if !exists {
+		writeOCIError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
+		return
+	}
+
+	if r.Method == http.MethodHead {
+		w.Header().Set("Docker-Content-Digest", digest)
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	// Presigned redirect for S3/S3-compatible backends.
+	if p, ok := s.Client.(Presigner); ok {
+		url, err := p.PresignGetObject(ctx, s.Bucket, key, s.PresignTTL)
+		if err == nil {
+			http.Redirect(w, r, url, http.StatusSeeOther)
+			return
+		}
+		// Fall through to streaming on presign error.
+	}
+
+	// Streaming fallback for GCS, Azure, local.
+	// Note: blobs are loaded into memory here. For large blobs on non-S3 backends,
+	// use s3lo pull instead of s3lo serve for better performance.
+	data, err := s.Client.GetObject(ctx, s.Bucket, key)
+	if err != nil {
+		if storage.IsNotFound(err) {
+			writeOCIError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
+			return
+		}
+		writeOCIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "storage error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
+	w.Header().Set("Docker-Content-Digest", digest)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(data)
 }
