@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -115,6 +116,26 @@ func (c *Client) ClientForBucket(ctx context.Context, bucket string) (*s3.Client
 	c.mu.Unlock()
 
 	return client, nil
+}
+
+// PresignGetObject returns a presigned GET URL for the given object valid for ttl.
+// This satisfies serve.Presigner without importing pkg/serve.
+func (c *Client) PresignGetObject(ctx context.Context, bucket, key string, ttl time.Duration) (string, error) {
+	s3Client, err := c.ClientForBucket(ctx, bucket)
+	if err != nil {
+		return "", err
+	}
+	presignClient := s3.NewPresignClient(s3Client)
+	req, err := presignClient.PresignGetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(bucket),
+		Key:    aws.String(key),
+	}, func(opts *s3.PresignOptions) {
+		opts.Expires = ttl
+	})
+	if err != nil {
+		return "", fmt.Errorf("presign object: %w", err)
+	}
+	return req.URL, nil
 }
 
 func (c *Client) detectRegion(ctx context.Context, bucket string) (string, error) {

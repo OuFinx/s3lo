@@ -55,6 +55,8 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 
 **Pull:** s3lo downloads all blobs in parallel and imports the reassembled image into Docker. On EC2 with enhanced networking, this can reach 100 Gbps — limited by the instance, not the registry.
 
+**Serve:** s3lo starts a lightweight OCI Distribution Spec HTTP server backed by your bucket. Any node with Docker or kubectl can `docker pull localhost:5000/myapp:v1.0` directly — no `s3lo pull` required.
+
 **Copy:** s3lo pulls directly from any OCI registry (Docker Hub, ECR, GHCR) and uploads to S3 — without going through the local Docker daemon.
 
 ---

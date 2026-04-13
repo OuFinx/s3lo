@@ -6,6 +6,7 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 |---------|-------------|
 | [`push`](push.md) | Export a local Docker image and upload it to S3 |
 | [`pull`](pull.md) | Download an image from S3 and import it into Docker |
+| [`serve`](serve.md) | Serve images via OCI Distribution Spec (docker pull compatible) |
 | [`copy`](copy.md) | Copy an image to S3 from any OCI registry or another S3 bucket |
 | [`list`](list.md) | List all images and tags in a bucket |
 | [`inspect`](inspect.md) | Show image metadata: layers, size, platforms |
