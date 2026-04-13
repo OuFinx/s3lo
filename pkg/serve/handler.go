@@ -25,7 +25,7 @@ func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request, name, re
 	}
 
 	if err != nil {
-		if storage.IsNotFound(err) || strings.Contains(err.Error(), "not found") {
+		if storage.IsNotFound(err) {
 			writeOCIError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
 			return
 		}
@@ -61,7 +61,10 @@ func (s *Server) findManifestByDigest(ctx context.Context, name, digest string) 
 		}
 		data, err := s.Client.GetObject(ctx, s.Bucket, key)
 		if err != nil {
-			continue
+			if storage.IsNotFound(err) {
+				continue // key was listed but disappeared (race) — skip
+			}
+			return nil, err
 		}
 		h := sha256.Sum256(data)
 		if "sha256:"+hex.EncodeToString(h[:]) == digest {

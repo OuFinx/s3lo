@@ -214,3 +214,24 @@ func TestGetManifestMissing(t *testing.T) {
 		t.Errorf("body missing MANIFEST_UNKNOWN, got: %s", body)
 	}
 }
+
+func TestGetManifestByDigestMissing(t *testing.T) {
+	b := newFakeBackend()
+	// Store one manifest, look up by a non-matching digest
+	b.set("testbucket", "manifests/myapp/v1.0/manifest.json", []byte(sampleManifest))
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/myapp/manifests/sha256:0000000000000000000000000000000000000000000000000000000000000000")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("GET manifest by missing digest = %d, want 404", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "MANIFEST_UNKNOWN") {
+		t.Errorf("body missing MANIFEST_UNKNOWN, got: %s", body)
+	}
+}
