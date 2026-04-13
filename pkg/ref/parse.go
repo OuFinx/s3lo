@@ -14,18 +14,25 @@ type Reference struct {
 	Digest string
 }
 
-// Parse parses an S3 or local image reference like "s3://my-bucket/myapp:v1.0" or "local://./store/myapp:v1.0".
+// Parse parses an image reference like "s3://my-bucket/myapp:v1.0", "gs://my-bucket/myapp:v1.0",
+// "az://my-container/myapp:v1.0", or "local://./store/myapp:v1.0".
 func Parse(raw string) (Reference, error) {
 	var scheme, rest string
 	switch {
 	case strings.HasPrefix(raw, "s3://"):
 		scheme = "s3"
 		rest = strings.TrimPrefix(raw, "s3://")
+	case strings.HasPrefix(raw, "gs://"):
+		scheme = "gs"
+		rest = strings.TrimPrefix(raw, "gs://")
+	case strings.HasPrefix(raw, "az://"):
+		scheme = "az"
+		rest = strings.TrimPrefix(raw, "az://")
 	case strings.HasPrefix(raw, "local://"):
 		scheme = "local"
 		rest = strings.TrimPrefix(raw, "local://")
 	default:
-		return Reference{}, fmt.Errorf("invalid reference %q: must start with s3:// or local://", raw)
+		return Reference{}, fmt.Errorf("invalid reference %q: must start with s3://, gs://, az://, or local://", raw)
 	}
 
 	bucket, imageAndTag, err := splitBucketPath(scheme, rest)

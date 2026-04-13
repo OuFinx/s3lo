@@ -390,12 +390,18 @@ var configRecommendCmd = &cobra.Command{
 }
 
 
-// refScheme returns the scheme prefix (e.g. "s3://" or "local://") from a raw reference.
+// refScheme returns the scheme prefix (e.g. "s3://", "gs://", "az://", or "local://") from a raw reference.
 func refScheme(rawRef string) string {
-	if strings.HasPrefix(rawRef, "local://") {
+	switch {
+	case strings.HasPrefix(rawRef, "gs://"):
+		return "gs://"
+	case strings.HasPrefix(rawRef, "az://"):
+		return "az://"
+	case strings.HasPrefix(rawRef, "local://"):
 		return "local://"
+	default:
+		return "s3://"
 	}
-	return "s3://"
 }
 
 func init() {

@@ -37,7 +37,8 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		src, dest := args[0], args[1]
-		if strings.HasPrefix(src, "s3://") || strings.HasPrefix(src, "local://") {
+		if strings.HasPrefix(src, "s3://") || strings.HasPrefix(src, "gs://") ||
+			strings.HasPrefix(src, "az://") || strings.HasPrefix(src, "local://") {
 			if err := requireTag(src); err != nil {
 				return err
 			}

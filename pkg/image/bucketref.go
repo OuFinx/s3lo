@@ -5,20 +5,24 @@ import (
 	"strings"
 )
 
-// ParseBucketRef parses "s3://bucket/", "local://path/", etc. into (bucket, prefix).
-// For local:// refs with relative paths (./dir or ../dir), the full relative path
-// is used as the bucket so that "local://./store/" gives bucket="./store".
+// ParseBucketRef parses "s3://bucket/", "gs://bucket/", "az://container/", "local://path/", etc.
+// into (bucket, prefix). For local:// refs with relative paths (./dir or ../dir), the full relative
+// path is used as the bucket so that "local://./store/" gives bucket="./store".
 func ParseBucketRef(s3Ref string) (bucket, prefix string, err error) {
 	var isLocal bool
 	var rest string
 	switch {
 	case strings.HasPrefix(s3Ref, "s3://"):
 		rest = strings.TrimPrefix(s3Ref, "s3://")
+	case strings.HasPrefix(s3Ref, "gs://"):
+		rest = strings.TrimPrefix(s3Ref, "gs://")
+	case strings.HasPrefix(s3Ref, "az://"):
+		rest = strings.TrimPrefix(s3Ref, "az://")
 	case strings.HasPrefix(s3Ref, "local://"):
 		rest = strings.TrimPrefix(s3Ref, "local://")
 		isLocal = true
 	default:
-		return "", "", fmt.Errorf("invalid reference %q: must start with s3:// or local://", s3Ref)
+		return "", "", fmt.Errorf("invalid reference %q: must start with s3://, gs://, az://, or local://", s3Ref)
 	}
 
 	if isLocal && (strings.HasPrefix(rest, "./") || strings.HasPrefix(rest, "../")) {

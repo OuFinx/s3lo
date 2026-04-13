@@ -32,7 +32,8 @@ type CopyOptions struct {
 //
 // dest must be s3://bucket/image:tag.
 func Copy(ctx context.Context, src, destRef string, opts CopyOptions) (*CopyResult, error) {
-	if strings.HasPrefix(src, "s3://") || strings.HasPrefix(src, "local://") {
+	if strings.HasPrefix(src, "s3://") || strings.HasPrefix(src, "gs://") ||
+		strings.HasPrefix(src, "az://") || strings.HasPrefix(src, "local://") {
 		return copyS3ToS3(ctx, src, destRef, opts)
 	}
 	return copyRegistryToS3(ctx, src, destRef, opts)

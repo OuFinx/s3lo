@@ -117,10 +117,12 @@ func SetBucketConfig(ctx context.Context, client storage.Backend, bucket string,
 	return client.PutObject(ctx, bucket, bucketConfigKey, data)
 }
 
-// ParseConfigRef parses an s3 config reference into bucket and optional image name.
+// ParseConfigRef parses a config reference into bucket and optional image name.
 // s3://bucket/          -> bucket="bucket",    image=""
 // s3://bucket/myapp     -> bucket="bucket",    image="myapp"
 // s3://bucket/dev/*     -> bucket="bucket",    image="dev/*"
+// gs://bucket/myapp     -> bucket="bucket",    image="myapp"
+// az://container/myapp  -> bucket="container", image="myapp"
 // local://./store/      -> bucket="./store",   image=""
 // local://./store/myapp -> bucket="./store",   image="myapp"
 func ParseConfigRef(s3Ref string) (bucket, image string, err error) {
@@ -129,11 +131,15 @@ func ParseConfigRef(s3Ref string) (bucket, image string, err error) {
 	switch {
 	case strings.HasPrefix(s3Ref, "s3://"):
 		rest = strings.TrimPrefix(s3Ref, "s3://")
+	case strings.HasPrefix(s3Ref, "gs://"):
+		rest = strings.TrimPrefix(s3Ref, "gs://")
+	case strings.HasPrefix(s3Ref, "az://"):
+		rest = strings.TrimPrefix(s3Ref, "az://")
 	case strings.HasPrefix(s3Ref, "local://"):
 		rest = strings.TrimPrefix(s3Ref, "local://")
 		isLocal = true
 	default:
-		return "", "", fmt.Errorf("invalid reference %q: must start with s3:// or local://", s3Ref)
+		return "", "", fmt.Errorf("invalid reference %q: must start with s3://, gs://, az://, or local://", s3Ref)
 	}
 
 	if isLocal && (strings.HasPrefix(rest, "./") || strings.HasPrefix(rest, "../")) {
