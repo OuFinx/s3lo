@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // Recommendation describes a single actionable suggestion for the bucket.
@@ -30,9 +30,15 @@ type RecommendResult struct {
 }
 
 // Recommend analyzes the actual state of a bucket and returns data-driven recommendations.
+// Currently only supports S3 buckets (requires S3-specific APIs like GetBucketVersioning).
 func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error) {
-	if strings.HasPrefix(s3BucketRef, "local://") {
+	switch {
+	case strings.HasPrefix(s3BucketRef, "local://"):
 		return nil, fmt.Errorf("s3lo recommend is not supported for local storage")
+	case strings.HasPrefix(s3BucketRef, "gs://"):
+		return nil, fmt.Errorf("s3lo recommend is not yet supported for Google Cloud Storage")
+	case strings.HasPrefix(s3BucketRef, "az://"):
+		return nil, fmt.Errorf("s3lo recommend is not yet supported for Azure Blob Storage")
 	}
 
 	bucket, _, err := ParseBucketRef(s3BucketRef)
@@ -40,7 +46,7 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 		return nil, err
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := storage.NewS3Client(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create S3 client: %w", err)
 	}

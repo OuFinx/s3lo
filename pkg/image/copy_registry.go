@@ -8,9 +8,8 @@ import (
 	"os"
 	"sync/atomic"
 
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
@@ -46,7 +45,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		return nil, fmt.Errorf("fetch manifest from registry: %w", err)
 	}
 
-	s3c, err := s3client.NewBackendFromRef(ctx, destRef)
+	s3c, err := storage.NewBackendFromRef(ctx, destRef)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
@@ -81,7 +80,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		}
 		actualSize := info.Size()
 
-		if err := s3c.UploadFile(ctx, tmpPath, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
+		if err := s3c.UploadFile(ctx, tmpPath, destParsed.Bucket, destKey, storage.StorageClassIntelligentTiering); err != nil {
 			return fmt.Errorf("upload blob %s: %w", encoded[:12], err)
 		}
 		blobsCopied.Add(1)

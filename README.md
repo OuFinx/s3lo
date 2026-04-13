@@ -5,16 +5,17 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/OuFinx/s3lo)](https://goreportcard.com/report/github.com/OuFinx/s3lo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Use AWS S3 (or local storage) as a container image registry. Faster pulls, cheaper storage, no registry to manage.
+Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster pulls, cheaper storage, no registry to manage.
 
 ## Why s3lo?
 
-| | ECR | s3lo + S3 |
+| | ECR | s3lo |
 |---|---|---|
 | **Pull speed** | ~1-5 Gbps | Up to 100 Gbps on EC2 |
 | **Storage cost** | $0.10/GB/month | $0.023/GB/month (S3 Standard) |
-| **Registry management** | Lifecycle policies, permissions | Just an S3 bucket |
-| **Multi-region** | Replicate per region | S3 Cross-Region Replication |
+| **Registry management** | Lifecycle policies, permissions | Just a bucket |
+| **Multi-region** | Replicate per region | Native cloud replication |
+| **Cloud support** | AWS only | AWS S3, GCS, Azure Blob, MinIO, R2, Ceph |
 
 ## Quick Start
 
@@ -120,7 +121,20 @@ COSIGN_PASSWORD=secret s3lo sign s3://my-bucket/myapp:v1.0 --key cosign.key
 s3lo verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
 s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json
 
-# --- Local storage (no AWS account needed) ---
+# --- Google Cloud Storage ---
+s3lo push myapp:v1.0 gs://my-gcs-bucket/myapp:v1.0
+s3lo pull gs://my-gcs-bucket/myapp:v1.0
+s3lo list gs://my-gcs-bucket/
+
+# --- Azure Blob Storage ---
+AZURE_STORAGE_ACCOUNT=mystorageaccount s3lo push myapp:v1.0 az://my-container/myapp:v1.0
+AZURE_STORAGE_ACCOUNT=mystorageaccount s3lo pull az://my-container/myapp:v1.0
+
+# --- S3-compatible (MinIO, Cloudflare R2, Ceph) ---
+s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --endpoint http://localhost:9000
+s3lo pull s3://my-bucket/myapp:v1.0 --endpoint http://localhost:9000
+
+# --- Local storage (no cloud account needed) ---
 
 # Initialize local storage
 s3lo init --local ./local-s3
@@ -153,9 +167,14 @@ s3://my-bucket/myapp/v1.0/
 
 ## Authentication
 
-s3lo uses the standard AWS credentials chain --- environment variables, `~/.aws/credentials`, IAM instance profiles, SSO, etc.
+s3lo uses the standard credential chain for each cloud:
 
-### Minimum IAM Policy
+- **AWS S3**: standard AWS credentials chain — environment variables, `~/.aws/credentials`, IAM instance profiles, SSO, etc.
+- **GCS**: Application Default Credentials — `GOOGLE_APPLICATION_CREDENTIALS`, `gcloud auth application-default login`, or attached service account.
+- **Azure Blob**: `DefaultAzureCredential` — service principal env vars, `az login`, or managed identity. Set `AZURE_STORAGE_ACCOUNT` to your storage account name.
+- **S3-compatible**: same as AWS — set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` for the target service, and pass `--endpoint`.
+
+### AWS S3 — Minimum IAM Policy
 
 ```json
 {
@@ -209,10 +228,10 @@ s3lo exposes its core packages for use in other tools:
 
 ```go
 import (
-    "github.com/OuFinx/s3lo/pkg/ref"   // Parse s3://bucket/image:tag references
-    "github.com/OuFinx/s3lo/pkg/oci"   // OCI manifest parsing, Docker export/import
-    "github.com/OuFinx/s3lo/pkg/s3"    // S3 client with region auto-detection
-    "github.com/OuFinx/s3lo/pkg/image" // High-level push/pull/list/inspect
+    "github.com/OuFinx/s3lo/pkg/ref"     // Parse s3://, gs://, az://, local:// references
+    "github.com/OuFinx/s3lo/pkg/oci"     // OCI manifest parsing, Docker export/import
+    "github.com/OuFinx/s3lo/pkg/storage" // Storage client (S3, GCS, Azure Blob, local)
+    "github.com/OuFinx/s3lo/pkg/image"   // High-level push/pull/list/inspect
 )
 ```
 

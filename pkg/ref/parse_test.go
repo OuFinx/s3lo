@@ -47,6 +47,26 @@ func TestParse(t *testing.T) {
 			want:  Reference{Scheme: "local", Bucket: "./my-store", Image: "org/myapp", Tag: "v1.0"},
 		},
 		{
+			name:  "gs reference",
+			input: "gs://my-bucket/myapp:v1.0",
+			want:  Reference{Scheme: "gs", Bucket: "my-bucket", Image: "myapp", Tag: "v1.0"},
+		},
+		{
+			name:  "gs reference no tag defaults to latest",
+			input: "gs://my-bucket/myapp",
+			want:  Reference{Scheme: "gs", Bucket: "my-bucket", Image: "myapp", Tag: "latest"},
+		},
+		{
+			name:  "az reference",
+			input: "az://my-container/myapp:v1.0",
+			want:  Reference{Scheme: "az", Bucket: "my-container", Image: "myapp", Tag: "v1.0"},
+		},
+		{
+			name:  "az reference no tag defaults to latest",
+			input: "az://my-container/myapp",
+			want:  Reference{Scheme: "az", Bucket: "my-container", Image: "myapp", Tag: "latest"},
+		},
+		{
 			name:    "missing bucket",
 			input:   "s3:///myapp:v1.0",
 			wantErr: true,

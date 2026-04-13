@@ -59,9 +59,41 @@ done
 s3lo clean s3://my-bucket/ --blobs --confirm
 ```
 
-**Does s3lo work with S3-compatible storage (MinIO, Backblaze, etc.)?**
+**Does s3lo work with S3-compatible storage (MinIO, Cloudflare R2, Ceph, etc.)?**
 
-Not officially. The AWS SDK's `AWS_ENDPOINT_URL` override may work for testing but is unsupported.
+Yes, since v1.10.0. Use the `--endpoint` flag to point s3lo at any S3-compatible server:
+
+```bash
+# MinIO
+s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --endpoint http://localhost:9000
+
+# Cloudflare R2
+s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 \
+  --endpoint https://my-account.r2.cloudflarestorage.com
+```
+
+Set `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY` to the credentials for the compatible service.
+
+**Does s3lo support Google Cloud Storage?**
+
+Yes, since v1.10.0. Use `gs://` references:
+
+```bash
+s3lo push myapp:v1.0 gs://my-gcs-bucket/myapp:v1.0
+```
+
+Authentication uses Application Default Credentials — run `gcloud auth application-default login` locally, or use a service account key via `GOOGLE_APPLICATION_CREDENTIALS`. See [Authentication](concepts/authentication.md#google-cloud-storage-gs).
+
+**Does s3lo support Azure Blob Storage?**
+
+Yes, since v1.10.0. Use `az://` references. Set `AZURE_STORAGE_ACCOUNT` to your storage account name:
+
+```bash
+export AZURE_STORAGE_ACCOUNT=mystorageaccount
+s3lo push myapp:v1.0 az://my-container/myapp:v1.0
+```
+
+Authentication uses `DefaultAzureCredential` — `az login` locally, or service principal env vars in CI. See [Authentication](concepts/authentication.md#azure-blob-storage-az).
 
 **Can I use s3lo without an AWS account?**
 

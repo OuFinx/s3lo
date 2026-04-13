@@ -12,7 +12,7 @@ import (
 	cosignsig "github.com/sigstore/cosign/v2/pkg/signature"
 
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // VerifyResult is returned by Verify.
@@ -38,7 +38,7 @@ func Verify(ctx context.Context, s3Ref, keyRef string) (*VerifyResult, error) {
 		return nil, fmt.Errorf("invalid reference: %w", err)
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
+	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
@@ -76,7 +76,7 @@ func Verify(ctx context.Context, s3Ref, keyRef string) (*VerifyResult, error) {
 	sigKey := parsed.ManifestsPrefix() + "signatures/" + slug + ".json"
 	sigData, err := client.GetObject(ctx, parsed.Bucket, sigKey)
 	if err != nil {
-		if s3client.IsNotFound(err) {
+		if storage.IsNotFound(err) {
 			return &VerifyResult{
 				Verified: false,
 				Reason:   "no signature found for key " + keyRef,

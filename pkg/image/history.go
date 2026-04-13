@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // HistoryEntry records a single push event for an image tag.
@@ -46,7 +46,7 @@ func ListImageHistory(ctx context.Context, bucketRef string) ([]ImageHistorySumm
 		return nil, err
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, bucketRef)
+	client, err := storage.NewBackendFromRef(ctx, bucketRef)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
@@ -125,7 +125,7 @@ func ListTagHistory(ctx context.Context, rawRef, imageName string) ([]TagHistory
 		return nil, err
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, rawRef)
+	client, err := storage.NewBackendFromRef(ctx, rawRef)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
@@ -190,11 +190,11 @@ func totalManifestSize(manifestData []byte) int64 {
 }
 
 // readHistory reads history.json for the given image tag.
-func readHistory(ctx context.Context, client s3client.Backend, parsed ref.Reference) ([]HistoryEntry, error) {
+func readHistory(ctx context.Context, client storage.Backend, parsed ref.Reference) ([]HistoryEntry, error) {
 	key := parsed.ManifestsPrefix() + "history.json"
 	data, err := client.GetObject(ctx, parsed.Bucket, key)
 	if err != nil {
-		if s3client.IsNotFound(err) {
+		if storage.IsNotFound(err) {
 			return nil, nil // no history yet
 		}
 		return nil, fmt.Errorf("read history: %w", err)
@@ -208,7 +208,7 @@ func readHistory(ctx context.Context, client s3client.Backend, parsed ref.Refere
 
 // recordHistory prepends a new push event to the tag's history.json.
 // Called from Push after a successful upload.
-func recordHistory(ctx context.Context, client s3client.Backend, parsed ref.Reference, manifestData []byte, sizeBytes int64) error {
+func recordHistory(ctx context.Context, client storage.Backend, parsed ref.Reference, manifestData []byte, sizeBytes int64) error {
 	h := sha256.Sum256(manifestData)
 	entry := HistoryEntry{
 		PushedAt:  time.Now().UTC().Truncate(time.Second),

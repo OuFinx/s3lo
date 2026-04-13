@@ -11,8 +11,8 @@ go get github.com/OuFinx/s3lo
 | Package | Description |
 |---------|-------------|
 | `github.com/OuFinx/s3lo/pkg/image` | High-level operations: push, pull, copy, list, inspect, delete, GC, stats, scan |
-| `github.com/OuFinx/s3lo/pkg/ref` | Parse `s3://bucket/image:tag` references |
-| `github.com/OuFinx/s3lo/pkg/s3` | S3 client with region auto-detection |
+| `github.com/OuFinx/s3lo/pkg/ref` | Parse `s3://`, `gs://`, `az://`, `local://` references |
+| `github.com/OuFinx/s3lo/pkg/storage` | Storage backend interface + AWS S3, GCS, Azure Blob, and local filesystem implementations |
 | `github.com/OuFinx/s3lo/pkg/oci` | OCI manifest and config types |
 
 All functions accept `context.Context` as the first argument.
@@ -151,8 +151,28 @@ exitCode, err := image.Scan(ctx, "s3://my-bucket/alpine:latest", image.ScanOptio
 import "github.com/OuFinx/s3lo/pkg/ref"
 
 r, err := ref.Parse("s3://my-bucket/myapp:v1.0")
-fmt.Println(r.Bucket)          // "my-bucket"
-fmt.Println(r.Image)           // "myapp"
-fmt.Println(r.Tag)             // "v1.0"
+fmt.Println(r.Scheme)            // "s3"
+fmt.Println(r.Bucket)            // "my-bucket"
+fmt.Println(r.Image)             // "myapp"
+fmt.Println(r.Tag)               // "v1.0"
 fmt.Println(r.ManifestsPrefix()) // "manifests/myapp/v1.0/"
+```
+
+All schemes are supported:
+
+```go
+ref.Parse("gs://my-gcs-bucket/myapp:v1.0")    // GCS
+ref.Parse("az://my-container/myapp:v1.0")     // Azure Blob
+ref.Parse("local://./store/myapp:v1.0")       // local filesystem
+```
+
+## S3-compatible endpoints
+
+To use MinIO, Cloudflare R2, or Ceph, pass the endpoint via context:
+
+```go
+import "github.com/OuFinx/s3lo/pkg/storage"
+
+ctx = storage.WithEndpoint(ctx, "http://localhost:9000")
+err := image.Push(ctx, "myapp:v1.0", "s3://my-bucket/myapp:v1.0", image.PushOptions{})
 ```

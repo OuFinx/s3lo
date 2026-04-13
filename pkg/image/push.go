@@ -8,10 +8,9 @@ import (
 	"path/filepath"
 	"sync"
 
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -53,7 +52,7 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return fmt.Errorf("write OCI layout: %w", err)
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
+	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return fmt.Errorf("create storage client: %w", err)
 	}
@@ -121,7 +120,7 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 			exists, _ := client.HeadObjectExists(gCtx, parsed.Bucket, key)
 			if !exists {
 				slog.Debug("uploading blob", "digest", entry.Name()[:12], "size", info.Size())
-				if err := client.UploadFile(gCtx, localPath, parsed.Bucket, key, s3types.StorageClassIntelligentTiering); err != nil {
+				if err := client.UploadFile(gCtx, localPath, parsed.Bucket, key, storage.StorageClassIntelligentTiering); err != nil {
 					return fmt.Errorf("upload blob %s: %w", entry.Name(), err)
 				}
 			} else {

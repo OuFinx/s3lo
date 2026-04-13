@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // ImageEntry represents an image and its available tags in the registry.
@@ -25,7 +25,7 @@ func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 		return nil, err
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
+	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}

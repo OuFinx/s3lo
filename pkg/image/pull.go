@@ -10,7 +10,7 @@ import (
 
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -40,7 +40,7 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 		}
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
+	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return fmt.Errorf("create storage client: %w", err)
 	}
@@ -57,7 +57,7 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 	manifestKey := parsed.ManifestsPrefix() + "manifest.json"
 	manifestData, err := client.GetObject(ctx, parsed.Bucket, manifestKey)
 	if err != nil {
-		if !s3client.IsNotFound(err) {
+		if !storage.IsNotFound(err) {
 			return fmt.Errorf("fetch manifest: %w", err)
 		}
 		// v1.1.0 not found — fall back to v1.0.0 per-tag layout.
@@ -90,7 +90,7 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 
 // resolvePlatformManifest selects a platform from an Image Index and returns its manifest bytes.
 // If platform is empty, the host platform is used.
-func resolvePlatformManifest(ctx context.Context, client s3client.Backend, bucket string, indexData []byte, platform string) ([]byte, error) {
+func resolvePlatformManifest(ctx context.Context, client storage.Backend, bucket string, indexData []byte, platform string) ([]byte, error) {
 	idx, err := parseIndex(indexData)
 	if err != nil {
 		return nil, fmt.Errorf("parse image index: %w", err)
@@ -117,7 +117,7 @@ func resolvePlatformManifest(ctx context.Context, client s3client.Backend, bucke
 
 // pullV110 downloads a v1.1.0 image into tmpDir, reconstructing the local OCI layout
 // that oci.ImportImage expects: tmpDir/manifest.json + tmpDir/blobs/sha256/<digest>.
-func pullV110(ctx context.Context, client s3client.Backend, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64), onStart func(int64)) error {
+func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64), onStart func(int64)) error {
 	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), manifestData, 0o644); err != nil {
 		return fmt.Errorf("write manifest: %w", err)
 	}

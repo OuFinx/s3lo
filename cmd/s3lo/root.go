@@ -5,13 +5,15 @@ import (
 	"log/slog"
 	"os"
 
+	"github.com/OuFinx/s3lo/pkg/storage"
 	"github.com/spf13/cobra"
 )
 
 var (
-	version = "dev"
-	commit  = "none"
-	verbose bool
+	version  = "dev"
+	commit   = "none"
+	verbose  bool
+	endpoint string
 )
 
 var rootCmd = &cobra.Command{
@@ -21,12 +23,17 @@ var rootCmd = &cobra.Command{
 	// Errors and usage are printed in main (red ERROR, then usage) for clearer separation.
 	SilenceErrors: true,
 	SilenceUsage:  true,
-	PersistentPreRun: func(cmd *cobra.Command, args []string) {
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if verbose {
 			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 				Level: slog.LevelDebug,
 			})))
 		}
+		if endpoint != "" {
+			ctx := storage.WithEndpoint(cmd.Context(), endpoint)
+			cmd.SetContext(ctx)
+		}
+		return nil
 	},
 }
 
@@ -41,5 +48,6 @@ var versionCmd = &cobra.Command{
 func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Enable verbose debug output")
+	rootCmd.PersistentFlags().StringVar(&endpoint, "endpoint", "", "Override storage endpoint URL (for MinIO, R2, Ceph)")
 	rootCmd.AddCommand(versionCmd)
 }

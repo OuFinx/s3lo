@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/OuFinx/s3lo/pkg/image"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -45,7 +45,7 @@ Available keys:
 			return err
 		}
 
-		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
+		client, err := storage.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -98,7 +98,7 @@ var configGetCmd = &cobra.Command{
 			return err
 		}
 
-		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
+		client, err := storage.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -166,7 +166,7 @@ Valid keys to remove: immutable, lifecycle`,
 			return fmt.Errorf("image name required (use s3://bucket/image, not s3://bucket/)")
 		}
 
-		client, err := s3client.NewBackendFromRef(cmd.Context(), args[0])
+		client, err := storage.NewBackendFromRef(cmd.Context(), args[0])
 		if err != nil {
 			return err
 		}
@@ -390,12 +390,18 @@ var configRecommendCmd = &cobra.Command{
 }
 
 
-// refScheme returns the scheme prefix (e.g. "s3://" or "local://") from a raw reference.
+// refScheme returns the scheme prefix (e.g. "s3://", "gs://", "az://", or "local://") from a raw reference.
 func refScheme(rawRef string) string {
-	if strings.HasPrefix(rawRef, "local://") {
+	switch {
+	case strings.HasPrefix(rawRef, "gs://"):
+		return "gs://"
+	case strings.HasPrefix(rawRef, "az://"):
+		return "az://"
+	case strings.HasPrefix(rawRef, "local://"):
 		return "local://"
+	default:
+		return "s3://"
 	}
-	return "s3://"
 }
 
 func init() {

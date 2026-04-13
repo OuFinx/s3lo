@@ -68,11 +68,12 @@
 - [x] `s3lo sign` — sign images with cosign/Sigstore (AWS KMS, local key, HashiCorp Vault)
 - [x] `s3lo verify` — verify image signatures (exit 0/1/2 for CI gates)
 
-## v1.10.0 — Multi-Cloud Support
+## v1.10.0 — Multi-Cloud Support ✓
 
-- [ ] Google Cloud Storage backend
-- [ ] MinIO / S3-compatible backend
-- [ ] Cloudflare R2 / Azure Blob (S3-compatible)
+- [x] Google Cloud Storage backend (`gs://`)
+- [x] Azure Blob Storage backend (`az://`)
+- [x] MinIO / S3-compatible backend (`--endpoint` flag for MinIO, Cloudflare R2, Ceph, etc.)
+- [x] `pkg/s3` renamed to `pkg/storage` with decoupled `StorageClass` type
 
 ## v1.11.0 — Policy & SBOM
 
