@@ -1,4 +1,4 @@
-package s3
+package storage
 
 import (
 	"context"
@@ -19,9 +19,9 @@ func TestUploadDirectory_Integration(t *testing.T) {
 	os.WriteFile(filepath.Join(tmpDir, "config.json"), []byte(`{"arch":"amd64"}`), 0o644)
 	os.WriteFile(filepath.Join(tmpDir, "blobs", "sha256_abc"), []byte("fake layer data"), 0o644)
 
-	c, err := NewClient(context.Background())
+	c, err := NewS3Client(context.Background())
 	if err != nil {
-		t.Fatalf("NewClient: %v", err)
+		t.Fatalf("NewS3Client: %v", err)
 	}
 
 	err = c.UploadDirectory(context.Background(), tmpDir, bucket, "test-image/v0.0.1")

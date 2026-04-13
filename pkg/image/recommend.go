@@ -7,7 +7,7 @@ import (
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // Recommendation describes a single actionable suggestion for the bucket.
@@ -40,7 +40,7 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 		return nil, err
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := storage.NewS3Client(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create S3 client: %w", err)
 	}

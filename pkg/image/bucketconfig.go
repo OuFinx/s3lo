@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"gopkg.in/yaml.v3"
 )
 
@@ -93,10 +93,10 @@ func (c *BucketConfig) IsImmutable(imageName string) bool {
 }
 
 // GetBucketConfig reads the bucket config from storage. Returns an empty config if not set.
-func GetBucketConfig(ctx context.Context, client s3client.Backend, bucket string) (*BucketConfig, error) {
+func GetBucketConfig(ctx context.Context, client storage.Backend, bucket string) (*BucketConfig, error) {
 	data, err := client.GetObject(ctx, bucket, bucketConfigKey)
 	if err != nil {
-		if s3client.IsNotFound(err) {
+		if storage.IsNotFound(err) {
 			return &BucketConfig{}, nil
 		}
 		return nil, fmt.Errorf("read bucket config: %w", err)
@@ -109,7 +109,7 @@ func GetBucketConfig(ctx context.Context, client s3client.Backend, bucket string
 }
 
 // SetBucketConfig writes the bucket config to storage.
-func SetBucketConfig(ctx context.Context, client s3client.Backend, bucket string, cfg *BucketConfig) error {
+func SetBucketConfig(ctx context.Context, client storage.Backend, bucket string, cfg *BucketConfig) error {
 	data, err := yaml.Marshal(cfg)
 	if err != nil {
 		return fmt.Errorf("marshal bucket config: %w", err)

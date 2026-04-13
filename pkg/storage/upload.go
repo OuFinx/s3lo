@@ -1,4 +1,4 @@
-package s3
+package storage
 
 import (
 	"bytes"
@@ -13,6 +13,14 @@ import (
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"golang.org/x/sync/errgroup"
 )
+
+// toAWSStorageClass maps our StorageClass type to the AWS SDK type for internal use.
+func toAWSStorageClass(sc StorageClass) s3types.StorageClass {
+	if sc == StorageClassIntelligentTiering {
+		return s3types.StorageClassIntelligentTiering
+	}
+	return s3types.StorageClassStandard
+}
 
 // UploadDirectory uploads all files in localDir to bucket at prefix/ with Standard storage class.
 func (c *Client) UploadDirectory(ctx context.Context, localDir, bucket, prefix string) error {
@@ -50,13 +58,12 @@ func (c *Client) UploadDirectory(ctx context.Context, localDir, bucket, prefix s
 }
 
 // UploadFile uploads a single local file to a specific S3 key.
-// Pass empty string for storageClass to use the bucket default (Standard).
-func (c *Client) UploadFile(ctx context.Context, localPath, bucket, key string, storageClass s3types.StorageClass) error {
+func (c *Client) UploadFile(ctx context.Context, localPath, bucket, key string, sc StorageClass) error {
 	s3Client, err := c.ClientForBucket(ctx, bucket)
 	if err != nil {
 		return err
 	}
-	return uploadFile(ctx, s3Client, bucket, key, localPath, storageClass)
+	return uploadFile(ctx, s3Client, bucket, key, localPath, toAWSStorageClass(sc))
 }
 
 func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string, storageClass s3types.StorageClass) error {

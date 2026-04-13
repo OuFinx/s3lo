@@ -14,7 +14,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // ScanOptions controls scan behavior.
@@ -45,7 +45,7 @@ func Scan(ctx context.Context, s3Ref string, opts ScanOptions) (int, error) {
 		return 0, fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
+	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return 0, fmt.Errorf("create storage client: %w", err)
 	}

@@ -5,7 +5,7 @@ import (
 	"os"
 
 	"github.com/OuFinx/s3lo/pkg/image"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -97,7 +97,7 @@ func loadCleanConfig(cmd *cobra.Command, s3Ref string) (*image.BucketConfig, err
 	if err != nil {
 		return nil, err
 	}
-	client, err := s3client.NewBackendFromRef(cmd.Context(), s3Ref)
+	client, err := storage.NewBackendFromRef(cmd.Context(), s3Ref)
 	if err != nil {
 		return nil, err
 	}

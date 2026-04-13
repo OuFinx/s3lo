@@ -1,14 +1,14 @@
-package s3
+package storage
 
 import (
 	"context"
 	"testing"
 )
 
-func TestNewClient(t *testing.T) {
-	c, err := NewClient(context.Background())
+func TestNewS3Client(t *testing.T) {
+	c, err := NewS3Client(context.Background())
 	if err != nil {
-		t.Fatalf("NewClient failed: %v", err)
+		t.Fatalf("NewS3Client failed: %v", err)
 	}
 	if c == nil {
 		t.Fatal("expected non-nil client")

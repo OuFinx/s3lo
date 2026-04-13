@@ -1,4 +1,4 @@
-package s3
+package storage
 
 import (
 	"context"
@@ -7,8 +7,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
 // LocalClient implements Backend using the local filesystem.
@@ -89,7 +87,7 @@ func (c *LocalClient) ListObjectsWithMeta(ctx context.Context, bucket, prefix st
 				Key:          filepath.ToSlash(rel),
 				Size:         info.Size(),
 				LastModified: info.ModTime(),
-				StorageClass: string(s3types.StorageClassStandard),
+				StorageClass: string(StorageClassStandard),
 			})
 		}
 		return nil
@@ -107,7 +105,7 @@ func (c *LocalClient) DeleteObjects(ctx context.Context, bucket string, keys []s
 	return nil
 }
 
-func (c *LocalClient) UploadFile(_ context.Context, localPath, bucket, key string, _ s3types.StorageClass) error {
+func (c *LocalClient) UploadFile(_ context.Context, localPath, bucket, key string, _ StorageClass) error {
 	dest := c.path(bucket, key)
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err

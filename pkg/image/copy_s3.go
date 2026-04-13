@@ -9,9 +9,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
@@ -29,11 +28,11 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 		return nil, fmt.Errorf("invalid destination S3 reference: %w", err)
 	}
 
-	srcClient, err := s3client.NewBackendFromRef(ctx, srcRef)
+	srcClient, err := storage.NewBackendFromRef(ctx, srcRef)
 	if err != nil {
 		return nil, fmt.Errorf("create source storage client: %w", err)
 	}
-	destClient, err := s3client.NewBackendFromRef(ctx, destRef)
+	destClient, err := storage.NewBackendFromRef(ctx, destRef)
 	if err != nil {
 		return nil, fmt.Errorf("create destination storage client: %w", err)
 	}
@@ -74,7 +73,7 @@ func copyS3ToS3(ctx context.Context, srcRef, destRef string, opts CopyOptions) (
 			if err := srcClient.DownloadObjectToFile(ctx, srcParsed.Bucket, srcKey, tmpName); err != nil {
 				return fmt.Errorf("download blob %s: %w", digest[:12], err)
 			}
-			if err := destClient.UploadFile(ctx, tmpName, destParsed.Bucket, destKey, s3types.StorageClassIntelligentTiering); err != nil {
+			if err := destClient.UploadFile(ctx, tmpName, destParsed.Bucket, destKey, storage.StorageClassIntelligentTiering); err != nil {
 				return fmt.Errorf("upload blob %s: %w", digest[:12], err)
 			}
 		}

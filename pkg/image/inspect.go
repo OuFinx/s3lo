@@ -9,7 +9,7 @@ import (
 
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
@@ -57,7 +57,7 @@ func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 		return nil, fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
+	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
@@ -66,7 +66,7 @@ func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 	key := parsed.ManifestsPrefix() + "manifest.json"
 	data, err := client.GetObject(ctx, parsed.Bucket, key)
 	if err != nil {
-		if !s3client.IsNotFound(err) {
+		if !storage.IsNotFound(err) {
 			return nil, fmt.Errorf("download manifest: %w", err)
 		}
 		// Fall back to v1.0.0 layout.

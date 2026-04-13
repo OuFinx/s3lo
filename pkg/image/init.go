@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // InitCheck describes a single check performed during bucket initialization.
@@ -45,7 +45,7 @@ func Init(ctx context.Context, s3BucketRef string) (*InitResult, error) {
 		return nil, err
 	}
 
-	client, err := s3client.NewClient(ctx)
+	client, err := storage.NewS3Client(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("create S3 client: %w", err)
 	}

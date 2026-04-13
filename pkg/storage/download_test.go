@@ -1,4 +1,4 @@
-package s3
+package storage
 
 import (
 	"context"
@@ -13,9 +13,9 @@ func TestDownloadDirectory_Integration(t *testing.T) {
 	}
 	bucket := os.Getenv("S3LO_TEST_BUCKET")
 
-	c, err := NewClient(context.Background())
+	c, err := NewS3Client(context.Background())
 	if err != nil {
-		t.Fatalf("NewClient: %v", err)
+		t.Fatalf("NewS3Client: %v", err)
 	}
 
 	tmpDir := t.TempDir()

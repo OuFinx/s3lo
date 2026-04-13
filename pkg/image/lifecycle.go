@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )
@@ -63,7 +63,7 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, 
 		return nil, err
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3BucketRef)
+	client, err := storage.NewBackendFromRef(ctx, s3BucketRef)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}

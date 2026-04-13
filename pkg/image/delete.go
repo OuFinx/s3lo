@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // Delete removes an image tag from S3 by deleting all files under manifests/<image>/<tag>/.
@@ -16,7 +16,7 @@ func Delete(ctx context.Context, s3Ref string) error {
 		return fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
+	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return fmt.Errorf("create storage client: %w", err)
 	}

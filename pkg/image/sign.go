@@ -19,7 +19,7 @@ import (
 	cosignsig "github.com/sigstore/cosign/v2/pkg/signature"
 
 	"github.com/OuFinx/s3lo/pkg/ref"
-	s3client "github.com/OuFinx/s3lo/pkg/s3"
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // SignatureRecord is the JSON stored at manifests/<image>/<tag>/signatures/<slug>.json.
@@ -51,7 +51,7 @@ func Sign(ctx context.Context, s3Ref, keyRef string) (*SignResult, error) {
 		return nil, fmt.Errorf("invalid reference: %w", err)
 	}
 
-	client, err := s3client.NewBackendFromRef(ctx, s3Ref)
+	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}

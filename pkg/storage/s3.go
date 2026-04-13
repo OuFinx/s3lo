@@ -1,4 +1,4 @@
-package s3
+package storage
 
 import (
 	"context"
@@ -18,7 +18,14 @@ type Client struct {
 	clientCache map[string]*s3.Client
 }
 
-func NewClient(ctx context.Context) (*Client, error) {
+// NewS3Client creates an S3 client using the default AWS credentials chain.
+func NewS3Client(ctx context.Context) (*Client, error) {
+	return newS3Client(ctx, "")
+}
+
+// newS3Client is the internal constructor. endpoint is empty for AWS S3, non-empty for S3-compatible backends.
+// Full endpoint support (UsePathStyle etc.) will be added in a later task.
+func newS3Client(ctx context.Context, endpoint string) (*Client, error) {
 	cfg, err := config.LoadDefaultConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("load AWS config: %w", err)
