@@ -24,6 +24,8 @@ All commands that reference an image use the same format:
 
 ```
 s3://bucket/image:tag
+gs://bucket/image:tag
+az://container/image:tag
 local://path/image:tag
 ```
 
@@ -31,10 +33,12 @@ Examples:
 ```
 s3://my-bucket/myapp:v1.0
 s3://my-bucket/org/backend:latest
+gs://my-gcs-bucket/myapp:v1.0
+az://my-container/myapp:v1.0
 local://./local-s3/alpine:latest
 ```
 
-The scheme prefix (`s3://` or `local://`) is always required. Commands that operate on
+The scheme prefix (`s3://`, `gs://`, `az://`, or `local://`) is always required. Commands that operate on
 a specific image (push, pull, delete, inspect, scan, copy) require an explicit tag —
 omitting the tag is an error.
 
@@ -42,5 +46,18 @@ Bucket-level commands (list, history, stats, clean, config) accept a reference w
 
 ```
 s3://my-bucket/
+gs://my-gcs-bucket/
+az://my-container/
 local://./local-s3/
 ```
+
+## S3-compatible backends
+
+Use `--endpoint` to point s3lo at any S3-compatible storage such as MinIO, Cloudflare R2, or Ceph:
+
+```bash
+s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0 --endpoint http://localhost:9000
+s3lo pull s3://my-bucket/myapp:v1.0 --endpoint https://my-account.r2.cloudflarestorage.com
+```
+
+The `--endpoint` flag is a persistent global flag available on all commands.

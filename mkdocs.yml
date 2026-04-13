@@ -1,5 +1,5 @@
 site_name: s3lo
-site_description: Use AWS S3 as a container image registry. Faster pulls, cheaper storage, no registry to manage.
+site_description: Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster pulls, cheaper storage, no registry to manage.
 site_url: https://oufinx.github.io/s3lo
 repo_url: https://github.com/OuFinx/s3lo
 repo_name: OuFinx/s3lo
