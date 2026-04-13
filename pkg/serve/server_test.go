@@ -305,6 +305,12 @@ func TestGetBlobStream(t *testing.T) {
 	if string(body) != string(blobData) {
 		t.Errorf("blob body mismatch: got %q, want %q", body, blobData)
 	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want application/octet-stream", ct)
+	}
+	if cl := resp.Header.Get("Content-Length"); cl == "" {
+		t.Error("Content-Length header missing")
+	}
 }
 
 func TestGetBlobMissing(t *testing.T) {
@@ -347,5 +353,8 @@ func TestHeadBlob(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if len(body) != 0 {
 		t.Errorf("HEAD blob must have no body, got %d bytes", len(body))
+	}
+	if dgst := resp.Header.Get("Docker-Content-Digest"); dgst == "" {
+		t.Error("HEAD blob: Docker-Content-Digest header missing")
 	}
 }
