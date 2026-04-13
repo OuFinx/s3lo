@@ -30,8 +30,32 @@ type ImageConfig struct {
 // BucketConfig holds the full s3lo configuration for a bucket, stored at s3://bucket/s3lo.yaml.
 // Default applies to all images. Images contains per-image overrides keyed by name or glob pattern.
 type BucketConfig struct {
-	Default ImageConfig            `yaml:"default,omitempty" json:"default,omitempty"`
-	Images  map[string]ImageConfig `yaml:"images,omitempty" json:"images,omitempty"`
+	Default  ImageConfig            `yaml:"default,omitempty" json:"default,omitempty"`
+	Images   map[string]ImageConfig `yaml:"images,omitempty" json:"images,omitempty"`
+	Policies []PolicyRule           `yaml:"policies,omitempty" json:"policies,omitempty"`
+}
+
+// PolicyCheck identifies the kind of check a policy performs.
+type PolicyCheck string
+
+const (
+	PolicyCheckScan   PolicyCheck = "scan"
+	PolicyCheckAge    PolicyCheck = "age"
+	PolicyCheckSigned PolicyCheck = "signed"
+	PolicyCheckSize   PolicyCheck = "size"
+)
+
+// PolicyRule is a single policy check stored in s3lo.yaml under the `policies` key.
+type PolicyRule struct {
+	Name string      `yaml:"name" json:"name"`
+	Check PolicyCheck `yaml:"check" json:"check"`
+	// MaxSeverity is used by PolicyCheckScan: fail if vulnerabilities meet or exceed this level.
+	// Valid values: LOW, MEDIUM, HIGH, CRITICAL.
+	MaxSeverity string `yaml:"max_severity,omitempty" json:"max_severity,omitempty"`
+	// MaxDays is used by PolicyCheckAge: fail if image is older than this many days.
+	MaxDays int `yaml:"max_days,omitempty" json:"max_days,omitempty"`
+	// MaxBytes is used by PolicyCheckSize: fail if total image size exceeds this many bytes.
+	MaxBytes int64 `yaml:"max_bytes,omitempty" json:"max_bytes,omitempty"`
 }
 
 // EffectiveConfig returns the resolved configuration for imageName by merging
