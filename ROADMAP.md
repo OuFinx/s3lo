@@ -83,8 +83,10 @@
 ## v1.12.0 — Long-Term Vision
 
 - [ ] `s3lo serve` — OCI Distribution Spec proxy over S3
+
+## v1.13.0
+
 - [ ] Interactive TUI for browsing images and managing lifecycle
-- [ ] Terraform provider for s3lo bucket config and lifecycle
 
 ## v2.0.0 — Stable Release
 
