@@ -101,6 +101,69 @@ s3lo config remove s3://my-bucket/myapp immutable
 s3lo config remove s3://my-bucket/myapp lifecycle
 ```
 
+## config validate
+
+Run all policies defined in `s3lo.yaml` against a stored image tag.
+
+```bash
+s3lo config validate s3://my-bucket/myapp:v1.0
+```
+
+Exit codes:
+
+- `0` — all policies passed
+- `1` — one or more policies failed
+
+### Policy configuration
+
+Define policies in `s3lo.yaml` under the `policies` key:
+
+```yaml
+policies:
+  - name: no-critical-vulns
+    check: scan
+    max_severity: HIGH
+  - name: max-age
+    check: age
+    max_days: 90
+  - name: require-signature
+    check: signed
+  - name: max-size
+    check: size
+    max_bytes: 1073741824
+```
+
+### Policy checks
+
+| Check | Description | Parameters |
+|-------|-------------|------------|
+| `scan` | Run Trivy; fail if vulnerabilities at or above severity | `max_severity`: LOW, MEDIUM, HIGH, CRITICAL |
+| `age` | Fail if image is older than N days | `max_days` |
+| `signed` | Fail if no cosign signature found | (none) |
+| `size` | Fail if total image size exceeds N bytes | `max_bytes` |
+
+### Example output
+
+```
+✓ no-critical-vulns    passed
+✗ max-age              FAILED (image is 127 days old, limit is 90)
+✓ require-signature    passed (1 signature(s))
+
+1 policy failed.
+```
+
+### CI integration
+
+```yaml
+# GitHub Actions
+- name: Validate image policies
+  run: s3lo config validate s3://my-bucket/myapp:${{ github.sha }}
+```
+
+The non-zero exit code causes the CI step to fail automatically when any policy is violated.
+
+---
+
 ## config recommend
 
 Analyzes the bucket and suggests configuration changes.

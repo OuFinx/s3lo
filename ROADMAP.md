@@ -77,8 +77,8 @@
 
 ## v1.11.0 — Policy & SBOM
 
-- [ ] `s3lo config validate` — policy rules and compliance checks
-- [ ] `s3lo sbom` — generate Software Bill of Materials
+- [x] `s3lo config validate` — policy rules and compliance checks
+- [x] `s3lo sbom` — generate Software Bill of Materials
 
 ## v1.12.0 — Long-Term Vision
 
