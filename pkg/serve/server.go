@@ -25,6 +25,7 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if path == "/v2/" || path == "/v2" {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("{}"))
 		return
 	}
 

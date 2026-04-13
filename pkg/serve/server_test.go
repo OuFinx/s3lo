@@ -52,18 +52,28 @@ func (f *fakeBackend) ListKeys(_ context.Context, bucket, prefix string) ([]stri
 	return keys, nil
 }
 
-// Unused Backend methods — panic if called unexpectedly.
-func (f *fakeBackend) PutObject(_ context.Context, _, _ string, _ []byte) error { return nil }
+// Unused Backend methods — panic if called unexpectedly in tests.
+func (f *fakeBackend) PutObject(_ context.Context, _, _ string, _ []byte) error {
+	panic("PutObject not expected in serve tests")
+}
 func (f *fakeBackend) ListObjectsWithMeta(_ context.Context, _, _ string) ([]storage.ObjectMeta, error) {
-	return nil, nil
+	panic("ListObjectsWithMeta not expected in serve tests")
 }
-func (f *fakeBackend) DeleteObjects(_ context.Context, _ string, _ []string) error { return nil }
+func (f *fakeBackend) DeleteObjects(_ context.Context, _ string, _ []string) error {
+	panic("DeleteObjects not expected in serve tests")
+}
 func (f *fakeBackend) UploadFile(_ context.Context, _, _, _ string, _ storage.StorageClass) error {
-	return nil
+	panic("UploadFile not expected in serve tests")
 }
-func (f *fakeBackend) DownloadObjectToFile(_ context.Context, _, _, _ string) error { return nil }
-func (f *fakeBackend) DownloadDirectory(_ context.Context, _, _, _ string) error    { return nil }
-func (f *fakeBackend) CopyObject(_ context.Context, _, _, _ string) error           { return nil }
+func (f *fakeBackend) DownloadObjectToFile(_ context.Context, _, _, _ string) error {
+	panic("DownloadObjectToFile not expected in serve tests")
+}
+func (f *fakeBackend) DownloadDirectory(_ context.Context, _, _, _ string) error {
+	panic("DownloadDirectory not expected in serve tests")
+}
+func (f *fakeBackend) CopyObject(_ context.Context, _, _, _ string) error {
+	panic("CopyObject not expected in serve tests")
+}
 
 type fakeNotFoundError struct{ key string }
 
