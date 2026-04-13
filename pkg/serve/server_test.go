@@ -2,6 +2,8 @@ package serve
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -116,5 +118,99 @@ func TestUnknownPath(t *testing.T) {
 	body, _ := io.ReadAll(resp.Body)
 	if !strings.Contains(string(body), "UNSUPPORTED") {
 		t.Errorf("body missing UNSUPPORTED, got: %s", body)
+	}
+}
+
+const sampleManifest = `{"mediaType":"application/vnd.oci.image.manifest.v1+json","schemaVersion":2,"config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"sha256:abc","size":100},"layers":[]}`
+
+func TestGetManifestByTag(t *testing.T) {
+	b := newFakeBackend()
+	b.set("testbucket", "manifests/myapp/latest/manifest.json", []byte(sampleManifest))
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/myapp/manifests/latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET manifest by tag = %d, want 200", resp.StatusCode)
+	}
+	if resp.Header.Get("Docker-Content-Digest") == "" {
+		t.Error("Docker-Content-Digest header missing")
+	}
+	if ct := resp.Header.Get("Content-Type"); ct != "application/vnd.oci.image.manifest.v1+json" {
+		t.Errorf("Content-Type = %q, want OCI manifest type", ct)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != sampleManifest {
+		t.Errorf("body mismatch: got %q", body)
+	}
+}
+
+func TestHeadManifest(t *testing.T) {
+	b := newFakeBackend()
+	b.set("testbucket", "manifests/myapp/latest/manifest.json", []byte(sampleManifest))
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	req, _ := http.NewRequest(http.MethodHead, ts.URL+"/v2/myapp/manifests/latest", nil)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("HEAD manifest = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if len(body) != 0 {
+		t.Errorf("HEAD response must have no body, got %d bytes", len(body))
+	}
+	if resp.Header.Get("Docker-Content-Digest") == "" {
+		t.Error("HEAD: Docker-Content-Digest missing")
+	}
+}
+
+func TestGetManifestByDigest(t *testing.T) {
+	b := newFakeBackend()
+	data := []byte(sampleManifest)
+	h := sha256.Sum256(data)
+	dgst := "sha256:" + hex.EncodeToString(h[:])
+	b.set("testbucket", "manifests/myapp/v1.0/manifest.json", data)
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/myapp/manifests/" + dgst)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET manifest by digest = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != sampleManifest {
+		t.Errorf("digest lookup body mismatch: got %q", body)
+	}
+}
+
+func TestGetManifestMissing(t *testing.T) {
+	b := newFakeBackend()
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/myapp/manifests/latest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusNotFound {
+		t.Errorf("GET missing manifest = %d, want 404", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if !strings.Contains(string(body), "MANIFEST_UNKNOWN") {
+		t.Errorf("body missing MANIFEST_UNKNOWN, got: %s", body)
 	}
 }
