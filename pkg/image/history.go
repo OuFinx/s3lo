@@ -208,7 +208,10 @@ func recordHistory(ctx context.Context, client storage.Backend, parsed ref.Refer
 	}
 
 	// Read existing history, prepend new entry (keep newest first).
-	entries, _ := readHistory(ctx, client, parsed) // ignore read errors; start fresh
+	entries, err := readHistory(ctx, client, parsed)
+	if err != nil {
+		return err
+	}
 	entries = append([]HistoryEntry{entry}, entries...)
 
 	data, err := json.Marshal(entries)

@@ -104,7 +104,10 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 
 			// Single dedup check — UploadFile skips internally when the object exists,
 			// but we need to know the outcome for OnBlob reporting.
-			exists, _ := client.HeadObjectExists(gCtx, parsed.Bucket, key)
+			exists, err := client.HeadObjectExists(gCtx, parsed.Bucket, key)
+			if err != nil {
+				return fmt.Errorf("check blob %s: %w", entry.Name(), err)
+			}
 			if !exists {
 				slog.Debug("uploading blob", "digest", entry.Name()[:12], "size", info.Size())
 				if err := client.UploadFile(gCtx, localPath, parsed.Bucket, key, storage.StorageClassIntelligentTiering); err != nil {

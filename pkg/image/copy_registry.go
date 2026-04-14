@@ -60,7 +60,10 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	fetchAndUploadBlob := func(ctx context.Context, digest string, knownSize int64, platform string) error {
 		encoded := trimSHA256Prefix(digest)
 		destKey := "blobs/sha256/" + encoded
-		exists, _ := s3c.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		exists, err := s3c.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		if err != nil {
+			return fmt.Errorf("check destination blob %s: %w", encoded[:12], err)
+		}
 		if exists {
 			blobsSkipped.Add(1)
 			if platform != "" && opts.OnBlob != nil {
@@ -173,7 +176,10 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 				g.Go(func() error {
 					encoded := trimSHA256Prefix(pi.digest)
 					destKey := "blobs/sha256/" + encoded
-					exists, _ := s3c.HeadObjectExists(gCtx, destParsed.Bucket, destKey)
+					exists, err := s3c.HeadObjectExists(gCtx, destParsed.Bucket, destKey)
+					if err != nil {
+						return fmt.Errorf("check destination manifest blob %s: %w", encoded[:12], err)
+					}
 					if exists {
 						return nil
 					}

@@ -52,7 +52,10 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 	copyBlob := func(ctx context.Context, digest string, size int64, platform string) error {
 		srcKey := "blobs/sha256/" + digest
 		destKey := "blobs/sha256/" + digest
-		exists, _ := destClient.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		exists, err := destClient.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		if err != nil {
+			return fmt.Errorf("check destination blob %s: %w", digest[:12], err)
+		}
 		if exists {
 			blobsSkipped.Add(1)
 			if platform != "" && opts.OnBlob != nil {
