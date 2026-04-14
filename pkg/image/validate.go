@@ -152,18 +152,15 @@ func runSignedPolicy(ctx context.Context, client storage.Backend, parsed ref.Ref
 
 func runSizePolicy(ctx context.Context, parsed ref.Reference, policy PolicyRule) (PolicyResult, error) {
 	pr := PolicyResult{Name: policy.Name, Check: string(policy.Check)}
-	info, err := Inspect(ctx, parsed.String())
+	client, err := storage.NewBackendFromRef(ctx, parsed.String())
 	if err != nil {
 		return pr, err
 	}
-	totalSize := info.TotalSize
-	if info.IsIndex {
-		for _, p := range info.Platforms {
-			if p.TotalSize > totalSize {
-				totalSize = p.TotalSize
-			}
-		}
+	manifestData, err := client.GetObject(ctx, parsed.Bucket, parsed.ManifestsPrefix()+"manifest.json")
+	if err != nil {
+		return pr, err
 	}
+	totalSize := manifestLogicalSize(ctx, client, parsed.Bucket, manifestData)
 	if totalSize > policy.MaxBytes {
 		pr.Message = fmt.Sprintf("image size %d bytes exceeds limit %d bytes", totalSize, policy.MaxBytes)
 	} else {

@@ -58,9 +58,9 @@ func ListImageHistory(ctx context.Context, bucketRef string) ([]ImageHistorySumm
 	}
 
 	type imageAcc struct {
-		tags         map[string]struct{}
-		lastPushed   time.Time
-		totalSize    int64
+		tags       map[string]struct{}
+		lastPushed time.Time
+		totalSize  int64
 	}
 	acc := make(map[string]*imageAcc)
 
@@ -172,21 +172,12 @@ func ListTagHistory(ctx context.Context, rawRef, imageName string) ([]TagHistory
 	return result, nil
 }
 
-// totalManifestSize computes the total layer+config size from a manifest JSON.
-// Used by copy to record history without needing the full Push path.
-func totalManifestSize(manifestData []byte) int64 {
-	var m struct {
-		Config struct{ Size int64 `json:"size"` } `json:"config"`
-		Layers []struct{ Size int64 `json:"size"` } `json:"layers"`
-	}
-	if json.Unmarshal(manifestData, &m) != nil {
+func manifestLogicalSize(ctx context.Context, client storage.Backend, bucket string, manifestData []byte) int64 {
+	summary, err := collectManifestSummary(ctx, client, bucket, manifestData)
+	if err != nil {
 		return 0
 	}
-	total := m.Config.Size
-	for _, l := range m.Layers {
-		total += l.Size
-	}
-	return total
+	return summary.LogicalSize
 }
 
 // readHistory reads history.json for the given image tag.

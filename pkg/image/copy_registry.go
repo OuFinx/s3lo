@@ -243,7 +243,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 			return nil, fmt.Errorf("write oci-layout: %w", err)
 		}
 
-		_ = recordHistory(ctx, s3c, destParsed, writeManifestData, totalManifestSize(writeManifestData))
+		_ = recordHistory(ctx, s3c, destParsed, writeManifestData, manifestLogicalSize(ctx, s3c, destParsed.Bucket, writeManifestData))
 
 		return &CopyResult{
 			Platforms:    len(selected),
@@ -285,7 +285,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		return nil, fmt.Errorf("write oci-layout: %w", err)
 	}
 
-	_ = recordHistory(ctx, s3c, destParsed, manifestData, totalManifestSize(manifestData))
+	_ = recordHistory(ctx, s3c, destParsed, manifestData, manifestLogicalSize(ctx, s3c, destParsed.Bucket, manifestData))
 
 	return &CopyResult{
 		Platforms:    1,

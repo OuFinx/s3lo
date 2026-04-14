@@ -217,7 +217,7 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			return nil, fmt.Errorf("write oci-layout: %w", err)
 		}
 
-		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, totalManifestSize(writeManifestData))
+		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, writeManifestData))
 
 		return &CopyResult{
 			Platforms:    len(selected),
@@ -276,7 +276,7 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			}
 		}
 	}
-	_ = recordHistory(ctx, destClient, destParsed, manifestData, totalManifestSize(manifestData))
+	_ = recordHistory(ctx, destClient, destParsed, manifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, manifestData))
 
 	return &CopyResult{
 		Platforms:    1,

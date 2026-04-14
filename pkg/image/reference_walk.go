@@ -14,7 +14,19 @@ import (
 // The returned map uses digests without the "sha256:" prefix to match the blob
 // storage layout under blobs/sha256/<digest>.
 func collectManifestReferences(ctx context.Context, client storage.Backend, bucket string, manifestData []byte) (map[string]struct{}, error) {
-	referenced := make(map[string]struct{})
+	summary, err := collectManifestSummary(ctx, client, bucket, manifestData)
+	return summary.References, err
+}
+
+type manifestSummary struct {
+	References  map[string]struct{}
+	LogicalSize int64
+}
+
+func collectManifestSummary(ctx context.Context, client storage.Backend, bucket string, manifestData []byte) (manifestSummary, error) {
+	summary := manifestSummary{
+		References: make(map[string]struct{}),
+	}
 	visitedManifests := make(map[string]struct{})
 
 	var walk func([]byte) error
@@ -29,7 +41,7 @@ func collectManifestReferences(ctx context.Context, client storage.Backend, buck
 				if digest == "" {
 					continue
 				}
-				referenced[digest] = struct{}{}
+				summary.References[digest] = struct{}{}
 				if _, ok := visitedManifests[digest]; ok {
 					continue
 				}
@@ -52,18 +64,20 @@ func collectManifestReferences(ctx context.Context, client storage.Backend, buck
 		}
 
 		if digest := manifest.Config.Digest.Encoded(); digest != "" {
-			referenced[digest] = struct{}{}
+			summary.References[digest] = struct{}{}
+			summary.LogicalSize += manifest.Config.Size
 		}
 		for _, layer := range manifest.Layers {
 			if digest := layer.Digest.Encoded(); digest != "" {
-				referenced[digest] = struct{}{}
+				summary.References[digest] = struct{}{}
+				summary.LogicalSize += layer.Size
 			}
 		}
 		return nil
 	}
 
 	if err := walk(manifestData); err != nil {
-		return referenced, err
+		return summary, err
 	}
-	return referenced, nil
+	return summary, nil
 }
