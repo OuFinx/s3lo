@@ -136,16 +136,19 @@ func runAgePolicy(ctx context.Context, client storage.Backend, parsed ref.Refere
 
 func runSignedPolicy(ctx context.Context, client storage.Backend, parsed ref.Reference, policy PolicyRule) (PolicyResult, error) {
 	pr := PolicyResult{Name: policy.Name, Check: string(policy.Check)}
-	sigPrefix := parsed.ManifestsPrefix() + "signatures/"
-	keys, err := client.ListKeys(ctx, parsed.Bucket, sigPrefix)
-	if err != nil {
-		return pr, fmt.Errorf("list signatures: %w", err)
+	if policy.KeyRef == "" {
+		pr.Message = "signed policy requires key_ref"
+		return pr, nil
 	}
-	if len(keys) == 0 {
-		pr.Message = "no signature found"
-	} else {
+	result, err := Verify(ctx, parsed.String(), policy.KeyRef)
+	if err != nil {
+		return pr, err
+	}
+	if result.Verified {
 		pr.Passed = true
-		pr.Message = fmt.Sprintf("signed (%d signature(s))", len(keys))
+		pr.Message = fmt.Sprintf("verified by %s", result.KeyID)
+	} else {
+		pr.Message = result.Reason
 	}
 	return pr, nil
 }

@@ -1,8 +1,8 @@
 package image
 
 import (
-	"testing"
 	yaml2 "gopkg.in/yaml.v3"
+	"testing"
 )
 
 func TestBucketConfigPoliciesRoundtrip(t *testing.T) {
@@ -16,6 +16,7 @@ policies:
     max_days: 90
   - name: require-signature
     check: signed
+    key_ref: cosign.pub
   - name: max-size
     check: size
     max_bytes: 1073741824
@@ -38,6 +39,9 @@ policies:
 	}
 	if cfg.Policies[1].MaxDays != 90 {
 		t.Errorf("unexpected max_days: %d", cfg.Policies[1].MaxDays)
+	}
+	if cfg.Policies[2].KeyRef != "cosign.pub" {
+		t.Errorf("unexpected key_ref: %s", cfg.Policies[2].KeyRef)
 	}
 	if cfg.Policies[3].MaxBytes != 1073741824 {
 		t.Errorf("unexpected max_bytes: %d", cfg.Policies[3].MaxBytes)
