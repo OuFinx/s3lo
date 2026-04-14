@@ -49,6 +49,9 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
+	if err := enforceTagWritePolicy(ctx, s3c, destParsed, opts.Force); err != nil {
+		return nil, err
+	}
 
 	var blobsCopied, blobsSkipped atomic.Int64
 

@@ -36,6 +36,9 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 	if err != nil {
 		return nil, fmt.Errorf("create destination storage client: %w", err)
 	}
+	if err := enforceTagWritePolicy(ctx, destClient, destParsed, opts.Force); err != nil {
+		return nil, err
+	}
 
 	manifestKey := srcParsed.ManifestsPrefix() + "manifest.json"
 	manifestData, err := srcClient.GetObject(ctx, srcParsed.Bucket, manifestKey)

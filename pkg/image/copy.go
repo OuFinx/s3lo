@@ -17,6 +17,8 @@ type CopyOptions struct {
 	// Platform filters to a specific platform (e.g. "linux/amd64").
 	// Empty means copy all platforms.
 	Platform string
+	// Force overwrites an existing tag even if the destination bucket is immutable.
+	Force bool
 	// OnStart is called once with the total bytes to transfer before any blobs are processed.
 	OnStart func(totalBytes int64)
 	// OnBlob is called for each content blob (config or layer) after it is processed.
