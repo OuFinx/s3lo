@@ -2,7 +2,6 @@ package image
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -111,26 +110,14 @@ func collectReferencedDigests(ctx context.Context, client storage.Backend, bucke
 				return fmt.Errorf("fetch manifest %s: %w", key, err)
 			}
 
-			var manifest struct {
-				Config struct {
-					Digest string `json:"digest"`
-				} `json:"config"`
-				Layers []struct {
-					Digest string `json:"digest"`
-				} `json:"layers"`
-			}
-			if err := json.Unmarshal(data, &manifest); err != nil {
+			refs, err := collectManifestReferences(ctx, client, bucket, data)
+			if err != nil {
 				return fmt.Errorf("parse manifest %s: %w", key, err)
 			}
 
 			mu.Lock()
-			if d := trimSHA256Prefix(manifest.Config.Digest); d != "" {
-				referenced[d] = true
-			}
-			for _, layer := range manifest.Layers {
-				if d := trimSHA256Prefix(layer.Digest); d != "" {
-					referenced[d] = true
-				}
+			for digest := range refs {
+				referenced[digest] = true
 			}
 			mu.Unlock()
 			return nil
@@ -146,4 +133,3 @@ func collectReferencedDigests(ctx context.Context, client storage.Backend, bucke
 func trimSHA256Prefix(digest string) string {
 	return strings.TrimPrefix(digest, "sha256:")
 }
-

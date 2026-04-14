@@ -2,7 +2,6 @@ package image
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -104,36 +103,33 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 				return nil
 			}
 
-			// Parse manifest to get referenced blobs.
-			var m struct {
-				Config struct {
-					Digest string `json:"digest"`
-				} `json:"config"`
-				Layers []struct {
-					Digest string `json:"digest"`
-				} `json:"layers"`
-			}
-			if err := json.Unmarshal(data, &m); err != nil {
-				return nil // skip unparseable manifests
-			}
-
 			rel := strings.TrimPrefix(key, manifestsPrefix)
 			rel = strings.TrimSuffix(rel, "/manifest.json")
 			imageTag := imageTagFromManifestKey(rel)
 
+			refs, walkErr := collectManifestReferences(gCtx, client, bucket, data)
 			var missing []string
-			for _, digest := range blobDigests(m.Config.Digest, layerDigests(m.Layers)) {
-				d := trimSHA256Prefix(digest)
-				if _, ok := storedBlobs[d]; !ok {
-					missing = append(missing, digest[:19]+"...")
+			for digest := range refs {
+				if _, ok := storedBlobs[digest]; !ok {
+					missing = append(missing, "sha256:"+digest[:12]+"...")
 				}
 			}
 
-			if len(missing) > 0 {
+			if len(missing) > 0 || walkErr != nil {
+				msg := ""
+				if len(missing) > 0 {
+					msg = fmt.Sprintf("missing blob(s): %s", strings.Join(missing, ", "))
+				}
+				if walkErr != nil {
+					if msg != "" {
+						msg += "; "
+					}
+					msg += walkErr.Error()
+				}
 				mu.Lock()
 				issues = append(issues, DoctorIssue{
 					Image:   imageTag,
-					Message: fmt.Sprintf("missing blob(s): %s (image cannot be repaired — delete with: s3lo delete %s%s/%s)", strings.Join(missing, ", "), scheme, bucket, imageTag),
+					Message: fmt.Sprintf("%s (image cannot be repaired — delete with: s3lo delete %s%s/%s)", msg, scheme, bucket, imageTag),
 				})
 				mu.Unlock()
 			}
@@ -153,15 +149,12 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		if err != nil {
 			continue
 		}
-		var m struct {
-			Config struct{ Digest string `json:"digest"` } `json:"config"`
-			Layers []struct{ Digest string `json:"digest"` } `json:"layers"`
+		refs, err := collectManifestReferences(ctx, client, bucket, data)
+		for digest := range refs {
+			referenced[digest] = struct{}{}
 		}
-		if err := json.Unmarshal(data, &m); err != nil {
+		if err != nil {
 			continue
-		}
-		for _, digest := range blobDigests(m.Config.Digest, layerDigests(m.Layers)) {
-			referenced[trimSHA256Prefix(digest)] = struct{}{}
 		}
 	}
 
@@ -182,26 +175,4 @@ func imageTagFromManifestKey(rel string) string {
 		return rel
 	}
 	return rel[:i] + ":" + rel[i+1:]
-}
-
-// blobDigests returns a flat list of all blob digests from a manifest.
-func blobDigests(configDigest string, layerDigests []string) []string {
-	var all []string
-	if configDigest != "" {
-		all = append(all, configDigest)
-	}
-	all = append(all, layerDigests...)
-	return all
-}
-
-func layerDigests(layers []struct {
-	Digest string `json:"digest"`
-}) []string {
-	out := make([]string, 0, len(layers))
-	for _, l := range layers {
-		if l.Digest != "" {
-			out = append(out, l.Digest)
-		}
-	}
-	return out
 }
