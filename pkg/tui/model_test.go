@@ -161,6 +161,24 @@ func TestRootModel_StatusClear_ClearsStatus(t *testing.T) {
 	}
 }
 
+func TestRootModel_TagsFetched_SetsStatsPanelToFirstTag(t *testing.T) {
+	m := newTestModel()
+	m.leftPane = newTagListPane("myapp")
+	m.right = m.right.SetTagMode("myapp", "")
+
+	tags := []TagEntry{
+		{Name: "latest", LastModified: time.Now()},
+		{Name: "v1.0.0", LastModified: time.Now().Add(-24 * time.Hour)},
+	}
+	next, _ := m.Update(tagsFetchedMsg{imageName: "myapp", tags: tags})
+	rm := next.(RootModel)
+
+	// Stats panel must be set to the first tag so tagStatsFetchedMsg can match.
+	if rm.right.tagName != "latest" {
+		t.Errorf("expected right panel tagName='latest', got %q", rm.right.tagName)
+	}
+}
+
 func TestRootModel_QKey_Quits(t *testing.T) {
 	m := newTestModel()
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})

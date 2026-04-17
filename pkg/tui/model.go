@@ -123,6 +123,7 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if len(msg.tags) > 0 {
 			tagName := msg.tags[0].Name
 			cacheKey := msg.imageName + ":" + tagName
+			m.right = m.right.SetTagMode(msg.imageName, tagName)
 			statsCmd := m.maybeLoadTagStats(msg.imageName, tagName, cacheKey)
 			cmd = tea.Batch(cmd, statsCmd)
 		}
@@ -417,6 +418,5 @@ func (m RootModel) maybeLoadTagStats(imageName, tagName, cacheKey string) tea.Cm
 			return tagStatsFetchedMsg{cacheKey: cacheKey, stats: cached}
 		}
 	}
-	m.right = m.right.SetTagMode(imageName, tagName)
 	return fetchTagStatsCmd(m.ctx, m.s3Ref, imageName, tagName)
 }
