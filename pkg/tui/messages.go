@@ -13,6 +13,7 @@ type ImageListEntry struct {
 type TagEntry struct {
 	Name         string
 	LastModified time.Time
+	TotalBytes   int64
 }
 
 // TagStats holds on-demand metadata for a single tag, loaded when the cursor lands on it.

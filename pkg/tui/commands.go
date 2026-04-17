@@ -111,7 +111,7 @@ func fetchBucketStatsCmd(ctx context.Context, s3Ref string) tea.Cmd {
 	}
 }
 
-// fetchTagsCmd lists tags for an image sorted newest-first using S3 object metadata.
+// fetchTagsCmd lists tags for an image sorted newest-first, with per-tag sizes.
 func fetchTagsCmd(ctx context.Context, st storage.Backend, bucket, prefix, imageName string) tea.Cmd {
 	return func() tea.Msg {
 		tagPrefix := prefix + "manifests/" + imageName + "/"
@@ -119,7 +119,17 @@ func fetchTagsCmd(ctx context.Context, st storage.Backend, bucket, prefix, image
 		if err != nil {
 			return tagsFetchedMsg{imageName: imageName, err: fmt.Errorf("list tags: %w", err)}
 		}
-		seen := make(map[string]time.Time)
+
+		type tagAccum struct {
+			lastModified time.Time
+			bytes        int64
+		}
+		accum := make(map[string]*tagAccum)
+		var mu sync.Mutex
+
+		g, gCtx := errgroup.WithContext(ctx)
+		g.SetLimit(20)
+
 		for _, obj := range objects {
 			if !strings.HasSuffix(obj.Key, "/manifest.json") {
 				continue
@@ -129,13 +139,34 @@ func fetchTagsCmd(ctx context.Context, st storage.Backend, bucket, prefix, image
 			if tagName == "" || strings.Contains(tagName, "/") {
 				continue
 			}
-			if prev, ok := seen[tagName]; !ok || obj.LastModified.After(prev) {
-				seen[tagName] = obj.LastModified
+			obj, tagName := obj, tagName
+			mu.Lock()
+			if a := accum[tagName]; a == nil || obj.LastModified.After(a.lastModified) {
+				accum[tagName] = &tagAccum{lastModified: obj.LastModified}
 			}
+			mu.Unlock()
+
+			g.Go(func() error {
+				data, err := st.GetObject(gCtx, bucket, obj.Key)
+				if err != nil {
+					return nil // skip unreadable manifests
+				}
+				size := sumManifestBytes(data)
+				mu.Lock()
+				if a := accum[tagName]; a != nil {
+					a.bytes = size
+				}
+				mu.Unlock()
+				return nil
+			})
 		}
-		tags := make([]TagEntry, 0, len(seen))
-		for name, lm := range seen {
-			tags = append(tags, TagEntry{Name: name, LastModified: lm})
+		if err := g.Wait(); err != nil {
+			return tagsFetchedMsg{imageName: imageName, err: err}
+		}
+
+		tags := make([]TagEntry, 0, len(accum))
+		for name, a := range accum {
+			tags = append(tags, TagEntry{Name: name, LastModified: a.lastModified, TotalBytes: a.bytes})
 		}
 		sort.Slice(tags, func(i, j int) bool {
 			return tags[i].LastModified.After(tags[j].LastModified)

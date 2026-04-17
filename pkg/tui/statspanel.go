@@ -115,11 +115,11 @@ func (p StatsPanel) viewBucket() string {
 		sb.WriteString(greenStyle.Render(fmt.Sprintf("  Dedup saved:   %s (%.1f%%)", formatBytes(saved), s.SavingsPct)) + "\n")
 	}
 	sb.WriteString("\n")
-	sb.WriteString(yellowStyle.Render(fmt.Sprintf("  Est. cost:     $%.2f/month", s.CostMonthly)) + "\n")
-	sb.WriteString(redStyle.Render(fmt.Sprintf("  ECR equiv:     $%.2f/month", s.ECRMonthly)) + "\n")
+	sb.WriteString(yellowStyle.Render(fmt.Sprintf("  Est. cost:     %s/month", formatCost(s.CostMonthly))) + "\n")
+	sb.WriteString(redStyle.Render(fmt.Sprintf("  ECR equiv:     %s/month", formatCost(s.ECRMonthly))) + "\n")
 	if s.ECRMonthly > s.CostMonthly {
 		saved := s.ECRMonthly - s.CostMonthly
-		sb.WriteString(greenStyle.Render(fmt.Sprintf("  You save:      $%.2f/month (%.0f%%)", saved, saved/s.ECRMonthly*100)) + "\n")
+		sb.WriteString(greenStyle.Render(fmt.Sprintf("  You save:      %s/month (%.0f%%)", formatCost(saved), saved/s.ECRMonthly*100)) + "\n")
 	}
 	return sb.String()
 }
@@ -143,6 +143,6 @@ func (p StatsPanel) viewTag() string {
 		sb.WriteString(dimStyle.Render("  Signed:  —") + "\n")
 	}
 	sb.WriteString("\n")
-	sb.WriteString(yellowStyle.Render(fmt.Sprintf("  Cost:    $%.3f/month", s.CostMonthly)) + "\n")
+	sb.WriteString(yellowStyle.Render(fmt.Sprintf("  Cost:    %s/month", formatCost(s.CostMonthly))) + "\n")
 	return sb.String()
 }

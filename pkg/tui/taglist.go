@@ -73,7 +73,7 @@ func (p TagListPane) View(width, height int) string {
 	var sb strings.Builder
 	sb.WriteString(title + "\n\n")
 	for i, e := range p.entries {
-		line := fmt.Sprintf("%-20s  %s", e.Name, formatAge(e.LastModified))
+		line := fmt.Sprintf("%-20s  %8s  %s", e.Name, formatBytes(e.TotalBytes), formatAge(e.LastModified))
 		if i == p.cursor {
 			row := selectedStyle.Width(width - 4).Render("▶ " + line)
 			sb.WriteString("  " + row + "\n")

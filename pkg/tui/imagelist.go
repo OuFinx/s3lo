@@ -99,6 +99,14 @@ func (p ImageListPane) SelectedImageName() string {
 
 func (p ImageListPane) SelectedTagName() string { return "" }
 
+// formatCost renders a dollar amount; shows "<$0.01" instead of "$0.00" for tiny positive values.
+func formatCost(v float64) string {
+	if v > 0 && v < 0.005 {
+		return "<$0.01"
+	}
+	return fmt.Sprintf("$%.2f", v)
+}
+
 // formatBytes renders byte counts as a human-readable string.
 func formatBytes(b int64) string {
 	switch {
