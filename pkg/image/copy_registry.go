@@ -149,12 +149,12 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		}
 		platInfos := make([]platInfo, len(selected))
 		{
-			g, _ := errgroup.WithContext(ctx)
+			g, gCtx := errgroup.WithContext(ctx)
 			for i, desc := range selected {
 				i, desc := i, desc
 				g.Go(func() error {
 					platURL := fmt.Sprintf("https://%s/v2/%s/manifests/%s", reg, image, desc.Digest.String())
-					data, _, err := rc.fetchManifest(ctx, platURL, reg, image)
+					data, _, err := rc.fetchManifest(gCtx, platURL, reg, image)
 					if err != nil {
 						return fmt.Errorf("fetch platform manifest %s: %w", platformString(desc.Platform), err)
 					}
