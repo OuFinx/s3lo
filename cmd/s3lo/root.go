@@ -1,20 +1,24 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log/slog"
 	"net/url"
 	"os"
+	"time"
 
 	"github.com/OuFinx/s3lo/pkg/storage"
 	"github.com/spf13/cobra"
 )
 
 var (
-	version  = "dev"
-	commit   = "none"
-	verbose  bool
-	endpoint string
+	version       = "dev"
+	commit        = "none"
+	verbose       bool
+	endpoint      string
+	timeout       time.Duration
+	cancelTimeout context.CancelFunc
 )
 
 var rootCmd = &cobra.Command{
@@ -30,6 +34,11 @@ var rootCmd = &cobra.Command{
 				Level: slog.LevelDebug,
 			})))
 		}
+		if timeout > 0 {
+			ctx, cancel := context.WithTimeout(cmd.Context(), timeout)
+			cancelTimeout = cancel
+			cmd.SetContext(ctx)
+		}
 		if endpoint != "" {
 			u, err := url.Parse(endpoint)
 			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
@@ -39,6 +48,11 @@ var rootCmd = &cobra.Command{
 			cmd.SetContext(ctx)
 		}
 		return nil
+	},
+	PersistentPostRun: func(cmd *cobra.Command, args []string) {
+		if cancelTimeout != nil {
+			cancelTimeout()
+		}
 	},
 }
 
@@ -54,5 +68,6 @@ func init() {
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Enable verbose debug output")
 	rootCmd.PersistentFlags().StringVar(&endpoint, "endpoint", "", "Override storage endpoint URL (for MinIO, R2, Ceph)")
+	rootCmd.PersistentFlags().DurationVar(&timeout, "timeout", 0, "Maximum time for a command to run (e.g. 30m, 2h). Default: no timeout.")
 	rootCmd.AddCommand(versionCmd)
 }
