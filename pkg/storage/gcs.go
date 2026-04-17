@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	gcslib "cloud.google.com/go/storage"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 )
 
@@ -186,17 +187,19 @@ func (c *GCSClient) DownloadDirectory(ctx context.Context, bucket, prefix, destD
 	if err != nil {
 		return err
 	}
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
 	for _, key := range keys {
-		rel, err := filepath.Rel(filepath.FromSlash(prefix), filepath.FromSlash(key))
-		if err != nil {
-			rel = filepath.FromSlash(key)
-		}
-		dest := filepath.Join(destDir, rel)
-		if err := c.DownloadObjectToFile(ctx, bucket, key, dest); err != nil {
-			return err
-		}
+		key := key
+		g.Go(func() error {
+			rel, err := filepath.Rel(filepath.FromSlash(prefix), filepath.FromSlash(key))
+			if err != nil {
+				rel = filepath.FromSlash(key)
+			}
+			return c.DownloadObjectToFile(ctx, bucket, key, filepath.Join(destDir, rel))
+		})
 	}
-	return nil
+	return g.Wait()
 }
 
 func (c *GCSClient) CopyObject(ctx context.Context, bucket, srcKey, destKey string) error {
