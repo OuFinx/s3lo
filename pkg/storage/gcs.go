@@ -112,15 +112,14 @@ func (c *GCSClient) ListObjectsWithMeta(ctx context.Context, bucket, prefix stri
 }
 
 func (c *GCSClient) DeleteObjects(ctx context.Context, bucket string, keys []string) error {
-	var errs []error
 	for _, key := range keys {
 		if err := c.client.Bucket(bucket).Object(key).Delete(ctx); err != nil {
 			if !errors.Is(err, gcslib.ErrObjectNotExist) {
-				errs = append(errs, fmt.Errorf("gcs delete %s/%s: %w", bucket, key, err))
+				return fmt.Errorf("gcs delete %s/%s: %w", bucket, key, err)
 			}
 		}
 	}
-	return errors.Join(errs...)
+	return nil
 }
 
 func (c *GCSClient) UploadFile(ctx context.Context, localPath, bucket, key string, sc StorageClass) error {
