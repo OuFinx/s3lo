@@ -25,7 +25,8 @@ import (
 var ecrRegionRE = regexp.MustCompile(`\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com`)
 
 // retryDelays defines wait durations between successive retry attempts for transient errors.
-var retryDelays = []time.Duration{time.Second, 2 * time.Second}
+// 5 retries with exponential backoff gives ~30 s of total tolerance for brief registry outages.
+var retryDelays = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second}
 
 // registryClient wraps an HTTP client with per-registry Bearer token caching (#41)
 // and automatic retry on transient errors (#45).
