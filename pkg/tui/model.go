@@ -81,6 +81,13 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case dismissOverlayMsg:
 		m.overlay = nil
 		return m, nil
+	case deleteResultMsg:
+		if msg.err != nil {
+			m = m.setStatus("delete failed: "+msg.err.Error(), true)
+			return m, clearStatusCmd()
+		}
+		m.overlay = nil
+		return m, m.refreshCmd()
 	}
 
 	// If overlay active, route to overlay first.
@@ -137,13 +144,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.right, cmd = m.right.Update(msg)
 		return m, cmd
-
-	case deleteResultMsg:
-		if msg.err != nil {
-			m = m.setStatus("delete failed: "+msg.err.Error(), true)
-			return m, clearStatusCmd()
-		}
-		return m, m.refreshCmd()
 
 	case cleanResultMsg:
 		if msg.err != nil {
