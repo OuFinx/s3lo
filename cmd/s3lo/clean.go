@@ -79,6 +79,9 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 
 		if dryRun {
 			fmt.Println("\nRun with --confirm to apply changes.")
+		} else if cleanTags {
+			fmt.Println("\nNote: orphaned blobs from deleted tags remain until GC runs.")
+			fmt.Printf("      Run: s3lo clean %s --blobs --confirm\n", s3Ref)
 		}
 
 		return nil
@@ -106,7 +109,7 @@ func loadCleanConfig(cmd *cobra.Command, s3Ref string) (*image.BucketConfig, err
 
 func init() {
 	cleanCmd.Flags().BoolVar(&cleanConfirm, "confirm", false, "Actually delete (default is dry-run)")
-	cleanCmd.Flags().BoolVar(&cleanTags, "tags", false, "Only prune old tags, skip blob gc")
+	cleanCmd.Flags().BoolVar(&cleanTags, "tags", false, "Only prune old tags, skip blob GC (orphaned blobs remain until --blobs is run)")
 	cleanCmd.Flags().BoolVar(&cleanBlobs, "blobs", false, "Only gc unreferenced blobs, skip tag pruning")
 	cleanCmd.Flags().StringVar(&cleanConfig, "config", "", "Path to BucketConfig YAML file (optional; defaults to bucket's s3lo.yaml)")
 	rootCmd.AddCommand(cleanCmd)

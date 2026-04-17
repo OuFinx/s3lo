@@ -7,10 +7,15 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
+
+// partRetryDelays defines the wait between successive retry attempts for a single part.
+// 3 retries (after the initial attempt) with exponential backoff: 1 s, 2 s, 4 s.
+var partRetryDelays = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second}
 
 const (
 	// multipartThreshold is the file size above which multipart upload is used.
@@ -74,22 +79,41 @@ func uploadFileMultipart(ctx context.Context, client *s3.Client, bucket, key, lo
 		pn := partNum
 
 		slog.Debug("uploading part", "key", key, "part", pn, "size", size)
-		partResp, err := client.UploadPart(ctx, &s3.UploadPartInput{
-			Bucket:        &bucket,
-			Key:           &key,
-			UploadId:      uploadID,
-			PartNumber:    &pn,
-			Body:          bytes.NewReader(chunk),
-			ContentLength: &size,
-		})
-		if err != nil {
-			abortUpload()
-			return fmt.Errorf("upload part %d: %w", pn, err)
+		var lastPartErr error
+		for attempt := 0; attempt <= len(partRetryDelays); attempt++ {
+			if attempt > 0 {
+				delay := partRetryDelays[attempt-1]
+				select {
+				case <-ctx.Done():
+					abortUpload()
+					return ctx.Err()
+				case <-time.After(delay):
+				}
+				slog.Debug("retrying part upload", "key", key, "part", pn, "attempt", attempt+1)
+			}
+			partResp, err := client.UploadPart(ctx, &s3.UploadPartInput{
+				Bucket:        &bucket,
+				Key:           &key,
+				UploadId:      uploadID,
+				PartNumber:    &pn,
+				Body:          bytes.NewReader(chunk),
+				ContentLength: &size,
+			})
+			if err == nil {
+				completedParts = append(completedParts, s3types.CompletedPart{
+					ETag:       partResp.ETag,
+					PartNumber: &pn,
+				})
+				lastPartErr = nil
+				break
+			}
+			lastPartErr = err
+			slog.Debug("part upload failed", "key", key, "part", pn, "attempt", attempt+1, "error", err)
 		}
-		completedParts = append(completedParts, s3types.CompletedPart{
-			ETag:       partResp.ETag,
-			PartNumber: &pn,
-		})
+		if lastPartErr != nil {
+			abortUpload()
+			return fmt.Errorf("upload part %d: %w", pn, lastPartErr)
+		}
 		partNum++
 
 		if readErr == io.EOF || readErr == io.ErrUnexpectedEOF {
