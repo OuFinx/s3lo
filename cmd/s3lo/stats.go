@@ -70,5 +70,5 @@ func printStats(bucketRef string, r *image.StatsResult) {
 
 func init() {
 	statsCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
-	rootCmd.AddCommand(statsCmd)
+	bucketCmd.AddCommand(statsCmd)
 }

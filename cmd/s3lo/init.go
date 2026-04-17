@@ -102,5 +102,5 @@ func runLocalInit(localPath string) error {
 
 func init() {
 	initCmd.Flags().String("local", "", "Initialize a local directory instead of an S3 bucket")
-	rootCmd.AddCommand(initCmd)
+	bucketCmd.AddCommand(initCmd)
 }

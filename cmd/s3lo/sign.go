@@ -71,7 +71,7 @@ and produces a CloudTrail audit entry for every signing operation.`,
 }
 
 func init() {
-	rootCmd.AddCommand(signCmd)
+	securityCmd.AddCommand(signCmd)
 	signCmd.Flags().String("key", "", "Signing key: file path, awskms://, or hashivault:// (required)")
 	signCmd.Flags().String("output", "text", "Output format: text or json")
 	signCmd.MarkFlagRequired("key")

@@ -112,5 +112,5 @@ func init() {
 	cleanCmd.Flags().BoolVar(&cleanTags, "tags", false, "Only prune old tags, skip blob GC (orphaned blobs remain until --blobs is run)")
 	cleanCmd.Flags().BoolVar(&cleanBlobs, "blobs", false, "Only gc unreferenced blobs, skip tag pruning")
 	cleanCmd.Flags().StringVar(&cleanConfig, "config", "", "Path to BucketConfig YAML file (optional; defaults to bucket's s3lo.yaml)")
-	rootCmd.AddCommand(cleanCmd)
+	bucketCmd.AddCommand(cleanCmd)
 }
