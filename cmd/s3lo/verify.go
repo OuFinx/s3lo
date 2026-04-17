@@ -75,7 +75,7 @@ Exit codes:
 }
 
 func init() {
-	rootCmd.AddCommand(verifyCmd)
+	securityCmd.AddCommand(verifyCmd)
 	verifyCmd.Flags().String("key", "", "Verification key: .pub file, awskms://, or hashivault:// (required)")
 	verifyCmd.Flags().String("output", "text", "Output format: text or json")
 	verifyCmd.MarkFlagRequired("key")

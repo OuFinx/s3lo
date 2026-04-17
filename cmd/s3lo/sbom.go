@@ -79,7 +79,7 @@ Use --install-trivy to skip the confirmation prompt.`,
 }
 
 func init() {
-	rootCmd.AddCommand(sbomCmd)
+	securityCmd.AddCommand(sbomCmd)
 	sbomCmd.Flags().Bool("install-trivy", false, "Install Trivy automatically without prompting")
 	sbomCmd.Flags().String("format", "cyclonedx", `SBOM output format: cyclonedx (default), spdx-json, spdx`)
 	sbomCmd.Flags().String("platform", "", `Platform for a multi-arch image (e.g. "linux/amd64")`)

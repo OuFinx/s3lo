@@ -80,7 +80,7 @@ Use --install-trivy to skip the confirmation prompt.`,
 }
 
 func init() {
-	rootCmd.AddCommand(scanCmd)
+	securityCmd.AddCommand(scanCmd)
 	scanCmd.Flags().Bool("install-trivy", false, "Install Trivy automatically without prompting")
 	scanCmd.Flags().String("platform", "", `Platform to scan from a multi-arch image (e.g. "linux/amd64")`)
 	scanCmd.Flags().String("severity", "", `Severity levels to report, comma-separated (e.g. "HIGH,CRITICAL")`)
