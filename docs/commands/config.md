@@ -128,6 +128,7 @@ policies:
     max_days: 90
   - name: require-signature
     check: signed
+    key_ref: cosign.pub
   - name: max-size
     check: size
     max_bytes: 1073741824
@@ -139,7 +140,7 @@ policies:
 |-------|-------------|------------|
 | `scan` | Run Trivy; fail if vulnerabilities at or above severity | `max_severity`: LOW, MEDIUM, HIGH, CRITICAL |
 | `age` | Fail if image is older than N days | `max_days` |
-| `signed` | Fail if no cosign signature found | (none) |
+| `signed` | Verify the current manifest with a trusted key | `key_ref`: public key or KMS/Vault verifier reference |
 | `size` | Fail if total image size exceeds N bytes | `max_bytes` |
 
 ### Example output
@@ -147,7 +148,7 @@ policies:
 ```
 ✓ no-critical-vulns    passed
 ✗ max-age              FAILED (image is 127 days old, limit is 90)
-✓ require-signature    passed (1 signature(s))
+✓ require-signature    passed (verified by 3b780f64bd6940e1)
 
 1 policy failed.
 ```

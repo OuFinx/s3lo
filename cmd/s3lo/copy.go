@@ -33,7 +33,10 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
   s3lo copy docker.io/library/alpine:latest s3://my-bucket/alpine:latest --platform linux/amd64
 
   # Copy from ECR to S3
-  s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0`,
+  s3lo copy 123456789.dkr.ecr.us-east-1.amazonaws.com/myapp:v1.0 s3://my-bucket/myapp:v1.0
+
+  # Overwrite an immutable destination tag
+  s3lo copy s3://staging-bucket/myapp:v1.0 s3://prod-bucket/myapp:v1.0 --force`,
 	Args: cobra.ExactArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		src, dest := args[0], args[1]
@@ -47,10 +50,12 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 			return err
 		}
 		platform, _ := cmd.Flags().GetString("platform")
+		force, _ := cmd.Flags().GetBool("force")
 		fmt.Printf("Copying %s to %s\n", src, dest)
 		var bar *progressbar.ProgressBar
 		opts := image.CopyOptions{
 			Platform: platform,
+			Force:    force,
 			OnStart: func(total int64) {
 				bar = newProgressBar("  copying", total)
 			},
@@ -81,4 +86,5 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 func init() {
 	rootCmd.AddCommand(copyCmd)
 	copyCmd.Flags().String("platform", "", `Copy a specific platform only (e.g. "linux/amd64"). Default: copy all platforms.`)
+	copyCmd.Flags().Bool("force", false, "Overwrite an existing tag even if the destination bucket is immutable")
 }

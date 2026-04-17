@@ -57,21 +57,8 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return fmt.Errorf("create storage client: %w", err)
 	}
 
-	// Immutability check: reject push if tag exists and image is configured immutable.
-	if !opts.Force {
-		cfg, err := GetBucketConfig(ctx, client, parsed.Bucket)
-		if err != nil {
-			return fmt.Errorf("check bucket config: %w", err)
-		}
-		if cfg.IsImmutable(parsed.Image) {
-			exists, err := client.HeadObjectExists(ctx, parsed.Bucket, parsed.ManifestsPrefix()+"manifest.json")
-			if err != nil {
-				return fmt.Errorf("check existing tag: %w", err)
-			}
-			if exists {
-				return fmt.Errorf("tag %s already exists for %s (immutable). Use --force to overwrite", parsed.Tag, parsed.Image)
-			}
-		}
+	if err := enforceTagWritePolicy(ctx, client, parsed, opts.Force); err != nil {
+		return err
 	}
 
 	// Upload blobs to global blobs/sha256/ with Intelligent-Tiering in parallel.
@@ -117,7 +104,10 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 
 			// Single dedup check — UploadFile skips internally when the object exists,
 			// but we need to know the outcome for OnBlob reporting.
-			exists, _ := client.HeadObjectExists(gCtx, parsed.Bucket, key)
+			exists, err := client.HeadObjectExists(gCtx, parsed.Bucket, key)
+			if err != nil {
+				return fmt.Errorf("check blob %s: %w", entry.Name(), err)
+			}
 			if !exists {
 				slog.Debug("uploading blob", "digest", entry.Name()[:12], "size", info.Size())
 				if err := client.UploadFile(gCtx, localPath, parsed.Bucket, key, storage.StorageClassIntelligentTiering); err != nil {

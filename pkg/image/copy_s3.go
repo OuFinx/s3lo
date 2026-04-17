@@ -36,6 +36,9 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 	if err != nil {
 		return nil, fmt.Errorf("create destination storage client: %w", err)
 	}
+	if err := enforceTagWritePolicy(ctx, destClient, destParsed, opts.Force); err != nil {
+		return nil, err
+	}
 
 	manifestKey := srcParsed.ManifestsPrefix() + "manifest.json"
 	manifestData, err := srcClient.GetObject(ctx, srcParsed.Bucket, manifestKey)
@@ -49,7 +52,10 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 	copyBlob := func(ctx context.Context, digest string, size int64, platform string) error {
 		srcKey := "blobs/sha256/" + digest
 		destKey := "blobs/sha256/" + digest
-		exists, _ := destClient.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		exists, err := destClient.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		if err != nil {
+			return fmt.Errorf("check destination blob %s: %w", digest[:12], err)
+		}
 		if exists {
 			blobsSkipped.Add(1)
 			if platform != "" && opts.OnBlob != nil {
@@ -214,7 +220,7 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			return nil, fmt.Errorf("write oci-layout: %w", err)
 		}
 
-		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, totalManifestSize(writeManifestData))
+		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, writeManifestData))
 
 		return &CopyResult{
 			Platforms:    len(selected),
@@ -273,7 +279,7 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			}
 		}
 	}
-	_ = recordHistory(ctx, destClient, destParsed, manifestData, totalManifestSize(manifestData))
+	_ = recordHistory(ctx, destClient, destParsed, manifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, manifestData))
 
 	return &CopyResult{
 		Platforms:    1,

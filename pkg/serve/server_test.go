@@ -196,6 +196,33 @@ func TestGetManifestByDigest(t *testing.T) {
 	}
 }
 
+func TestGetChildManifestByDigestFromIndex(t *testing.T) {
+	b := newFakeBackend()
+	child := []byte(sampleManifest)
+	childHash := sha256.Sum256(child)
+	childDigest := "sha256:" + hex.EncodeToString(childHash[:])
+	index := []byte(`{"mediaType":"application/vnd.oci.image.index.v1+json","schemaVersion":2,"manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"` + childDigest + `","size":191,"platform":{"os":"linux","architecture":"amd64"}}]}`)
+
+	b.set("testbucket", "manifests/myapp/latest/manifest.json", index)
+	b.set("testbucket", "blobs/sha256/"+hex.EncodeToString(childHash[:]), child)
+
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/myapp/manifests/" + childDigest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET child manifest by digest = %d, want 200", resp.StatusCode)
+	}
+	body, _ := io.ReadAll(resp.Body)
+	if string(body) != sampleManifest {
+		t.Errorf("child digest lookup body mismatch: got %q", body)
+	}
+}
+
 func TestGetManifestMissing(t *testing.T) {
 	b := newFakeBackend()
 	ts := newTestServer(t, b)

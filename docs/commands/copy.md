@@ -18,6 +18,7 @@ s3lo copy <src> <s3-dest> [flags]
 | Flag | Description |
 |------|-------------|
 | `--platform <os/arch>` | Copy only the specified platform, e.g. `linux/amd64`. Default: copy all platforms. |
+| `--force` | Overwrite an existing destination tag even if immutability is enabled |
 
 ## Source formats
 
@@ -53,6 +54,9 @@ s3lo copy s3://staging-bucket/myapp:v1.0 s3://prod-bucket/myapp:v1.0
 
 # Copy from local storage to S3
 s3lo copy local://./local-s3/myapp:v1.0 s3://my-bucket/myapp:v1.0
+
+# Overwrite an immutable destination tag
+s3lo copy s3://staging-bucket/myapp:v1.0 s3://prod-bucket/myapp:v1.0 --force
 ```
 
 ## Multi-arch behavior

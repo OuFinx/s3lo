@@ -49,6 +49,9 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	if err != nil {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
+	if err := enforceTagWritePolicy(ctx, s3c, destParsed, opts.Force); err != nil {
+		return nil, err
+	}
 
 	var blobsCopied, blobsSkipped atomic.Int64
 
@@ -57,7 +60,10 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	fetchAndUploadBlob := func(ctx context.Context, digest string, knownSize int64, platform string) error {
 		encoded := trimSHA256Prefix(digest)
 		destKey := "blobs/sha256/" + encoded
-		exists, _ := s3c.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		exists, err := s3c.HeadObjectExists(ctx, destParsed.Bucket, destKey)
+		if err != nil {
+			return fmt.Errorf("check destination blob %s: %w", encoded[:12], err)
+		}
 		if exists {
 			blobsSkipped.Add(1)
 			if platform != "" && opts.OnBlob != nil {
@@ -170,7 +176,10 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 				g.Go(func() error {
 					encoded := trimSHA256Prefix(pi.digest)
 					destKey := "blobs/sha256/" + encoded
-					exists, _ := s3c.HeadObjectExists(gCtx, destParsed.Bucket, destKey)
+					exists, err := s3c.HeadObjectExists(gCtx, destParsed.Bucket, destKey)
+					if err != nil {
+						return fmt.Errorf("check destination manifest blob %s: %w", encoded[:12], err)
+					}
 					if exists {
 						return nil
 					}
@@ -240,7 +249,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 			return nil, fmt.Errorf("write oci-layout: %w", err)
 		}
 
-		_ = recordHistory(ctx, s3c, destParsed, writeManifestData, totalManifestSize(writeManifestData))
+		_ = recordHistory(ctx, s3c, destParsed, writeManifestData, manifestLogicalSize(ctx, s3c, destParsed.Bucket, writeManifestData))
 
 		return &CopyResult{
 			Platforms:    len(selected),
@@ -282,7 +291,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		return nil, fmt.Errorf("write oci-layout: %w", err)
 	}
 
-	_ = recordHistory(ctx, s3c, destParsed, manifestData, totalManifestSize(manifestData))
+	_ = recordHistory(ctx, s3c, destParsed, manifestData, manifestLogicalSize(ctx, s3c, destParsed.Bucket, manifestData))
 
 	return &CopyResult{
 		Platforms:    1,

@@ -47,7 +47,7 @@ const (
 
 // PolicyRule is a single policy check stored in s3lo.yaml under the `policies` key.
 type PolicyRule struct {
-	Name string      `yaml:"name" json:"name"`
+	Name  string      `yaml:"name" json:"name"`
 	Check PolicyCheck `yaml:"check" json:"check"`
 	// MaxSeverity is used by PolicyCheckScan: fail if vulnerabilities meet or exceed this level.
 	// Valid values: LOW, MEDIUM, HIGH, CRITICAL.
@@ -56,6 +56,8 @@ type PolicyRule struct {
 	MaxDays int `yaml:"max_days,omitempty" json:"max_days,omitempty"`
 	// MaxBytes is used by PolicyCheckSize: fail if total image size exceeds this many bytes.
 	MaxBytes int64 `yaml:"max_bytes,omitempty" json:"max_bytes,omitempty"`
+	// KeyRef is used by PolicyCheckSigned: required verification key reference.
+	KeyRef string `yaml:"key_ref,omitempty" json:"key_ref,omitempty"`
 }
 
 // EffectiveConfig returns the resolved configuration for imageName by merging

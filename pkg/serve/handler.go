@@ -70,8 +70,35 @@ func (s *Server) findManifestByDigest(ctx context.Context, name, digest string) 
 		if "sha256:"+hex.EncodeToString(h[:]) == digest {
 			return data, nil
 		}
+		if childDigest := indexChildDigest(data, digest); childDigest != "" {
+			childData, err := s.Client.GetObject(ctx, s.Bucket, "blobs/sha256/"+childDigest)
+			if err != nil {
+				if storage.IsNotFound(err) {
+					continue
+				}
+				return nil, err
+			}
+			return childData, nil
+		}
 	}
 	return nil, fmt.Errorf("object not found: no manifest matching digest %s", digest)
+}
+
+func indexChildDigest(data []byte, digest string) string {
+	var idx struct {
+		Manifests []struct {
+			Digest string `json:"digest"`
+		} `json:"manifests"`
+	}
+	if err := json.Unmarshal(data, &idx); err != nil {
+		return ""
+	}
+	for _, desc := range idx.Manifests {
+		if desc.Digest == digest {
+			return strings.TrimPrefix(desc.Digest, "sha256:")
+		}
+	}
+	return ""
 }
 
 func mediaTypeFromManifest(data []byte) string {

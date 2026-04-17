@@ -2,7 +2,6 @@ package image
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -110,25 +109,13 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 				return nil // skip unreadable manifests
 			}
 
-			var m struct {
-				Config struct {
-					Size int64 `json:"size"`
-				} `json:"config"`
-				Layers []struct {
-					Size int64 `json:"size"`
-				} `json:"layers"`
-			}
-			if err := json.Unmarshal(data, &m); err != nil {
+			summary, err := collectManifestSummary(gCtx, client, bucket, data)
+			if err != nil {
 				return nil
 			}
 
-			total := m.Config.Size
-			for _, layer := range m.Layers {
-				total += layer.Size
-			}
-
 			mu.Lock()
-			logicalBytes += total
+			logicalBytes += summary.LogicalSize
 			mu.Unlock()
 			return nil
 		})

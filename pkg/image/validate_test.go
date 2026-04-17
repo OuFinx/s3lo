@@ -91,19 +91,14 @@ func TestValidateAgePolicy_fail(t *testing.T) {
 
 func TestValidateSignedPolicy_noSignature(t *testing.T) {
 	ctx := context.Background()
-	parentDir := t.TempDir()
-	oldCwd, _ := os.Getwd()
-	_ = os.Chdir(parentDir)
-	defer os.Chdir(oldCwd)
-
-	localRef := makeLocalFixture(t, parentDir, "mystore", "myapp", "v1.0")
-	storeDir := filepath.Join(parentDir, "mystore")
+	_, bucketRelDir, _, pubFile := setupSignedStore(t)
+	localRef := "local://./mystore/myapp:v1.0"
 	client := storage.NewLocalClient()
 
 	cfg := &BucketConfig{
-		Policies: []PolicyRule{{Name: "require-signature", Check: PolicyCheckSigned}},
+		Policies: []PolicyRule{{Name: "require-signature", Check: PolicyCheckSigned, KeyRef: pubFile}},
 	}
-	if err := SetBucketConfig(ctx, client, storeDir, cfg); err != nil {
+	if err := SetBucketConfig(ctx, client, bucketRelDir, cfg); err != nil {
 		t.Fatal(err)
 	}
 
@@ -116,6 +111,32 @@ func TestValidateSignedPolicy_noSignature(t *testing.T) {
 	}
 	if result.Results[0].Message == "" {
 		t.Error("expected non-empty failure message")
+	}
+}
+
+func TestValidateSignedPolicy_validSignature(t *testing.T) {
+	ctx := context.Background()
+	_, bucketRelDir, keyFile, pubFile := setupSignedStore(t)
+	localRef := "local://./mystore/myapp:v1.0"
+	client := storage.NewLocalClient()
+
+	if _, err := Sign(ctx, localRef, keyFile); err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	cfg := &BucketConfig{
+		Policies: []PolicyRule{{Name: "require-signature", Check: PolicyCheckSigned, KeyRef: pubFile}},
+	}
+	if err := SetBucketConfig(ctx, client, bucketRelDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Validate(ctx, localRef, ValidateOptions{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.AllPassed {
+		t.Fatalf("expected signed policy to pass, got %+v", result.Results)
 	}
 }
 
