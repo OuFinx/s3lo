@@ -36,50 +36,71 @@ type ScanOptions struct {
 	OnBlob func(digest string, size int64)
 }
 
-// Scan downloads an image from S3 and scans it for vulnerabilities with Trivy.
-// Returns the Trivy exit code (non-zero when vulnerabilities are found at the requested severity),
-// and an error for non-Trivy failures (S3, IO, etc.).
-func Scan(ctx context.Context, s3Ref string, opts ScanOptions) (int, error) {
+// PullToOCILayout downloads an image from S3 and prepares a temporary OCI image layout
+// directory for Trivy. Returns (trivyPath, tmpDir, error). The caller must call
+// os.RemoveAll(tmpDir) when done.
+func PullToOCILayout(ctx context.Context, s3Ref string, opts ScanOptions) (trivyPath, tmpDir string, err error) {
 	parsed, err := ref.Parse(s3Ref)
 	if err != nil {
-		return 0, fmt.Errorf("invalid S3 reference: %w", err)
+		return "", "", fmt.Errorf("invalid S3 reference: %w", err)
 	}
 
 	client, err := storage.NewBackendFromRef(ctx, s3Ref)
 	if err != nil {
-		return 0, fmt.Errorf("create storage client: %w", err)
+		return "", "", fmt.Errorf("create storage client: %w", err)
 	}
 
-	tmpDir, err := os.MkdirTemp("", "s3lo-scan-*")
+	tmpDir, err = os.MkdirTemp("", "s3lo-scan-*")
 	if err != nil {
-		return 0, fmt.Errorf("create temp dir: %w", err)
+		return "", "", fmt.Errorf("create temp dir: %w", err)
 	}
-	defer os.RemoveAll(tmpDir)
 
-	// Fetch manifest.
 	manifestKey := parsed.ManifestsPrefix() + "manifest.json"
 	manifestData, err := client.GetObject(ctx, parsed.Bucket, manifestKey)
 	if err != nil {
-		return 0, fmt.Errorf("fetch manifest: %w", err)
+		os.RemoveAll(tmpDir)
+		return "", "", fmt.Errorf("fetch manifest: %w", err)
 	}
 
-	// Resolve platform for multi-arch images.
 	if isImageIndex(manifestData) {
 		manifestData, err = resolvePlatformManifest(ctx, client, parsed.Bucket, manifestData, opts.Platform)
 		if err != nil {
-			return 0, err
+			os.RemoveAll(tmpDir)
+			return "", "", err
 		}
 	}
 
-	// Download config + layer blobs to tmpDir/blobs/sha256/.
 	if err := pullV110(ctx, client, parsed, manifestData, tmpDir, opts.OnBlob, opts.OnStart); err != nil {
-		return 0, fmt.Errorf("download image: %w", err)
+		os.RemoveAll(tmpDir)
+		return "", "", fmt.Errorf("download image: %w", err)
 	}
 
-	// Augment tmpDir into a valid OCI Image Layout so Trivy can read it.
 	if err := finalizeOCILayout(tmpDir, manifestData); err != nil {
-		return 0, fmt.Errorf("build OCI layout: %w", err)
+		os.RemoveAll(tmpDir)
+		return "", "", fmt.Errorf("build OCI layout: %w", err)
 	}
+
+	tp := opts.TrivyPath
+	if tp == "" {
+		tp, err = exec.LookPath("trivy")
+		if err != nil {
+			os.RemoveAll(tmpDir)
+			return "", "", fmt.Errorf("trivy not found in PATH: %w", err)
+		}
+	}
+
+	return tp, tmpDir, nil
+}
+
+// Scan downloads an image from S3 and scans it for vulnerabilities with Trivy.
+// Returns the Trivy exit code (non-zero when vulnerabilities are found at the requested severity),
+// and an error for non-Trivy failures (S3, IO, etc.).
+func Scan(ctx context.Context, s3Ref string, opts ScanOptions) (int, error) {
+	trivyPath, tmpDir, err := PullToOCILayout(ctx, s3Ref, opts)
+	if err != nil {
+		return 0, err
+	}
+	defer os.RemoveAll(tmpDir)
 
 	// Build trivy arguments.
 	// Pass the OCI Image Layout directory directly — Trivy reads index.json from it.
@@ -91,7 +112,7 @@ func Scan(ctx context.Context, s3Ref string, opts ScanOptions) (int, error) {
 		args = append(args, "--format", opts.Format)
 	}
 
-	cmd := exec.CommandContext(ctx, opts.TrivyPath, args...)
+	cmd := exec.CommandContext(ctx, trivyPath, args...)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
