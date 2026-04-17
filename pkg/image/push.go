@@ -85,7 +85,7 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 	}
 
 	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(10)
+	g.SetLimit(blobConcurrency)
 	var onBlobMu sync.Mutex
 
 	for _, entry := range entries {

@@ -111,7 +111,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 			}
 		}
 		g, gCtx := errgroup.WithContext(ctx)
-		g.SetLimit(10)
+		g.SetLimit(blobConcurrency)
 		for _, t := range tasks {
 			t := t
 			g.Go(func() error {
@@ -170,7 +170,7 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		// Store platform manifest blobs directly (already in memory — small JSON).
 		{
 			g, gCtx := errgroup.WithContext(ctx)
-			g.SetLimit(10)
+			g.SetLimit(blobConcurrency)
 			for _, pi := range platInfos {
 				pi := pi
 				g.Go(func() error {

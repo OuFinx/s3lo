@@ -90,7 +90,7 @@ func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 		platforms := make([]PlatformInfo, len(idx.Manifests))
 		var mu sync.Mutex
 		g, gCtx := errgroup.WithContext(ctx)
-		g.SetLimit(10)
+		g.SetLimit(blobConcurrency)
 		for i, desc := range idx.Manifests {
 			i, desc := i, desc
 			g.Go(func() error {
