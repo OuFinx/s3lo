@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // LocalClient implements Backend using the local filesystem.
@@ -21,8 +22,28 @@ func (c *LocalClient) path(bucket, key string) string {
 	return filepath.Join(bucket, filepath.FromSlash(key))
 }
 
+// safePath resolves key relative to bucket and rejects any path that escapes the bucket root.
+func (c *LocalClient) safePath(bucket, key string) (string, error) {
+	absRoot, err := filepath.Abs(bucket)
+	if err != nil {
+		return "", fmt.Errorf("resolve bucket path: %w", err)
+	}
+	absP, err := filepath.Abs(filepath.Join(bucket, filepath.FromSlash(key)))
+	if err != nil {
+		return "", fmt.Errorf("resolve key path: %w", err)
+	}
+	rel, err := filepath.Rel(absRoot, absP)
+	if err != nil || strings.HasPrefix(rel, "..") {
+		return "", fmt.Errorf("key %q escapes bucket root", key)
+	}
+	return absP, nil
+}
+
 func (c *LocalClient) GetObject(ctx context.Context, bucket, key string) ([]byte, error) {
-	p := c.path(bucket, key)
+	p, err := c.safePath(bucket, key)
+	if err != nil {
+		return nil, err
+	}
 	data, err := os.ReadFile(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -34,7 +55,10 @@ func (c *LocalClient) GetObject(ctx context.Context, bucket, key string) ([]byte
 }
 
 func (c *LocalClient) PutObject(ctx context.Context, bucket, key string, data []byte) error {
-	p := c.path(bucket, key)
+	p, err := c.safePath(bucket, key)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 		return err
 	}
@@ -42,7 +66,11 @@ func (c *LocalClient) PutObject(ctx context.Context, bucket, key string, data []
 }
 
 func (c *LocalClient) HeadObjectExists(ctx context.Context, bucket, key string) (bool, error) {
-	_, err := os.Stat(c.path(bucket, key))
+	p, err := c.safePath(bucket, key)
+	if err != nil {
+		return false, err
+	}
+	_, err = os.Stat(p)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
@@ -97,7 +125,10 @@ func (c *LocalClient) ListObjectsWithMeta(ctx context.Context, bucket, prefix st
 
 func (c *LocalClient) DeleteObjects(ctx context.Context, bucket string, keys []string) error {
 	for _, key := range keys {
-		p := c.path(bucket, key)
+		p, err := c.safePath(bucket, key)
+		if err != nil {
+			return err
+		}
 		if err := os.Remove(p); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return fmt.Errorf("delete %s: %w", p, err)
 		}
@@ -106,7 +137,10 @@ func (c *LocalClient) DeleteObjects(ctx context.Context, bucket string, keys []s
 }
 
 func (c *LocalClient) UploadFile(_ context.Context, localPath, bucket, key string, _ StorageClass) error {
-	dest := c.path(bucket, key)
+	dest, err := c.safePath(bucket, key)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}
@@ -114,7 +148,10 @@ func (c *LocalClient) UploadFile(_ context.Context, localPath, bucket, key strin
 }
 
 func (c *LocalClient) DownloadObjectToFile(_ context.Context, bucket, key, localPath string) error {
-	src := c.path(bucket, key)
+	src, err := c.safePath(bucket, key)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(localPath), 0o755); err != nil {
 		return err
 	}
@@ -143,8 +180,14 @@ func (c *LocalClient) DownloadDirectory(_ context.Context, bucket, prefix, destD
 }
 
 func (c *LocalClient) CopyObject(_ context.Context, bucket, srcKey, destKey string) error {
-	src := c.path(bucket, srcKey)
-	dest := c.path(bucket, destKey)
+	src, err := c.safePath(bucket, srcKey)
+	if err != nil {
+		return err
+	}
+	dest, err := c.safePath(bucket, destKey)
+	if err != nil {
+		return err
+	}
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return err
 	}

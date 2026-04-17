@@ -100,7 +100,7 @@ func collectReferencedDigests(ctx context.Context, client storage.Backend, bucke
 	)
 
 	g, ctx := errgroup.WithContext(ctx)
-	g.SetLimit(20)
+	g.SetLimit(scanConcurrency)
 
 	for _, key := range keys {
 		key := key

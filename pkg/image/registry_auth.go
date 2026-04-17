@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -17,8 +18,15 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/ecr"
 )
 
+// ecrRegionRE matches all known ECR hostname variants and captures the region:
+//   - Standard:  <acct>.dkr.ecr.<region>.amazonaws.com
+//   - GovCloud:  <acct>.dkr.ecr.<region>.amazonaws.com  (us-gov-* regions)
+//   - China:     <acct>.dkr.ecr.<region>.amazonaws.com.cn
+var ecrRegionRE = regexp.MustCompile(`\.dkr\.ecr\.([a-z0-9-]+)\.amazonaws\.com`)
+
 // retryDelays defines wait durations between successive retry attempts for transient errors.
-var retryDelays = []time.Duration{time.Second, 2 * time.Second}
+// 5 retries with exponential backoff gives ~30 s of total tolerance for brief registry outages.
+var retryDelays = []time.Duration{time.Second, 2 * time.Second, 4 * time.Second, 8 * time.Second, 16 * time.Second}
 
 // registryClient wraps an HTTP client with per-registry Bearer token caching (#41)
 // and automatic retry on transient errors (#45).
@@ -185,12 +193,11 @@ func resolveAuth(ctx context.Context, registry string) (string, error) {
 
 // resolveECRAuth fetches an ECR authorization token and returns it as a Basic auth value.
 func resolveECRAuth(ctx context.Context, registry string) (string, error) {
-	// Extract region from hostname: 123456789.dkr.ecr.<region>.amazonaws.com
-	parts := strings.Split(registry, ".")
-	if len(parts) < 6 {
+	m := ecrRegionRE.FindStringSubmatch(registry)
+	if m == nil {
 		return "", fmt.Errorf("cannot parse ECR region from hostname %q", registry)
 	}
-	region := parts[3]
+	region := m[1]
 
 	cfg, err := config.LoadDefaultConfig(ctx, config.WithRegion(region))
 	if err != nil {

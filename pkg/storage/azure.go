@@ -13,6 +13,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
+	"golang.org/x/sync/errgroup"
 )
 
 // Compile-time assertion that AzureClient implements Backend.
@@ -200,17 +201,19 @@ func (c *AzureClient) DownloadDirectory(ctx context.Context, bucket, prefix, des
 	if err != nil {
 		return err
 	}
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
 	for _, key := range keys {
-		rel, err := filepath.Rel(filepath.FromSlash(prefix), filepath.FromSlash(key))
-		if err != nil {
-			rel = filepath.FromSlash(key)
-		}
-		dest := filepath.Join(destDir, rel)
-		if err := c.DownloadObjectToFile(ctx, bucket, key, dest); err != nil {
-			return err
-		}
+		key := key
+		g.Go(func() error {
+			rel, err := filepath.Rel(filepath.FromSlash(prefix), filepath.FromSlash(key))
+			if err != nil {
+				rel = filepath.FromSlash(key)
+			}
+			return c.DownloadObjectToFile(ctx, bucket, key, filepath.Join(destDir, rel))
+		})
 	}
-	return nil
+	return g.Wait()
 }
 
 func (c *AzureClient) CopyObject(ctx context.Context, bucket, srcKey, destKey string) error {

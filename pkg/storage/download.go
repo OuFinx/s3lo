@@ -206,6 +206,7 @@ func downloadObject(ctx context.Context, client *s3.Client, bucket, key, localPa
 
 	f, err := os.Create(localPath)
 	if err != nil {
+		resp.Body.Close()
 		return err
 	}
 	defer f.Close()

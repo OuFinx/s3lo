@@ -154,7 +154,7 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 
 	// Download layer blobs in parallel.
 	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(10)
+	g.SetLimit(blobConcurrency)
 	for _, layer := range manifest.Layers {
 		layer := layer
 		g.Go(func() error {

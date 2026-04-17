@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 
 	gcslib "cloud.google.com/go/storage"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 )
 
@@ -111,15 +112,14 @@ func (c *GCSClient) ListObjectsWithMeta(ctx context.Context, bucket, prefix stri
 }
 
 func (c *GCSClient) DeleteObjects(ctx context.Context, bucket string, keys []string) error {
-	var errs []error
 	for _, key := range keys {
 		if err := c.client.Bucket(bucket).Object(key).Delete(ctx); err != nil {
 			if !errors.Is(err, gcslib.ErrObjectNotExist) {
-				errs = append(errs, fmt.Errorf("gcs delete %s/%s: %w", bucket, key, err))
+				return fmt.Errorf("gcs delete %s/%s: %w", bucket, key, err)
 			}
 		}
 	}
-	return errors.Join(errs...)
+	return nil
 }
 
 func (c *GCSClient) UploadFile(ctx context.Context, localPath, bucket, key string, sc StorageClass) error {
@@ -186,17 +186,19 @@ func (c *GCSClient) DownloadDirectory(ctx context.Context, bucket, prefix, destD
 	if err != nil {
 		return err
 	}
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(10)
 	for _, key := range keys {
-		rel, err := filepath.Rel(filepath.FromSlash(prefix), filepath.FromSlash(key))
-		if err != nil {
-			rel = filepath.FromSlash(key)
-		}
-		dest := filepath.Join(destDir, rel)
-		if err := c.DownloadObjectToFile(ctx, bucket, key, dest); err != nil {
-			return err
-		}
+		key := key
+		g.Go(func() error {
+			rel, err := filepath.Rel(filepath.FromSlash(prefix), filepath.FromSlash(key))
+			if err != nil {
+				rel = filepath.FromSlash(key)
+			}
+			return c.DownloadObjectToFile(ctx, bucket, key, filepath.Join(destDir, rel))
+		})
 	}
-	return nil
+	return g.Wait()
 }
 
 func (c *GCSClient) CopyObject(ctx context.Context, bucket, srcKey, destKey string) error {

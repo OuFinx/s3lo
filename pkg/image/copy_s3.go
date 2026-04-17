@@ -103,7 +103,7 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			opts.OnStart(totalBytes)
 		}
 		g, gCtx := errgroup.WithContext(ctx)
-		g.SetLimit(10)
+		g.SetLimit(blobConcurrency)
 		for _, t := range tasks {
 			t := t
 			g.Go(func() error {

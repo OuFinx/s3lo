@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log/slog"
+	"net/url"
 	"os"
 
 	"github.com/OuFinx/s3lo/pkg/storage"
@@ -30,6 +31,10 @@ var rootCmd = &cobra.Command{
 			})))
 		}
 		if endpoint != "" {
+			u, err := url.Parse(endpoint)
+			if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+				return fmt.Errorf("invalid endpoint %q: must be a full URL with http:// or https:// scheme (e.g. https://s3.example.com)", endpoint)
+			}
 			ctx := storage.WithEndpoint(cmd.Context(), endpoint)
 			cmd.SetContext(ctx)
 		}

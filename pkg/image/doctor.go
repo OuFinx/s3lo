@@ -85,7 +85,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	)
 
 	g, gCtx := errgroup.WithContext(ctx)
-	g.SetLimit(20)
+	g.SetLimit(scanConcurrency)
 
 	for _, key := range manifestJsonKeys {
 		key := key

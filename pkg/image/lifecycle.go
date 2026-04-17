@@ -115,7 +115,7 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, 
 
 		if !dryRun {
 			g, gCtx := errgroup.WithContext(ctx)
-			g.SetLimit(10)
+			g.SetLimit(blobConcurrency)
 			for _, tm := range toDelete {
 				tm := tm
 				g.Go(func() error {
