@@ -84,7 +84,7 @@ func (p ImageListPane) View(width, height int) string {
 			row := selectedStyle.Width(width - 4).Render("▶ " + line)
 			sb.WriteString("  " + row + "\n")
 		} else {
-			sb.WriteString("  " + line + "\n")
+			sb.WriteString("    " + line + "\n")
 		}
 	}
 	return sb.String()
