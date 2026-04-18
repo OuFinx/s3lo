@@ -111,6 +111,9 @@ s3lo config set s3://my-bucket/myapp immutable=true
 s3lo history s3://my-bucket/
 s3lo history s3://my-bucket/myapp
 
+# Browse and manage images interactively
+s3lo tui s3://my-bucket/
+
 # Sign an image with AWS KMS (FIPS 140-2, CloudTrail audit log)
 s3lo sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
 

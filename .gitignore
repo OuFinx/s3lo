@@ -27,3 +27,7 @@ dist/
 test/
 site/
 docs/superpowers/
+.superpowers/
+
+# Git worktrees
+.worktrees/

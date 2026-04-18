@@ -15,6 +15,7 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 | [`stats`](stats.md) | Show storage usage, deduplication savings, and cost estimate |
 | [`config`](config.md) | Manage per-image and bucket-wide configuration |
 | [`history`](history.md) | Show push history for a bucket or repository |
+| [`tui`](tui.md) | Interactive terminal UI for browsing images and managing lifecycle |
 | [`scan`](scan.md) | Scan an image for vulnerabilities with Trivy |
 | [`sbom`](sbom.md) | Generate a Software Bill of Materials (SBOM) for an image |
 | [`sign`](sign.md) | Sign an image manifest with AWS KMS or a local key |

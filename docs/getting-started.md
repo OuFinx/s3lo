@@ -155,6 +155,14 @@ s3lo history local://./local-s3/
 
 Local storage uses the same OCI layout as S3 storage — it's a great way to learn s3lo or run it in development.
 
+## 7. Browse interactively
+
+```bash
+s3lo tui s3://my-bucket/
+```
+
+The TUI shows all images and tags with sizes, deduplication stats, and cost estimates. From inside a tag list, press `i` to inspect metadata, `s` to scan for vulnerabilities, `g` to view the layer sharing matrix, or `d` to delete. Press `q` to quit.
+
 ---
 
 ## Next steps
@@ -162,4 +170,5 @@ Local storage uses the same OCI layout as S3 storage — it's a great way to lea
 - **CI/CD:** [GitHub Actions integration](guides/github-actions.md) — push on every commit with OIDC auth
 - **Mirror from Docker Hub / ECR:** use [`s3lo copy`](commands/copy.md) to pull from any registry directly to S3
 - **Save money:** [configure lifecycle rules](guides/lifecycle.md) to automatically clean old tags
+- **Browse interactively:** [`s3lo tui`](commands/tui.md) — full interactive UI for managing images
 - **Understand the internals:** [How It Works](concepts/how-it-works.md)
