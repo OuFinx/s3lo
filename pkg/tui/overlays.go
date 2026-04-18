@@ -119,7 +119,7 @@ func (v ScanResultsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		v.err = msg.err
 		return v, nil
 	case tea.KeyMsg:
-		if v.done {
+		if v.done || msg.String() == "esc" || msg.String() == "q" {
 			return v, func() tea.Msg { return dismissOverlayMsg{} }
 		}
 	}
@@ -128,7 +128,10 @@ func (v ScanResultsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (v ScanResultsView) View() string {
 	if !v.done {
-		return overlayStyle.Render(titleStyle.Render("Scan") + "\n\n  Preparing image for Trivy...")
+		return overlayStyle.Render(
+			titleStyle.Render("Scan") + "\n\n  Preparing image for Trivy...\n\n" +
+				dimStyle.Render("[esc] cancel"),
+		)
 	}
 	if v.err != nil {
 		return overlayStyle.Render(

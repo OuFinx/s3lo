@@ -172,6 +172,11 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m = m.setStatus("scan failed: "+msg.err.Error(), true)
 			return m, clearStatusCmd()
 		}
+		if m.overlay == nil {
+			// User cancelled while preparing; clean up without running Trivy.
+			os.RemoveAll(msg.tmpDir)
+			return m, nil
+		}
 		trivyCmd := exec.Command(msg.trivyPath, "image", "--input", msg.tmpDir)
 		tmpDir := msg.tmpDir
 		return m, tea.ExecProcess(trivyCmd, func(err error) tea.Msg {
@@ -332,8 +337,14 @@ func (m RootModel) View() string {
 		rightW = 20
 	}
 
-	leftView := m.leftPane.View(leftW, m.height-3)
-	rightView := m.right.View(rightW, m.height-3)
+	// Reserve the last line for the status bar.
+	contentH := m.height - 1
+	if contentH <= 0 {
+		contentH = 20
+	}
+
+	leftView := m.leftPane.View(leftW, contentH)
+	rightView := m.right.View(rightW, contentH)
 
 	leftLines := strings.Split(leftView, "\n")
 	rightLines := strings.Split(rightView, "\n")
@@ -355,12 +366,20 @@ func (m RootModel) View() string {
 		rows = append(rows, l+sep+r)
 	}
 	main := strings.Join(rows, "\n")
+
+	// Pad content to fill the content area so the bar is always on the last line.
+	mainLines := strings.Count(main, "\n") + 1
+	if mainLines < contentH {
+		main += strings.Repeat("\n", contentH-mainLines)
+	}
+
 	bar := m.renderStatusBar()
 
 	if m.overlay != nil {
 		type viewer interface{ View() string }
 		if ov, ok := m.overlay.(viewer); ok {
-			return main + "\n" + bar + "\n\n" + ov.View()
+			centered := lipgloss.Place(m.width, contentH, lipgloss.Center, lipgloss.Center, ov.View())
+			return centered + "\n" + bar
 		}
 	}
 
