@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -63,7 +64,7 @@ func fetchImagesCmd(ctx context.Context, st storage.Backend, bucket, prefix stri
 				if err != nil {
 					return nil // skip unreadable manifests
 				}
-				size := sumManifestBytes(data)
+				size := sumManifestBytesResolved(gCtx, st, bucket, data)
 				mu.Lock()
 				if a := accum[imgName]; a != nil {
 					a.bytes += size
@@ -151,7 +152,7 @@ func fetchTagsCmd(ctx context.Context, st storage.Backend, bucket, prefix, image
 				if err != nil {
 					return nil // skip unreadable manifests
 				}
-				size := sumManifestBytes(data)
+				size := sumManifestBytesResolved(gCtx, st, bucket, data)
 				mu.Lock()
 				if a := accum[tagName]; a != nil {
 					a.bytes = size
@@ -400,8 +401,62 @@ func fetchLayerMatrixCmd(ctx context.Context, st storage.Backend, bucket, prefix
 	}
 }
 
-// sumManifestBytes parses manifest JSON and returns the sum of config + layer sizes.
-// Returns 0 for image indexes (they have no direct layers).
+// sumManifestBytesResolved returns the total layer bytes for any manifest type.
+// For regular image manifests it sums config + layers directly.
+// For image indexes (multi-arch), it fetches each platform manifest from
+// blobs/sha256/{digest} and sums their layers — matching where s3lo stores them.
+func sumManifestBytesResolved(ctx context.Context, st storage.Backend, bucket string, data []byte) int64 {
+	if n := sumManifestBytes(data); n > 0 {
+		return n
+	}
+
+	// data is likely an image index (OCI or Docker manifest list).
+	// Extract child manifest digests from the "manifests" array.
+	var idx struct {
+		Manifests []struct {
+			Digest    string `json:"digest"`    // "sha256:hexhex..."
+			MediaType string `json:"mediaType"` // used to skip attestations
+		} `json:"manifests"`
+	}
+	if err := json.Unmarshal(data, &idx); err != nil || len(idx.Manifests) == 0 {
+		return 0
+	}
+
+	var total int64
+	var mu sync.Mutex
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(5)
+
+	for _, m := range idx.Manifests {
+		m := m
+		// Skip attestation pseudo-manifests added by sigstore/cosign.
+		if strings.Contains(m.MediaType, "attestation") {
+			continue
+		}
+		parts := strings.SplitN(m.Digest, ":", 2)
+		if len(parts) != 2 || len(parts[1]) < 12 {
+			continue
+		}
+		encoded := parts[1]
+		g.Go(func() error {
+			// Platform manifests are stored as plain blobs, not under manifests/.
+			childData, err := st.GetObject(gCtx, bucket, "blobs/sha256/"+encoded)
+			if err != nil {
+				return nil
+			}
+			n := sumManifestBytes(childData)
+			mu.Lock()
+			total += n
+			mu.Unlock()
+			return nil
+		})
+	}
+	g.Wait()
+	return total
+}
+
+// sumManifestBytes parses manifest JSON and returns config + layer sizes.
+// Returns 0 for image indexes (they carry no direct layers).
 func sumManifestBytes(data []byte) int64 {
 	m, err := oci.ParseManifest(data)
 	if err != nil {
