@@ -86,7 +86,10 @@
 
 ## v1.13.0
 
-- [ ] Interactive TUI for browsing images and managing lifecycle
+- [x] Interactive TUI for browsing images and managing lifecycle (`s3lo tui`)
+- [x] Layer sharing matrix: see which layers are shared across tags (`g` key in tag list)
+- [x] Per-tag and per-image sizes in TUI
+- [x] In-TUI vulnerability scanning (`s` key), inspect (`i`), delete (`d`), clean (`c`)
 
 ## v2.0.0 — Stable Release
 

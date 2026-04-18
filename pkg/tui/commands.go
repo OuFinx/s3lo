@@ -313,19 +313,8 @@ func fetchLayerMatrixCmd(ctx context.Context, st storage.Backend, bucket, prefix
 				if err != nil {
 					return nil
 				}
-				m, err := oci.ParseManifest(data)
-				if err != nil || len(m.Layers) == 0 {
-					return nil // skip image indexes and unreadable manifests
-				}
-				td := tagDigests{sizes: make(map[string]int64)}
-				for _, l := range m.Layers {
-					encoded := l.Digest.Encoded()
-					if len(encoded) < 12 {
-						continue // skip malformed digests
-					}
-					td.digests = append(td.digests, encoded)
-					td.sizes[encoded] = l.Size
-				}
+				td := tagDigests{}
+				td.digests, td.sizes = collectTagLayers(gCtx, st, bucket, data)
 				mu.Lock()
 				perTag[i] = td
 				mu.Unlock()
@@ -453,6 +442,115 @@ func sumManifestBytesResolved(ctx context.Context, st storage.Backend, bucket st
 	}
 	g.Wait()
 	return total
+}
+
+// collectTagLayers returns all unique layer digests and their sizes for a manifest,
+// transparently handling both regular image manifests and image indexes (multi-arch).
+// For indexes, it fetches each platform manifest from blobs/sha256/{digest} and
+// merges their layers (union — a layer shared by amd64+arm64 is counted once).
+func collectTagLayers(ctx context.Context, st storage.Backend, bucket string, data []byte) (digests []string, sizes map[string]int64) {
+	sizes = make(map[string]int64)
+
+	addLayers := func(m []struct {
+		encoded string
+		size    int64
+	}) {
+		for _, l := range m {
+			if _, exists := sizes[l.encoded]; !exists {
+				digests = append(digests, l.encoded)
+			}
+			sizes[l.encoded] = l.size
+		}
+	}
+
+	// Regular single-arch manifest: layers present directly.
+	manifest, err := oci.ParseManifest(data)
+	if err == nil && len(manifest.Layers) > 0 {
+		var layers []struct {
+			encoded string
+			size    int64
+		}
+		for _, l := range manifest.Layers {
+			encoded := l.Digest.Encoded()
+			if len(encoded) >= 12 {
+				layers = append(layers, struct {
+					encoded string
+					size    int64
+				}{encoded, l.Size})
+			}
+		}
+		addLayers(layers)
+		return
+	}
+
+	// Image index (OCI index / Docker manifest list): fetch platform manifests.
+	var idx struct {
+		Manifests []struct {
+			Digest    string `json:"digest"`
+			MediaType string `json:"mediaType"`
+		} `json:"manifests"`
+	}
+	if err := json.Unmarshal(data, &idx); err != nil || len(idx.Manifests) == 0 {
+		return
+	}
+
+	type layerEntry struct {
+		encoded string
+		size    int64
+	}
+	var (
+		mu          sync.Mutex
+		allChildLayers []layerEntry
+	)
+	g, gCtx := errgroup.WithContext(ctx)
+	g.SetLimit(5)
+
+	for _, entry := range idx.Manifests {
+		entry := entry
+		if strings.Contains(entry.MediaType, "attestation") {
+			continue // skip cosign attestation pseudo-manifests
+		}
+		parts := strings.SplitN(entry.Digest, ":", 2)
+		if len(parts) != 2 || len(parts[1]) < 12 {
+			continue
+		}
+		encoded := parts[1]
+		g.Go(func() error {
+			childData, err := st.GetObject(gCtx, bucket, "blobs/sha256/"+encoded)
+			if err != nil {
+				return nil
+			}
+			child, err := oci.ParseManifest(childData)
+			if err != nil {
+				return nil
+			}
+			var batch []layerEntry
+			for _, l := range child.Layers {
+				d := l.Digest.Encoded()
+				if len(d) >= 12 {
+					batch = append(batch, layerEntry{d, l.Size})
+				}
+			}
+			mu.Lock()
+			allChildLayers = append(allChildLayers, batch...)
+			mu.Unlock()
+			return nil
+		})
+	}
+	g.Wait()
+
+	var asSlice []struct {
+		encoded string
+		size    int64
+	}
+	for _, e := range allChildLayers {
+		asSlice = append(asSlice, struct {
+			encoded string
+			size    int64
+		}{e.encoded, e.size})
+	}
+	addLayers(asSlice)
+	return
 }
 
 // sumManifestBytes parses manifest JSON and returns config + layer sizes.

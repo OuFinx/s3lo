@@ -59,6 +59,8 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 
 **Copy:** s3lo pulls directly from any OCI registry (Docker Hub, ECR, GHCR) and uploads to S3 — without going through the local Docker daemon.
 
+**TUI:** `s3lo tui s3://my-bucket/` opens an interactive terminal UI to browse images, inspect tags, view layer sharing across tags, scan for vulnerabilities, and run lifecycle clean — all without leaving the terminal.
+
 ---
 
 ## Quick install

@@ -71,6 +71,8 @@ nav:
     - clean: commands/clean.md
     - stats: commands/stats.md
     - config: commands/config.md
+    - history: commands/history.md
+    - tui: commands/tui.md
     - scan: commands/scan.md
     - sbom: commands/sbom.md
     - sign: commands/sign.md
