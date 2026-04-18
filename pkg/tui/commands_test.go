@@ -113,6 +113,125 @@ func TestFetchTagsCmd_ReturnsSortedNewestFirst(t *testing.T) {
 	}
 }
 
+func TestFetchLayerMatrixCmd_BuildsMatrix(t *testing.T) {
+	// Shared layer "aaaa…" appears in all three tags.
+	// Shared layer "bbbb…" appears in v1.0 and v2.0 only.
+	// Each tag also has one unique layer.
+	const (
+		digestA = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" // all 3 tags
+		digestB = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" // v1.0 + v2.0
+		digestC = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc" // v1.0 only
+		digestD = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd" // v2.0 only
+		digestE = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee" // v3.0 only
+	)
+
+	type layerDesc struct {
+		Digest    string `json:"digest"`
+		Size      int64  `json:"size"`
+		MediaType string `json:"mediaType"`
+	}
+	type configDesc struct {
+		Digest    string `json:"digest"`
+		Size      int64  `json:"size"`
+		MediaType string `json:"mediaType"`
+	}
+	type manifest struct {
+		SchemaVersion int         `json:"schemaVersion"`
+		MediaType     string      `json:"mediaType"`
+		Config        configDesc  `json:"config"`
+		Layers        []layerDesc `json:"layers"`
+	}
+
+	dir := t.TempDir()
+	st := storage.NewLocalClient()
+	ctx := context.Background()
+	bucket := dir
+
+	writeM := func(tagName string, layers []layerDesc) {
+		m := manifest{
+			SchemaVersion: 2,
+			MediaType:     "application/vnd.oci.image.manifest.v1+json",
+			Config: configDesc{
+				Digest:    "sha256:" + digestA[:len(digestA)], // reuse any valid digest for config
+				Size:      512,
+				MediaType: "application/vnd.oci.image.config.v1+json",
+			},
+			Layers: layers,
+		}
+		data, _ := json.Marshal(m)
+		key := "manifests/myapp/" + tagName + "/manifest.json"
+		if err := st.PutObject(ctx, bucket, key, data); err != nil {
+			t.Fatalf("PutObject: %v", err)
+		}
+	}
+
+	writeM("v1.0", []layerDesc{
+		{Digest: "sha256:" + digestA, Size: 50 << 20, MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+		{Digest: "sha256:" + digestB, Size: 20 << 20, MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+		{Digest: "sha256:" + digestC, Size: 10 << 20, MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+	})
+	writeM("v2.0", []layerDesc{
+		{Digest: "sha256:" + digestA, Size: 50 << 20, MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+		{Digest: "sha256:" + digestB, Size: 20 << 20, MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+		{Digest: "sha256:" + digestD, Size: 15 << 20, MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+	})
+	writeM("v3.0", []layerDesc{
+		{Digest: "sha256:" + digestA, Size: 50 << 20, MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+		{Digest: "sha256:" + digestE, Size: 8 << 20, MediaType: "application/vnd.oci.image.layer.v1.tar+gzip"},
+	})
+
+	tags := []TagEntry{
+		{Name: "v1.0"},
+		{Name: "v2.0"},
+		{Name: "v3.0"},
+	}
+	cmd := fetchLayerMatrixCmd(ctx, st, bucket, "", "myapp", tags)
+	raw := cmd()
+
+	msg, ok := raw.(layerMatrixFetchedMsg)
+	if !ok {
+		t.Fatalf("expected layerMatrixFetchedMsg, got %T", raw)
+	}
+	if msg.err != nil {
+		t.Fatalf("unexpected error: %v", msg.err)
+	}
+
+	mx := msg.matrix
+	if len(mx.Tags) != 3 {
+		t.Errorf("expected 3 tag columns, got %d", len(mx.Tags))
+	}
+	if len(mx.Rows) != 5 {
+		t.Errorf("expected 5 unique layers, got %d", len(mx.Rows))
+	}
+
+	// First row must be digestA (shared by all 3 tags).
+	if mx.Rows[0].Digest != digestA {
+		t.Errorf("expected digestA as most-shared row, got %s", mx.Rows[0].Digest[:12])
+	}
+	if mx.Rows[0].TagCount != 3 {
+		t.Errorf("expected TagCount 3 for digestA, got %d", mx.Rows[0].TagCount)
+	}
+
+	// Second row must be digestB (shared by 2 tags, larger than C/D/E).
+	if mx.Rows[1].Digest != digestB {
+		t.Errorf("expected digestB second, got %s", mx.Rows[1].Digest[:12])
+	}
+	if mx.Rows[1].TagCount != 2 {
+		t.Errorf("expected TagCount 2 for digestB, got %d", mx.Rows[1].TagCount)
+	}
+
+	// StoredBytes = unique layers once each.
+	wantStored := int64((50 + 20 + 10 + 15 + 8) << 20)
+	if mx.StoredBytes != wantStored {
+		t.Errorf("StoredBytes: want %d, got %d", wantStored, mx.StoredBytes)
+	}
+	// LogicalBytes counts duplication: A×3 + B×2 + C×1 + D×1 + E×1.
+	wantLogical := int64((50*3 + 20*2 + 10 + 15 + 8) << 20)
+	if mx.LogicalBytes != wantLogical {
+		t.Errorf("LogicalBytes: want %d, got %d", wantLogical, mx.LogicalBytes)
+	}
+}
+
 func TestFetchImagesCmd_EmptyBucket(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, "manifests"), 0o755); err != nil {

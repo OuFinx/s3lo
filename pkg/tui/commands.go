@@ -289,6 +289,117 @@ func clearStatusCmd() tea.Cmd {
 	})
 }
 
+// fetchLayerMatrixCmd fetches all tag manifests in parallel and builds a
+// LayerMatrix showing which layers are shared across which tags.
+func fetchLayerMatrixCmd(ctx context.Context, st storage.Backend, bucket, prefix, imageName string, tags []TagEntry) tea.Cmd {
+	return func() tea.Msg {
+		type tagDigests struct {
+			digests []string         // ordered layer digests (full 64-char sha256 hex)
+			sizes   map[string]int64 // digest → byte size
+		}
+
+		perTag := make([]tagDigests, len(tags))
+		var mu sync.Mutex
+
+		g, gCtx := errgroup.WithContext(ctx)
+		g.SetLimit(10)
+
+		for i, tag := range tags {
+			i, tag := i, tag
+			g.Go(func() error {
+				key := prefix + "manifests/" + imageName + "/" + tag.Name + "/manifest.json"
+				data, err := st.GetObject(gCtx, bucket, key)
+				if err != nil {
+					return nil
+				}
+				m, err := oci.ParseManifest(data)
+				if err != nil || len(m.Layers) == 0 {
+					return nil // skip image indexes and unreadable manifests
+				}
+				td := tagDigests{sizes: make(map[string]int64)}
+				for _, l := range m.Layers {
+					encoded := l.Digest.Encoded()
+					if len(encoded) < 12 {
+						continue // skip malformed digests
+					}
+					td.digests = append(td.digests, encoded)
+					td.sizes[encoded] = l.Size
+				}
+				mu.Lock()
+				perTag[i] = td
+				mu.Unlock()
+				return nil
+			})
+		}
+
+		if err := g.Wait(); err != nil {
+			return layerMatrixFetchedMsg{imageName: imageName, err: err}
+		}
+
+		// Collect all unique layers and their canonical sizes.
+		allSizes := make(map[string]int64)
+		for _, td := range perTag {
+			for d, sz := range td.sizes {
+				if _, exists := allSizes[d]; !exists {
+					allSizes[d] = sz
+				}
+			}
+		}
+
+		tagNames := make([]string, len(tags))
+		for i, t := range tags {
+			tagNames[i] = t.Name
+		}
+
+		// Build a presence row for each unique layer.
+		rows := make([]LayerRow, 0, len(allSizes))
+		for digest, size := range allSizes {
+			present := make([]bool, len(tags))
+			count := 0
+			for i, td := range perTag {
+				for _, d := range td.digests {
+					if d == digest {
+						present[i] = true
+						count++
+						break
+					}
+				}
+			}
+			rows = append(rows, LayerRow{
+				Digest:   digest,
+				Size:     size,
+				Present:  present,
+				TagCount: count,
+			})
+		}
+
+		// Sort: most-shared layers first, then largest-first within each share count.
+		sort.Slice(rows, func(i, j int) bool {
+			if rows[i].TagCount != rows[j].TagCount {
+				return rows[i].TagCount > rows[j].TagCount
+			}
+			return rows[i].Size > rows[j].Size
+		})
+
+		// Compute deduplication stats.
+		var storedBytes, logicalBytes int64
+		for _, row := range rows {
+			storedBytes += row.Size
+			logicalBytes += row.Size * int64(row.TagCount)
+		}
+
+		return layerMatrixFetchedMsg{
+			imageName: imageName,
+			matrix: LayerMatrix{
+				Tags:         tagNames,
+				Rows:         rows,
+				StoredBytes:  storedBytes,
+				LogicalBytes: logicalBytes,
+			},
+		}
+	}
+}
+
 // sumManifestBytes parses manifest JSON and returns the sum of config + layer sizes.
 // Returns 0 for image indexes (they have no direct layers).
 func sumManifestBytes(data []byte) int64 {

@@ -190,6 +190,14 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		return m, nil
 
+	case layerMatrixFetchedMsg:
+		// Routed to overlay when active; if overlay was dismissed before fetch
+		// completed, there is nothing to do.
+		if m.overlay != nil {
+			m.overlay, _ = m.overlay.Update(msg)
+		}
+		return m, nil
+
 	case statusClearMsg:
 		m.status = ""
 		m.statusErr = false
@@ -305,6 +313,20 @@ func (m RootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = newScanResultsView()
 		return m, prepareScanCmd(m.ctx, tagRef)
 
+	case "g":
+		// Open layer-sharing matrix for the current image (tag list mode only).
+		imgName := m.leftPane.SelectedImageName()
+		if !m.isInTagMode() || imgName == "" {
+			return m, nil
+		}
+		tlp, ok := m.leftPane.(TagListPane)
+		if !ok || tlp.loading || len(tlp.entries) == 0 {
+			return m, nil
+		}
+		lv := newLayerMatrixView(imgName)
+		m.overlay = lv
+		return m, tea.Batch(lv.Init(), fetchLayerMatrixCmd(m.ctx, m.storage, m.bucket, m.prefix, imgName, tlp.entries))
+
 	case "c":
 		m.overlay = newCleanPreviewView()
 		return m, fetchCleanPreviewCmd(m.ctx, m.storage, m.bucket, m.s3Ref)
@@ -395,7 +417,7 @@ func (m RootModel) renderStatusBar() string {
 	}
 	tagName := m.leftPane.SelectedTagName()
 	if tagName != "" {
-		return dimStyle.Render("  [↑↓] navigate  [esc] back  [d] delete  [i] inspect  [s] scan  [c] clean  [r] refresh  [q] quit")
+		return dimStyle.Render("  [↑↓] navigate  [esc] back  [d] delete  [i] inspect  [s] scan  [g] layers  [c] clean  [r] refresh  [q] quit")
 	}
 	return dimStyle.Render("  [↑↓] navigate  [enter] open  [d] delete  [c] clean  [r] refresh  [q] quit")
 }

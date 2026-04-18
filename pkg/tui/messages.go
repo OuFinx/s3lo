@@ -16,6 +16,28 @@ type TagEntry struct {
 	TotalBytes   int64
 }
 
+// LayerRow is one unique content layer in the layer-sharing matrix.
+type LayerRow struct {
+	Digest   string // full 64-char sha256 hex (no "sha256:" prefix)
+	Size     int64
+	Present  []bool // indexed by tag position; true when that tag contains this layer
+	TagCount int    // number of tags that share this layer
+}
+
+// LayerMatrix holds the complete layer-sharing grid for one image.
+type LayerMatrix struct {
+	Tags         []string   // tag names in the same order as Present slices
+	Rows         []LayerRow // sorted: most-shared first, then largest-first
+	StoredBytes  int64      // unique bytes (each layer counted once)
+	LogicalBytes int64      // total bytes counting per-tag duplication
+}
+
+type layerMatrixFetchedMsg struct {
+	imageName string
+	matrix    LayerMatrix
+	err       error
+}
+
 // TagStats holds on-demand metadata for a single tag, loaded when the cursor lands on it.
 type TagStats struct {
 	TotalBytes  int64
