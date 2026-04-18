@@ -24,14 +24,15 @@ type StatsPanel struct {
 	imageName   string
 	tagName     string
 	loading     bool
+	local       bool // suppress cost rows for local:// backends
 	spinner     spinner.Model
 }
 
-func newStatsPanel() StatsPanel {
+func newStatsPanel(local bool) StatsPanel {
 	s := spinner.New()
 	s.Spinner = spinner.Dot
 	s.Style = lipgloss.NewStyle().Foreground(colorBorder)
-	return StatsPanel{mode: statsBucket, loading: true, spinner: s}
+	return StatsPanel{mode: statsBucket, loading: true, local: local, spinner: s}
 }
 
 func (p StatsPanel) Init() tea.Cmd { return p.spinner.Tick }
@@ -115,11 +116,13 @@ func (p StatsPanel) viewBucket() string {
 		sb.WriteString(greenStyle.Render(fmt.Sprintf("  Dedup saved:   %s (%.1f%%)", formatBytes(saved), s.SavingsPct)) + "\n")
 	}
 	sb.WriteString("\n")
-	sb.WriteString(yellowStyle.Render(fmt.Sprintf("  Est. cost:     %s/month", formatCost(s.CostMonthly))) + "\n")
-	sb.WriteString(redStyle.Render(fmt.Sprintf("  ECR equiv:     %s/month", formatCost(s.ECRMonthly))) + "\n")
-	if s.ECRMonthly > s.CostMonthly {
-		saved := s.ECRMonthly - s.CostMonthly
-		sb.WriteString(greenStyle.Render(fmt.Sprintf("  You save:      %s/month (%.0f%%)", formatCost(saved), saved/s.ECRMonthly*100)) + "\n")
+	if !p.local {
+		sb.WriteString(yellowStyle.Render(fmt.Sprintf("  Est. cost:     %s/month", formatCost(s.CostMonthly))) + "\n")
+		sb.WriteString(redStyle.Render(fmt.Sprintf("  ECR equiv:     %s/month", formatCost(s.ECRMonthly))) + "\n")
+		if s.ECRMonthly > s.CostMonthly {
+			saved := s.ECRMonthly - s.CostMonthly
+			sb.WriteString(greenStyle.Render(fmt.Sprintf("  You save:      %s/month (%.0f%%)", formatCost(saved), saved/s.ECRMonthly*100)) + "\n")
+		}
 	}
 	return sb.String()
 }
@@ -143,6 +146,8 @@ func (p StatsPanel) viewTag() string {
 		sb.WriteString(dimStyle.Render("  Signed:  —") + "\n")
 	}
 	sb.WriteString("\n")
-	sb.WriteString(yellowStyle.Render(fmt.Sprintf("  Cost:    %s/month", formatCost(s.CostMonthly))) + "\n")
+	if !p.local {
+		sb.WriteString(yellowStyle.Render(fmt.Sprintf("  Cost:    %s/month", formatCost(s.CostMonthly))) + "\n")
+	}
 	return sb.String()
 }

@@ -41,7 +41,7 @@ func New(ctx context.Context, s3Ref string, st storage.Backend, bucket, prefix s
 		bucket:   bucket,
 		prefix:   prefix,
 		leftPane: newImageListPane(),
-		right:    newStatsPanel(),
+		right:    newStatsPanel(strings.HasPrefix(s3Ref, "local://")),
 		tagCache: make(map[string]TagStats),
 	}
 }
