@@ -74,12 +74,18 @@ func Parse(raw string) (Reference, error) {
 }
 
 // splitBucketPath splits a path (after the scheme://) into (bucket, imageAndTag).
-// For local:// refs the storage root is a single leading path component. Rooted
+// For local:// refs the storage root is a SINGLE leading path component. Rooted
 // prefixes ("./", "../", or an absolute "/") are consumed together with the first
 // directory component, so "local://./store/img:tag", "local://../store/img:tag"
-// and "local:///abs/store/img:tag" all give bucket="<root>", image="img". The
-// image may itself contain slashes ("org/app"). For s3://, gs:// and az:// the
-// first slash is always the bucket boundary.
+// and "local:///store/img:tag" all give bucket="<root>", image="img". The image
+// may itself contain slashes ("org/app").
+//
+// Note: because the root is a single component, a deep root is NOT supported —
+// "local:///var/lib/store/img" parses bucket="/var", image="lib/store/img", the
+// same one-level limitation the relative form has. Use a single-level root (e.g.
+// bind-mount or symlink your storage dir) if you need an absolute path.
+//
+// For s3://, gs:// and az:// the first slash is always the bucket boundary.
 func splitBucketPath(scheme, rest string) (bucket, remainder string, err error) {
 	if scheme == "local" {
 		prefixLen := 0

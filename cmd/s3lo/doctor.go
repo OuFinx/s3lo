@@ -46,7 +46,11 @@ func printDoctorResult(r *image.DoctorResult) {
 	}
 
 	fmt.Printf("Checking layout structure...    %s\n", okStr(r.LayoutOK))
-	fmt.Printf("Checking config (s3lo.yaml)...  %s\n", okStr(r.ConfigOK))
+	if r.ConfigOK && !r.ConfigPresent {
+		fmt.Printf("Checking config (s3lo.yaml)...  not configured (optional)\n")
+	} else {
+		fmt.Printf("Checking config (s3lo.yaml)...  %s\n", okStr(r.ConfigOK))
+	}
 
 	if len(r.ManifestIssues) == 0 {
 		fmt.Printf("Checking manifest integrity...  OK\n")
