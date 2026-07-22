@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,7 +41,10 @@ func (c *Client) DownloadDirectory(ctx context.Context, bucket, prefix, destDir 
 	for _, key := range keys {
 		key := key
 		g.Go(func() error {
-			localPath := buildLocalPath(destDir, prefix, key)
+			localPath, err := buildLocalPath(destDir, prefix, key)
+			if err != nil {
+				return err
+			}
 			return downloadObject(ctx, s3Client, bucket, key, localPath)
 		})
 	}
@@ -103,6 +107,9 @@ func (c *Client) ListObjectsWithMeta(ctx context.Context, bucket, prefix string)
 			return nil, fmt.Errorf("list objects: %w", err)
 		}
 		for _, obj := range page.Contents {
+			if obj.Key == nil {
+				continue
+			}
 			meta := ObjectMeta{Key: *obj.Key, StorageClass: string(obj.StorageClass)}
 			if obj.Size != nil {
 				meta.Size = *obj.Size
@@ -140,8 +147,10 @@ func (c *Client) DeleteObjects(ctx context.Context, bucket string, keys []string
 			objects[j] = s3types.ObjectIdentifier{Key: &k}
 		}
 
-		quiet := true
-		_, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+		// Quiet:false so the response reports per-key failures; otherwise a partial
+		// delete (access-denied, object-lock, etc.) would be silently reported as success.
+		quiet := false
+		out, err := s3Client.DeleteObjects(ctx, &s3.DeleteObjectsInput{
 			Bucket: &bucket,
 			Delete: &s3types.Delete{
 				Objects: objects,
@@ -151,8 +160,29 @@ func (c *Client) DeleteObjects(ctx context.Context, bucket string, keys []string
 		if err != nil {
 			return fmt.Errorf("delete objects batch: %w", err)
 		}
+		if len(out.Errors) > 0 {
+			e := out.Errors[0]
+			key, code, msg := "", "", ""
+			if e.Key != nil {
+				key = *e.Key
+			}
+			if e.Code != nil {
+				code = *e.Code
+			}
+			if e.Message != nil {
+				msg = *e.Message
+			}
+			return fmt.Errorf("delete objects: %d of %d failed (first: %s: %s %s)", len(out.Errors), len(batch), key, code, msg)
+		}
 	}
 	return nil
+}
+
+// encodeCopySource builds a URL-encoded CopySource ("bucket/key") as required by
+// the S3 API. Without encoding, keys containing spaces, '+', '?' or non-ASCII
+// bytes produce signature/parse errors or resolve to the wrong source object.
+func encodeCopySource(bucket, key string) string {
+	return (&url.URL{Path: bucket + "/" + key}).EscapedPath()
 }
 
 // CopyObject copies an S3 object within the same bucket.
@@ -162,11 +192,32 @@ func (c *Client) CopyObject(ctx context.Context, bucket, srcKey, destKey string)
 		return err
 	}
 
-	copySource := bucket + "/" + srcKey
+	copySource := encodeCopySource(bucket, srcKey)
 	_, err = s3Client.CopyObject(ctx, &s3.CopyObjectInput{
 		Bucket:     &bucket,
 		CopySource: &copySource,
 		Key:        &destKey,
+	})
+	return err
+}
+
+// TouchObject refreshes an object's LastModified timestamp by copying it onto
+// itself with metadata replacement. Push calls this when it dedups against an
+// already-present blob so the blob re-enters the GC grace window; otherwise an
+// old blob newly referenced by an in-flight push could be reaped by a concurrent
+// GC before the push writes its manifest.
+func (c *Client) TouchObject(ctx context.Context, bucket, key string) error {
+	s3Client, err := c.ClientForBucket(ctx, bucket)
+	if err != nil {
+		return err
+	}
+	copySource := encodeCopySource(bucket, key)
+	directive := s3types.MetadataDirectiveReplace
+	_, err = s3Client.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:            &bucket,
+		CopySource:        &copySource,
+		Key:               &key,
+		MetadataDirective: directive,
 	})
 	return err
 }
@@ -184,6 +235,9 @@ func listKeys(ctx context.Context, client *s3.Client, bucket, prefix string) ([]
 			return nil, fmt.Errorf("list objects: %w", err)
 		}
 		for _, obj := range page.Contents {
+			if obj.Key == nil {
+				continue
+			}
 			keys = append(keys, *obj.Key)
 		}
 	}
@@ -206,7 +260,6 @@ func downloadObject(ctx context.Context, client *s3.Client, bucket, key, localPa
 
 	f, err := os.Create(localPath)
 	if err != nil {
-		resp.Body.Close()
 		return err
 	}
 	defer f.Close()
@@ -215,8 +268,22 @@ func downloadObject(ctx context.Context, client *s3.Client, bucket, key, localPa
 	return err
 }
 
-func buildLocalPath(destDir, prefix, key string) string {
+// safeJoinUnder joins rel under destDir and rejects results that escape destDir
+// (e.g. a crafted "../../etc/passwd" object key). Object keys are attacker-
+// influenceable when downloading from a shared or untrusted bucket, so a
+// containment check is required before writing to the local filesystem.
+func safeJoinUnder(destDir, rel string) (string, error) {
+	dest := filepath.Join(destDir, rel)
+	cleanRoot := filepath.Clean(destDir)
+	if dest != cleanRoot && !strings.HasPrefix(dest, cleanRoot+string(os.PathSeparator)) {
+		return "", fmt.Errorf("path %q escapes destination directory", rel)
+	}
+	return dest, nil
+}
+
+// buildLocalPath maps an object key to a contained path under destDir.
+func buildLocalPath(destDir, prefix, key string) (string, error) {
 	rel := strings.TrimPrefix(key, prefix)
 	rel = strings.TrimPrefix(rel, "/")
-	return filepath.Join(destDir, rel)
+	return safeJoinUnder(destDir, rel)
 }

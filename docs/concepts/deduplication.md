@@ -44,7 +44,7 @@ After 10 releases:
   Savings:                               ~89%
 ```
 
-This is why `s3lo stats` shows a "dedup savings" number — the difference between what a naive registry would store and what s3lo actually stores.
+This is why `s3lo bucket stats` shows a "dedup savings" number — the difference between what a naive registry would store and what s3lo actually stores.
 
 ## Deduplication during copy
 

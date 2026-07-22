@@ -100,7 +100,7 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 No cloud account? Use `local://` to store images on your filesystem:
 
 ```bash
-s3lo init --local ./local-s3
+s3lo bucket init --local ./local-s3
 s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
 s3lo pull local://./local-s3/myapp:v1.0
 ```

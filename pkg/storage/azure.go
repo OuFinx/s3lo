@@ -210,10 +210,23 @@ func (c *AzureClient) DownloadDirectory(ctx context.Context, bucket, prefix, des
 			if err != nil {
 				rel = filepath.FromSlash(key)
 			}
-			return c.DownloadObjectToFile(ctx, bucket, key, filepath.Join(destDir, rel))
+			localPath, err := safeJoinUnder(destDir, rel)
+			if err != nil {
+				return err
+			}
+			return c.DownloadObjectToFile(ctx, bucket, key, localPath)
 		})
 	}
 	return g.Wait()
+}
+
+// TouchObject refreshes the blob's Last-Modified time via a metadata set.
+func (c *AzureClient) TouchObject(ctx context.Context, bucket, key string) error {
+	blobClient := c.client.ServiceClient().NewContainerClient(bucket).NewBlobClient(key)
+	if _, err := blobClient.SetMetadata(ctx, map[string]*string{}, nil); err != nil {
+		return fmt.Errorf("azure touch %s/%s: %w", bucket, key, err)
+	}
+	return nil
 }
 
 func (c *AzureClient) CopyObject(ctx context.Context, bucket, srcKey, destKey string) error {

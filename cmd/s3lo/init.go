@@ -15,10 +15,10 @@ var initCmd = &cobra.Command{
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/init/
 
   # Cloud mode — verify access and write default config
-  s3lo init s3://my-bucket/
+  s3lo bucket init s3://my-bucket/
 
   # Local mode — scaffold a local storage directory (no AWS needed)
-  s3lo init --local ~/.s3lo/local`,
+  s3lo bucket init --local ~/.s3lo/local`,
 	Args: cobra.MaximumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		localPath, _ := cmd.Flags().GetString("local")

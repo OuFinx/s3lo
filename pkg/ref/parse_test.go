@@ -47,6 +47,33 @@ func TestParse(t *testing.T) {
 			want:  Reference{Scheme: "local", Bucket: "./my-store", Image: "org/myapp", Tag: "v1.0"},
 		},
 		{
+			// Absolute local roots are supported (previously rejected as "empty bucket").
+			// The storage root is a single leading component, mirroring the relative form.
+			name:  "local absolute /path",
+			input: "local:///store/myapp:v1.0",
+			want:  Reference{Scheme: "local", Bucket: "/store", Image: "myapp", Tag: "v1.0"},
+		},
+		{
+			name:  "local absolute /path nested image",
+			input: "local:///store/org/myapp:v1.0",
+			want:  Reference{Scheme: "local", Bucket: "/store", Image: "org/myapp", Tag: "v1.0"},
+		},
+		{
+			name:  "local relative ../path",
+			input: "local://../store/myapp:v1.0",
+			want:  Reference{Scheme: "local", Bucket: "../store", Image: "myapp", Tag: "v1.0"},
+		},
+		{
+			name:    "trailing colon empty tag",
+			input:   "s3://my-bucket/myapp:",
+			wantErr: true,
+		},
+		{
+			name:    "trailing at empty digest",
+			input:   "s3://my-bucket/myapp@",
+			wantErr: true,
+		},
+		{
 			name:  "gs reference",
 			input: "gs://my-bucket/myapp:v1.0",
 			want:  Reference{Scheme: "gs", Bucket: "my-bucket", Image: "myapp", Tag: "v1.0"},

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 	"time"
@@ -85,6 +86,15 @@ For GCS, Azure, and local backends, blobs are streamed.`,
 
 		fmt.Printf("Serving %s at %s://%s\n", ref, scheme, addr)
 		fmt.Printf("Blob strategy: %s\n", blobStrategy)
+
+		// serve has no authentication. On a non-loopback bind, every image in the
+		// bucket (and presigned S3 blob URLs) is exposed to anyone who can reach the
+		// port — warn loudly so it is not left open unintentionally.
+		if !isLoopbackHost(host) {
+			fmt.Printf("\n⚠️  WARNING: binding to %q with no authentication — every image in the bucket is\n", host)
+			fmt.Printf("   readable by anyone who can reach this port. Restrict access at the network layer\n")
+			fmt.Printf("   (firewall/security group) or put an authenticating proxy in front.\n")
+		}
 		fmt.Printf("Press Ctrl+C to stop.\n\n")
 
 		if tlsCert != "" {
@@ -92,6 +102,18 @@ For GCS, Azure, and local backends, blobs are streamed.`,
 		}
 		return http.ListenAndServe(addr, srv)
 	},
+}
+
+// isLoopbackHost reports whether the bind host is loopback-only (safe default).
+func isLoopbackHost(host string) bool {
+	switch host {
+	case "", "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
 }
 
 func init() {

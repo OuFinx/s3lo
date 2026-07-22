@@ -52,6 +52,9 @@ func Parse(raw string) (Reference, error) {
 	if atIdx := strings.Index(imageAndTag, "@"); atIdx >= 0 {
 		ref.Image = imageAndTag[:atIdx]
 		ref.Digest = imageAndTag[atIdx+1:]
+		if ref.Digest == "" {
+			return Reference{}, fmt.Errorf("invalid reference %q: empty digest after @", raw)
+		}
 		return ref, nil
 	}
 
@@ -59,6 +62,9 @@ func Parse(raw string) (Reference, error) {
 	if colonIdx := strings.LastIndex(imageAndTag, ":"); colonIdx >= 0 {
 		ref.Image = imageAndTag[:colonIdx]
 		ref.Tag = imageAndTag[colonIdx+1:]
+		if ref.Tag == "" {
+			return Reference{}, fmt.Errorf("invalid reference %q: empty tag after ':'", raw)
+		}
 	} else {
 		ref.Image = imageAndTag
 		ref.Tag = "latest"
@@ -68,20 +74,30 @@ func Parse(raw string) (Reference, error) {
 }
 
 // splitBucketPath splits a path (after the scheme://) into (bucket, imageAndTag).
-// For local:// refs, relative prefixes like "./" and "../" are consumed as part
-// of the bucket name so that "local://./store/img:tag" gives bucket="./store".
-// For s3://, the first slash is always the bucket boundary.
+// For local:// refs the storage root is a single leading path component. Rooted
+// prefixes ("./", "../", or an absolute "/") are consumed together with the first
+// directory component, so "local://./store/img:tag", "local://../store/img:tag"
+// and "local:///abs/store/img:tag" all give bucket="<root>", image="img". The
+// image may itself contain slashes ("org/app"). For s3://, gs:// and az:// the
+// first slash is always the bucket boundary.
 func splitBucketPath(scheme, rest string) (bucket, remainder string, err error) {
 	if scheme == "local" {
+		prefixLen := 0
 		switch {
-		case strings.HasPrefix(rest, "./"), strings.HasPrefix(rest, "../"):
+		case strings.HasPrefix(rest, "./"):
+			prefixLen = 2
+		case strings.HasPrefix(rest, "../"):
+			prefixLen = 3
+		case strings.HasPrefix(rest, "/"):
+			prefixLen = 1
+		}
+		if prefixLen > 0 {
 			// Find the slash that ends the first directory component after the prefix.
-			after := rest[strings.Index(rest, "/")+1:]
-			i := strings.Index(after, "/")
+			i := strings.Index(rest[prefixLen:], "/")
 			if i < 0 {
 				return "", "", fmt.Errorf("missing image path after storage root %q", rest)
 			}
-			boundary := len(rest) - len(after) + i
+			boundary := prefixLen + i
 			return rest[:boundary], rest[boundary+1:], nil
 		}
 	}

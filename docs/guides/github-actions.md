@@ -135,7 +135,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Clean old tags and blobs
-        run: s3lo clean s3://my-bucket/ --confirm
+        run: s3lo bucket clean s3://my-bucket/ --confirm
 ```
 
 !!! tip
@@ -177,7 +177,7 @@ jobs:
 
       - name: Scan for vulnerabilities
         run: |
-          s3lo scan s3://my-bucket/myapp:${{ github.sha }} \
+          s3lo security scan s3://my-bucket/myapp:${{ github.sha }} \
             --severity HIGH,CRITICAL \
             --install-trivy
 ```
@@ -189,7 +189,7 @@ To upload results to the GitHub Security tab, use `--format sarif`:
 ```yaml
       - name: Scan (SARIF)
         run: |
-          s3lo scan s3://my-bucket/myapp:${{ github.sha }} \
+          s3lo security scan s3://my-bucket/myapp:${{ github.sha }} \
             --format sarif \
             --install-trivy > trivy-results.sarif
 

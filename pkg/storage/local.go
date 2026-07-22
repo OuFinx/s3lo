@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // LocalClient implements Backend using the local filesystem.
@@ -177,6 +178,16 @@ func (c *LocalClient) DownloadDirectory(_ context.Context, bucket, prefix, destD
 		}
 		return localCopyFile(p, dest)
 	})
+}
+
+// TouchObject updates the blob file's modification time to now.
+func (c *LocalClient) TouchObject(_ context.Context, bucket, key string) error {
+	path, err := c.safePath(bucket, key)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	return os.Chtimes(path, now, now)
 }
 
 func (c *LocalClient) CopyObject(_ context.Context, bucket, srcKey, destKey string) error {

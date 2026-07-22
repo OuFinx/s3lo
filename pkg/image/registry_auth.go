@@ -70,12 +70,17 @@ func (rc *registryClient) doWithRetry(ctx context.Context, fn func() (*http.Resp
 	var lastErr error
 	for i := 0; ; i++ {
 		resp, err := fn()
-		if err == nil && resp.StatusCode < 500 {
+		// 5xx and 429 (rate limit) are retryable; everything else is returned as-is.
+		if err == nil && resp.StatusCode < 500 && resp.StatusCode != http.StatusTooManyRequests {
 			return resp, nil
 		}
 		if err != nil {
 			lastErr = err
 			slog.Debug("registry request error, will retry", "attempt", i+1, "error", err)
+		} else if resp.StatusCode == http.StatusTooManyRequests {
+			lastErr = fmt.Errorf("rate limited: HTTP 429")
+			resp.Body.Close()
+			slog.Debug("registry rate limited, will retry", "attempt", i+1)
 		} else {
 			lastErr = fmt.Errorf("server error: HTTP %d", resp.StatusCode)
 			resp.Body.Close()
@@ -118,7 +123,7 @@ func (rc *registryClient) doRequest(ctx context.Context, rawURL, registry, image
 	if resp.StatusCode == http.StatusUnauthorized {
 		resp.Body.Close()
 		slog.Debug("registry 401, negotiating token", "registry", registry)
-		newToken, err := handleChallenge(rc.http, resp.Header.Get("WWW-Authenticate"), imageName)
+		newToken, err := handleChallenge(ctx, rc.http, resp.Header.Get("WWW-Authenticate"), imageName)
 		if err != nil {
 			return nil, fmt.Errorf("auth challenge: %w", err)
 		}
@@ -130,7 +135,9 @@ func (rc *registryClient) doRequest(ctx context.Context, rawURL, registry, image
 				return nil, err
 			}
 			r.Header.Set("Accept", acceptHeader())
-			r.Header.Set("Authorization", "Bearer "+newToken)
+			// Use the registry-appropriate scheme (ECR is Basic, others Bearer)
+			// rather than hardcoding Bearer, so a refreshed ECR token is sent correctly.
+			r.Header.Set("Authorization", authHeader(registry, newToken))
 			return rc.http.Do(r)
 		})
 		if err != nil {
@@ -216,7 +223,7 @@ func resolveECRAuth(ctx context.Context, registry string) (string, error) {
 }
 
 // handleChallenge parses a WWW-Authenticate Bearer challenge and fetches a token.
-func handleChallenge(client *http.Client, header, imageName string) (string, error) {
+func handleChallenge(ctx context.Context, client *http.Client, header, imageName string) (string, error) {
 	if header == "" {
 		return "", fmt.Errorf("no WWW-Authenticate header")
 	}
@@ -247,7 +254,11 @@ func handleChallenge(client *http.Client, header, imageName string) (string, err
 	tokenURL.RawQuery = q.Encode()
 
 	slog.Debug("fetching registry token", "url", tokenURL.String())
-	resp, err := client.Get(tokenURL.String())
+	tokReq, err := http.NewRequestWithContext(ctx, http.MethodGet, tokenURL.String(), nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := client.Do(tokReq)
 	if err != nil {
 		return "", err
 	}

@@ -115,6 +115,12 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 				}
 			} else {
 				slog.Debug("blob already exists, skipping", "digest", entry.Name()[:12])
+				// Refresh the existing blob's timestamp so it stays inside the GC
+				// grace window while this push writes its manifest (avoids a concurrent
+				// GC reaping a dedup-shared blob as "unreferenced"). Best-effort.
+				if err := client.TouchObject(gCtx, parsed.Bucket, key); err != nil {
+					slog.Debug("touch existing blob failed", "digest", entry.Name()[:12], "err", err)
+				}
 			}
 
 			if opts.OnBlob != nil {

@@ -3,7 +3,7 @@
 Sign an image manifest with a cryptographic key. The signature is stored in S3 alongside the manifest and can be verified with [`s3lo verify`](verify.md).
 
 ```
-s3lo sign <s3-ref> --key <key-ref>
+s3lo security sign <s3-ref> --key <key-ref>
 ```
 
 The reference must include an explicit tag. Both `s3://` and `local://` references are supported.
@@ -30,20 +30,20 @@ Note the triple slash (`awskms:///`) — the empty segment between `//` and the 
 
 ```bash
 # Sign with AWS KMS (recommended for production / FedRAMP)
-s3lo sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+s3lo security sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
 
 # Sign with a KMS key ARN
-s3lo sign s3://my-bucket/myapp:v1.0 \
+s3lo security sign s3://my-bucket/myapp:v1.0 \
   --key "awskms:///arn:aws:kms:us-east-1:123456789012:key/mrk-abc123"
 
 # Sign with a local key file (set COSIGN_PASSWORD if key is encrypted)
-COSIGN_PASSWORD=secret s3lo sign s3://my-bucket/myapp:v1.0 --key cosign.key
+COSIGN_PASSWORD=secret s3lo security sign s3://my-bucket/myapp:v1.0 --key cosign.key
 
 # Sign a local:// image
-COSIGN_PASSWORD=secret s3lo sign local://./local-s3/alpine:latest --key cosign.key
+COSIGN_PASSWORD=secret s3lo security sign local://./local-s3/alpine:latest --key cosign.key
 
 # JSON output for CI
-s3lo sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer --output json
+s3lo security sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer --output json
 ```
 
 ## Output

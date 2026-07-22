@@ -30,6 +30,9 @@ type Backend interface {
 	DownloadObjectToFile(ctx context.Context, bucket, key, localPath string) error
 	DownloadDirectory(ctx context.Context, bucket, prefix, destDir string) error
 	CopyObject(ctx context.Context, bucket, srcKey, destKey string) error
+	// TouchObject refreshes an object's last-modified time (used by push to keep
+	// dedup-skipped blobs inside the GC grace window).
+	TouchObject(ctx context.Context, bucket, key string) error
 }
 
 type endpointKey struct{}

@@ -195,10 +195,23 @@ func (c *GCSClient) DownloadDirectory(ctx context.Context, bucket, prefix, destD
 			if err != nil {
 				rel = filepath.FromSlash(key)
 			}
-			return c.DownloadObjectToFile(ctx, bucket, key, filepath.Join(destDir, rel))
+			localPath, err := safeJoinUnder(destDir, rel)
+			if err != nil {
+				return err
+			}
+			return c.DownloadObjectToFile(ctx, bucket, key, localPath)
 		})
 	}
 	return g.Wait()
+}
+
+// TouchObject refreshes the object's update time by rewriting it onto itself.
+func (c *GCSClient) TouchObject(ctx context.Context, bucket, key string) error {
+	obj := c.client.Bucket(bucket).Object(key)
+	if _, err := obj.CopierFrom(obj).Run(ctx); err != nil {
+		return fmt.Errorf("gcs touch %s/%s: %w", bucket, key, err)
+	}
+	return nil
 }
 
 func (c *GCSClient) CopyObject(ctx context.Context, bucket, srcKey, destKey string) error {

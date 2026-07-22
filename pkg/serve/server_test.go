@@ -76,6 +76,9 @@ func (f *fakeBackend) DownloadDirectory(_ context.Context, _, _, _ string) error
 func (f *fakeBackend) CopyObject(_ context.Context, _, _, _ string) error {
 	panic("CopyObject not expected in serve tests")
 }
+func (f *fakeBackend) TouchObject(_ context.Context, _, _ string) error {
+	panic("TouchObject not expected in serve tests")
+}
 
 type fakeNotFoundError struct{ key string }
 

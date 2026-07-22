@@ -2,30 +2,45 @@ package image
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 
 	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
+// makeMultiArchStore builds a content-addressable multi-arch store whose blob keys
+// are the real sha256 of their contents (so pull/copy digest verification passes),
+// while the manifest "size" fields stay at fixed values (90/60/90/70) so the logical
+// size assertions (310 total) remain meaningful and independent of content length.
 func makeMultiArchStore(t *testing.T, parentDir, storeName, imageName, tag string) string {
 	t.Helper()
 
 	storeDir := filepath.Join(parentDir, storeName)
-	index := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:1111111111111111111111111111111111111111111111111111111111111111","size":200,"platform":{"os":"linux","architecture":"amd64"}},{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:2222222222222222222222222222222222222222222222222222222222222222","size":200,"platform":{"os":"linux","architecture":"arm64"}}]}`)
-	manifest1 := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"sha256:3333333333333333333333333333333333333333333333333333333333333333","size":90},"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":"sha256:4444444444444444444444444444444444444444444444444444444444444444","size":60}]}`)
-	manifest2 := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"sha256:5555555555555555555555555555555555555555555555555555555555555555","size":90},"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":"sha256:6666666666666666666666666666666666666666666666666666666666666666","size":70}]}`)
+
+	writeBlob := func(content []byte) string {
+		digest := fmt.Sprintf("%x", sha256.Sum256(content))
+		writeTestFile(t, filepath.Join(storeDir, "blobs", "sha256", digest), content)
+		return digest
+	}
+
+	cfg1 := writeBlob([]byte("cfg1"))
+	layer1 := writeBlob([]byte("layer1"))
+	cfg2 := writeBlob([]byte("cfg2"))
+	layer2 := writeBlob([]byte("layer2"))
+
+	manifest1 := []byte(fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"sha256:%s","size":90},"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":"sha256:%s","size":60}]}`, cfg1, layer1))
+	manifest2 := []byte(fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"sha256:%s","size":90},"layers":[{"mediaType":"application/vnd.oci.image.layer.v1.tar+gzip","digest":"sha256:%s","size":70}]}`, cfg2, layer2))
+
+	m1 := writeBlob(manifest1)
+	m2 := writeBlob(manifest2)
+
+	index := []byte(fmt.Sprintf(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.index.v1+json","manifests":[{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:%s","size":200,"platform":{"os":"linux","architecture":"amd64"}},{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:%s","size":200,"platform":{"os":"linux","architecture":"arm64"}}]}`, m1, m2))
 
 	writeTestFile(t, filepath.Join(storeDir, "manifests", imageName, tag, "manifest.json"), index)
-	writeTestFile(t, filepath.Join(storeDir, "blobs", "sha256", strings.Repeat("1", 64)), manifest1)
-	writeTestFile(t, filepath.Join(storeDir, "blobs", "sha256", strings.Repeat("2", 64)), manifest2)
-	writeTestFile(t, filepath.Join(storeDir, "blobs", "sha256", strings.Repeat("3", 64)), []byte("cfg1"))
-	writeTestFile(t, filepath.Join(storeDir, "blobs", "sha256", strings.Repeat("4", 64)), []byte("layer1"))
-	writeTestFile(t, filepath.Join(storeDir, "blobs", "sha256", strings.Repeat("5", 64)), []byte("cfg2"))
-	writeTestFile(t, filepath.Join(storeDir, "blobs", "sha256", strings.Repeat("6", 64)), []byte("layer2"))
 
 	return "local://./" + storeName + "/" + imageName + ":" + tag
 }

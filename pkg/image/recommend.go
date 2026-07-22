@@ -123,9 +123,9 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 		if hasLifecycle {
 			result.Findings = append(result.Findings, Finding{"s3lo lifecycle config: configured", true})
 			result.Recommendations = append(result.Recommendations, Recommendation{
-				Title: "Schedule s3lo clean to enforce lifecycle rules automatically",
+				Title: "Schedule s3lo bucket clean to enforce lifecycle rules automatically",
 				Description: "Lifecycle rules are configured in s3lo.yaml but only enforced when\n" +
-					"s3lo clean is run. Schedule it to run automatically:\n\n" +
+					"s3lo bucket clean is run. Schedule it to run automatically:\n\n" +
 					"  # GitHub Actions — add to .github/workflows/cleanup.yml:\n" +
 					"  on:\n" +
 					"    schedule:\n" +
@@ -135,9 +135,9 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 					"      runs-on: ubuntu-latest\n" +
 					"      steps:\n" +
 					"        - uses: actions/checkout@v4\n" +
-					"        - run: s3lo clean s3://" + bucket + "/ --confirm\n\n" +
+					"        - run: s3lo bucket clean s3://" + bucket + "/ --confirm\n\n" +
 					"  # Other options:\n" +
-					"  #   cron on a server:   0 2 * * * s3lo clean s3://" + bucket + "/ --confirm\n" +
+					"  #   cron on a server:   0 2 * * * s3lo bucket clean s3://" + bucket + "/ --confirm\n" +
 					"  #   AWS Lambda + EventBridge: deploy s3lo as a Lambda, trigger nightly via EventBridge\n" +
 					"  #   Terraform: aws_lambda_function + aws_cloudwatch_event_rule + aws_cloudwatch_event_target",
 			})
@@ -148,7 +148,7 @@ func Recommend(ctx context.Context, s3BucketRef string) (*RecommendResult, error
 				Description: "No lifecycle rules are set. Without them, old tags and blobs accumulate indefinitely.\n" +
 					"Example:\n\n" +
 					"  s3lo config set s3://" + bucket + "/ lifecycle.keep_last=10 lifecycle.max_age=90d\n" +
-					"  s3lo clean s3://" + bucket + "/ --confirm",
+					"  s3lo bucket clean s3://" + bucket + "/ --confirm",
 			})
 		}
 	}

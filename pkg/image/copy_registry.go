@@ -86,6 +86,13 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		}
 		actualSize := info.Size()
 
+		// Verify the fetched bytes match the digest before storing them under the
+		// content-addressable key — a buggy or compromised upstream registry must
+		// not be able to poison the bucket with mismatched content.
+		if err := verifyFileDigest(tmpPath, encoded); err != nil {
+			return fmt.Errorf("verify blob %s: %w", encoded[:12], err)
+		}
+
 		if err := s3c.UploadFile(ctx, tmpPath, destParsed.Bucket, destKey, storage.StorageClassIntelligentTiering); err != nil {
 			return fmt.Errorf("upload blob %s: %w", encoded[:12], err)
 		}
@@ -182,6 +189,9 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 					}
 					if exists {
 						return nil
+					}
+					if err := verifyBytesDigest(pi.data, encoded); err != nil {
+						return fmt.Errorf("verify platform manifest %s: %w", encoded[:12], err)
 					}
 					return s3c.PutObject(gCtx, destParsed.Bucket, destKey, pi.data)
 				})

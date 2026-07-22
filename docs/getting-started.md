@@ -144,7 +144,7 @@ You can test s3lo without an AWS account using local storage:
 
 ```bash
 # Initialize a local storage directory
-s3lo init --local ./local-s3
+s3lo bucket init --local ./local-s3
 
 # Push, pull, and list — same commands, just use local://
 s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0

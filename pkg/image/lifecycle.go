@@ -173,11 +173,19 @@ func evaluateTags(lc *LifecycleImageConfig, tags []tagMeta) ([]tagMeta, error) {
 		if keepSet[tm.tag] {
 			continue
 		}
-		shouldDelete := false
-		if lc.KeepLast > 0 && kept >= lc.KeepLast {
-			shouldDelete = true
+		// keep_last is a retention floor: the newest N non-protected tags are
+		// always kept, regardless of age. Only beyond that floor does max_age
+		// (or, if no max_age is set, keep_last itself) decide what to prune.
+		if lc.KeepLast > 0 && kept < lc.KeepLast {
+			kept++
+			continue
 		}
-		if maxAge > 0 && now.Sub(tm.lastModified) > maxAge {
+		shouldDelete := false
+		if maxAge > 0 {
+			// Beyond the floor, prune only tags older than max_age.
+			shouldDelete = now.Sub(tm.lastModified) > maxAge
+		} else if lc.KeepLast > 0 {
+			// No age limit: keep_last alone prunes everything beyond the newest N.
 			shouldDelete = true
 		}
 		if shouldDelete {

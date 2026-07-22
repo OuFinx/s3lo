@@ -25,13 +25,13 @@ and produces a CloudTrail audit entry for every signing operation.`,
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/sign/
 
   # Sign with AWS KMS (recommended for production / FedRAMP)
-  s3lo sign s3://my-bucket/myapp:v1.0 --key awskms://alias/release-signer
+  s3lo security sign s3://my-bucket/myapp:v1.0 --key awskms://alias/release-signer
 
   # Sign with ARN
-  s3lo sign s3://my-bucket/myapp:v1.0 --key "awskms:///arn:aws:kms:us-east-1:123456789012:key/mrk-abc"
+  s3lo security sign s3://my-bucket/myapp:v1.0 --key "awskms:///arn:aws:kms:us-east-1:123456789012:key/mrk-abc"
 
   # Sign with a local key file (dev / CI)
-  COSIGN_PASSWORD=secret s3lo sign s3://my-bucket/myapp:v1.0 --key cosign.key`,
+  COSIGN_PASSWORD=secret s3lo security sign s3://my-bucket/myapp:v1.0 --key cosign.key`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireTag(args[0]); err != nil {
