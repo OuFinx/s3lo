@@ -22,6 +22,7 @@ type DoctorResult struct {
 	Scheme         string        `json:"scheme"`
 	LayoutOK       bool          `json:"layout_ok"`
 	ConfigOK       bool          `json:"config_ok"`
+	ConfigPresent  bool          `json:"config_present"`
 	ManifestIssues []DoctorIssue `json:"manifest_issues,omitempty"`
 	OrphanedBlobs  int           `json:"orphaned_blobs"`
 	OrphanedBytes  int64         `json:"orphaned_bytes"`
@@ -66,8 +67,20 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	}
 
 	// --- Config check ---
+	// An absent s3lo.yaml is fine (config is optional); only a config that exists
+	// but cannot be read is an actual problem.
 	_, cfgErr := client.GetObject(ctx, bucket, prefix+bucketConfigKey)
-	result.ConfigOK = cfgErr == nil
+	switch {
+	case cfgErr == nil:
+		result.ConfigPresent = true
+		result.ConfigOK = true
+	case storage.IsNotFound(cfgErr):
+		result.ConfigPresent = false
+		result.ConfigOK = true
+	default:
+		result.ConfigPresent = false
+		result.ConfigOK = false
+	}
 
 	// --- Manifest integrity check ---
 	// For each manifest.json, verify all referenced blobs exist.
