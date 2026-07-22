@@ -3,7 +3,7 @@
 Download an image from S3 and scan it for vulnerabilities using [Trivy](https://trivy.dev).
 
 ```
-s3lo scan <s3-ref> [flags]
+s3lo security scan <s3-ref> [flags]
 ```
 
 The reference must include an explicit tag. Both `s3://` and `local://` references are supported.
@@ -36,7 +36,7 @@ trivy not found — install it (https://trivy.dev) or run with --install-trivy t
 Pass `--install-trivy` in CI to enable auto-install:
 
 ```yaml
-- run: s3lo scan s3://my-bucket/myapp:v1.0 --severity HIGH,CRITICAL --install-trivy
+- run: s3lo security scan s3://my-bucket/myapp:v1.0 --severity HIGH,CRITICAL --install-trivy
 ```
 
 ## Examples
@@ -44,31 +44,31 @@ Pass `--install-trivy` in CI to enable auto-install:
 **Basic scan (all severities):**
 
 ```bash
-s3lo scan s3://my-bucket/myapp:v1.0
+s3lo security scan s3://my-bucket/myapp:v1.0
 ```
 
 **Fail only on HIGH or CRITICAL:**
 
 ```bash
-s3lo scan s3://my-bucket/myapp:v1.0 --severity HIGH,CRITICAL
+s3lo security scan s3://my-bucket/myapp:v1.0 --severity HIGH,CRITICAL
 ```
 
 **JSON output (for CI pipeline integration):**
 
 ```bash
-s3lo scan s3://my-bucket/myapp:v1.0 --format json > results.json
+s3lo security scan s3://my-bucket/myapp:v1.0 --format json > results.json
 ```
 
 **SARIF output (for GitHub Security tab):**
 
 ```bash
-s3lo scan s3://my-bucket/myapp:v1.0 --format sarif > trivy-results.sarif
+s3lo security scan s3://my-bucket/myapp:v1.0 --format sarif > trivy-results.sarif
 ```
 
 **Scan a specific platform from a multi-arch image:**
 
 ```bash
-s3lo scan s3://my-bucket/alpine:latest --platform linux/arm64
+s3lo security scan s3://my-bucket/alpine:latest --platform linux/arm64
 ```
 
 ## Output
@@ -138,7 +138,7 @@ s3lo scan s3://my-bucket/alpine:latest --platform linux/arm64
 
 - name: Scan for vulnerabilities
   run: |
-    s3lo scan s3://my-bucket/${{ github.repository }}:${{ github.sha }} \
+    s3lo security scan s3://my-bucket/${{ github.repository }}:${{ github.sha }} \
       --severity HIGH,CRITICAL \
       --install-trivy
 ```

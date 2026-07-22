@@ -34,7 +34,7 @@ s3lo config set "s3://my-bucket/dev/*" lifecycle.keep_last=3 lifecycle.max_age=7
 Always dry run first to see what would be deleted:
 
 ```bash
-s3lo clean s3://my-bucket/
+s3lo bucket clean s3://my-bucket/
 ```
 
 Output:
@@ -48,7 +48,7 @@ Run with --confirm to apply changes.
 ### Step 3: Apply
 
 ```bash
-s3lo clean s3://my-bucket/ --confirm
+s3lo bucket clean s3://my-bucket/ --confirm
 ```
 
 ### Step 4: Schedule with GitHub Actions
@@ -73,7 +73,7 @@ jobs:
           role-to-assume: arn:aws:iam::123456789012:role/ci-s3lo-role
           aws-region: us-east-1
 
-      - run: s3lo clean s3://my-bucket/ --confirm
+      - run: s3lo bucket clean s3://my-bucket/ --confirm
 ```
 
 ## Common patterns
@@ -120,7 +120,7 @@ Run blob GC separately if needed:
 
 ```bash
 # GC blobs without touching tags
-s3lo clean s3://my-bucket/ --blobs --confirm
+s3lo bucket clean s3://my-bucket/ --blobs --confirm
 ```
 
 ## Viewing the config

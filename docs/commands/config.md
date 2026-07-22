@@ -189,5 +189,5 @@ Recommendations:
 
 2. Configure lifecycle rules to automatically clean old tags:
    s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
-   s3lo clean s3://my-bucket/ --confirm
+   s3lo bucket clean s3://my-bucket/ --confirm
 ```

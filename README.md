@@ -89,7 +89,7 @@ s3lo list s3://my-bucket/
 s3lo inspect s3://my-bucket/myapp:v1.0
 
 # Show storage stats and deduplication savings
-s3lo stats s3://my-bucket/
+s3lo bucket stats s3://my-bucket/
 
 # Delete a tag
 s3lo delete s3://my-bucket/myapp:v1.0
@@ -98,8 +98,8 @@ s3lo delete s3://my-bucket/myapp:v1.0
 s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
 
 # Clean old tags and unreferenced blobs (dry run by default)
-s3lo clean s3://my-bucket/
-s3lo clean s3://my-bucket/ --confirm
+s3lo bucket clean s3://my-bucket/
+s3lo bucket clean s3://my-bucket/ --confirm
 
 # Analyze bucket configuration and get recommendations
 s3lo config recommend s3://my-bucket/
@@ -115,14 +115,14 @@ s3lo history s3://my-bucket/myapp
 s3lo tui s3://my-bucket/
 
 # Sign an image with AWS KMS (FIPS 140-2, CloudTrail audit log)
-s3lo sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+s3lo security sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
 
 # Sign with a local key file
-COSIGN_PASSWORD=secret s3lo sign s3://my-bucket/myapp:v1.0 --key cosign.key
+COSIGN_PASSWORD=secret s3lo security sign s3://my-bucket/myapp:v1.0 --key cosign.key
 
 # Verify a signature (exit 0 = valid, 1 = invalid/missing, 2 = infra error)
-s3lo verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
-s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json
+s3lo security verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+s3lo security verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json
 
 # --- Google Cloud Storage ---
 s3lo push myapp:v1.0 gs://my-gcs-bucket/myapp:v1.0
@@ -140,7 +140,7 @@ s3lo pull s3://my-bucket/myapp:v1.0 --endpoint http://localhost:9000
 # --- Local storage (no cloud account needed) ---
 
 # Initialize local storage
-s3lo init --local ./local-s3
+s3lo bucket init --local ./local-s3
 
 # Push and pull with local://
 s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0

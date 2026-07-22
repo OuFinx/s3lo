@@ -79,6 +79,11 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			if err := srcClient.DownloadObjectToFile(ctx, srcParsed.Bucket, srcKey, tmpName); err != nil {
 				return fmt.Errorf("download blob %s: %w", digest[:12], err)
 			}
+			// Verify content against its digest before writing it to the destination
+			// under the content-addressable key (guards against corruption in transit).
+			if err := verifyFileDigest(tmpName, digest); err != nil {
+				return fmt.Errorf("verify blob %s: %w", digest[:12], err)
+			}
 			if err := destClient.UploadFile(ctx, tmpName, destParsed.Bucket, destKey, storage.StorageClassIntelligentTiering); err != nil {
 				return fmt.Errorf("upload blob %s: %w", digest[:12], err)
 			}

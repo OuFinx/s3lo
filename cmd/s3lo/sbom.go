@@ -21,10 +21,10 @@ Trivy must be installed, or s3lo can install it automatically.
 Use --install-trivy to skip the confirmation prompt.`,
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/sbom/
 
-  s3lo sbom s3://my-bucket/myapp:v1.0
-  s3lo sbom s3://my-bucket/myapp:v1.0 --format spdx-json
-  s3lo sbom s3://my-bucket/myapp:v1.0 --format cyclonedx -o myapp.cdx.json
-  s3lo sbom s3://my-bucket/myapp:v1.0 --platform linux/amd64`,
+  s3lo security sbom s3://my-bucket/myapp:v1.0
+  s3lo security sbom s3://my-bucket/myapp:v1.0 --format spdx-json
+  s3lo security sbom s3://my-bucket/myapp:v1.0 --format cyclonedx -o myapp.cdx.json
+  s3lo security sbom s3://my-bucket/myapp:v1.0 --platform linux/amd64`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireTag(args[0]); err != nil {

@@ -55,7 +55,7 @@ Inside AWS (EC2 → S3, same region), data transfer is free. s3lo's speed advant
 ## Check your actual savings
 
 ```bash
-s3lo stats s3://my-bucket/
+s3lo bucket stats s3://my-bucket/
 ```
 
 ```

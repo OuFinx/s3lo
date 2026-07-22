@@ -24,7 +24,7 @@ No — S3 is not an OCI registry. You must use `s3lo pull`. For Kubernetes, cons
 
 **What happens if a push is interrupted?**
 
-Blobs uploaded before the interruption stay in S3. Re-running the push will skip those blobs and continue. Manifest files are uploaded last — if interrupted before the manifest is written, the tag won't appear in `s3lo list`. Orphaned blobs are cleaned up by `s3lo clean --blobs`.
+Blobs uploaded before the interruption stay in S3. Re-running the push will skip those blobs and continue. Manifest files are uploaded last — if interrupted before the manifest is written, the tag won't appear in `s3lo list`. Orphaned blobs are cleaned up by `s3lo bucket clean --blobs`.
 
 **Can two pushes run in parallel to the same tag?**
 
@@ -56,7 +56,7 @@ Yes — deduplication is bucket-wide. `myapp:v1.0` and `otherapp:latest` sharing
 s3lo list s3://my-bucket/ | grep "^myapp:" | while read ref; do
   s3lo delete "s3://my-bucket/$ref"
 done
-s3lo clean s3://my-bucket/ --blobs --confirm
+s3lo bucket clean s3://my-bucket/ --blobs --confirm
 ```
 
 **Does s3lo work with S3-compatible storage (MinIO, Cloudflare R2, Ceph, etc.)?**
@@ -97,7 +97,7 @@ Authentication uses `DefaultAzureCredential` — `az login` locally, or service 
 
 **Can I use s3lo without an AWS account?**
 
-Yes. Use `s3lo init --local ./my-store` to create a local directory with the OCI layout, then use `local://` references (e.g. `local://./my-store/myapp:v1.0`). All commands — push, pull, list, history, inspect, delete, copy — work with local storage.
+Yes. Use `s3lo bucket init --local ./my-store` to create a local directory with the OCI layout, then use `local://` references (e.g. `local://./my-store/myapp:v1.0`). All commands — push, pull, list, history, inspect, delete, copy — work with local storage.
 
 ---
 

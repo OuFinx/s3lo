@@ -3,7 +3,7 @@
 Prune old image tags according to lifecycle rules and garbage collect unreferenced blobs.
 
 ```
-s3lo clean <bucket-ref> [flags]
+s3lo bucket clean <bucket-ref> [flags]
 ```
 
 Both `s3://` and `local://` references are supported.
@@ -42,16 +42,16 @@ Reads all manifests in the bucket, builds a set of referenced blob digests, then
 
 ```bash
 # Dry run — see what would be deleted (no changes made)
-s3lo clean s3://my-bucket/
+s3lo bucket clean s3://my-bucket/
 
 # Full cleanup: prune tags + GC blobs
-s3lo clean s3://my-bucket/ --confirm
+s3lo bucket clean s3://my-bucket/ --confirm
 
 # Only prune old tags (keep blobs for now)
-s3lo clean s3://my-bucket/ --tags --confirm
+s3lo bucket clean s3://my-bucket/ --tags --confirm
 
 # Only GC unreferenced blobs (e.g. after manual deletes)
-s3lo clean s3://my-bucket/ --blobs --confirm
+s3lo bucket clean s3://my-bucket/ --blobs --confirm
 ```
 
 ## Output

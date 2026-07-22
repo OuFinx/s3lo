@@ -12,8 +12,8 @@ var statsCmd = &cobra.Command{
 	Short:   "Show storage usage and deduplication savings",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/stats/
 
-  s3lo stats s3://my-bucket/
-  s3lo stats s3://my-bucket/ --output json`,
+  s3lo bucket stats s3://my-bucket/
+  s3lo bucket stats s3://my-bucket/ --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFmt, _ := cmd.Flags().GetString("output")

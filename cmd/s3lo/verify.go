@@ -22,13 +22,13 @@ Exit codes:
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/verify/
 
   # Verify with AWS KMS public key
-  s3lo verify s3://my-bucket/myapp:v1.0 --key awskms://alias/release-signer
+  s3lo security verify s3://my-bucket/myapp:v1.0 --key awskms://alias/release-signer
 
   # Verify with a local public key file
-  s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub
+  s3lo security verify s3://my-bucket/myapp:v1.0 --key cosign.pub
 
   # Machine-readable output for CI
-  s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json`,
+  s3lo security verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireTag(args[0]); err != nil {

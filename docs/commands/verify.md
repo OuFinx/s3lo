@@ -3,7 +3,7 @@
 Verify that a stored image signature matches the current manifest digest. Use this as a gate in CI/CD pipelines to ensure only signed images are deployed.
 
 ```
-s3lo verify <s3-ref> --key <key-ref>
+s3lo security verify <s3-ref> --key <key-ref>
 ```
 
 The reference must include an explicit tag. Both `s3://` and `local://` references are supported.
@@ -41,20 +41,20 @@ Note the triple slash (`awskms:///`) — required by the cosign KMS reference fo
 
 ```bash
 # Verify with AWS KMS
-s3lo verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+s3lo security verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
 
 # Verify with a local public key file
-s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub
+s3lo security verify s3://my-bucket/myapp:v1.0 --key cosign.pub
 
 # Verify a local:// image
-s3lo verify local://./local-s3/alpine:latest --key cosign.pub
+s3lo security verify local://./local-s3/alpine:latest --key cosign.pub
 
 # CI gate — exits 1 on failure, 2 on infrastructure error
-s3lo verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer \
+s3lo security verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer \
   && echo "Deploy approved" || echo "Deploy blocked"
 
 # Machine-readable output
-s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json
+s3lo security verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json
 ```
 
 ## Output
@@ -110,7 +110,7 @@ On failure, `verified` is `false` and `reason` is set:
 ```yaml
 - name: Verify image signature
   run: |
-    s3lo verify s3://my-bucket/myapp:${{ github.sha }} \
+    s3lo security verify s3://my-bucket/myapp:${{ github.sha }} \
       --key awskms:///alias/release-signer \
       --output json | tee verify-result.json
   env:
@@ -123,7 +123,7 @@ The `--output json` result can be saved as a build artifact for audit evidence.
 
 ```bash
 #!/bin/bash
-s3lo verify s3://my-bucket/myapp:${VERSION} --key awskms:///alias/release-signer
+s3lo security verify s3://my-bucket/myapp:${VERSION} --key awskms:///alias/release-signer
 if [ $? -ne 0 ]; then
   echo "Image verification failed. Refusing deployment."
   exit 1
@@ -146,8 +146,8 @@ If any check fails, the command exits `1` with a descriptive message.
 If an image has been signed by multiple keys, each key produces its own signature file. Run `verify` once per key you want to check:
 
 ```bash
-s3lo verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/ci-signer
-s3lo verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+s3lo security verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/ci-signer
+s3lo security verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
 ```
 
 Use [`s3lo inspect`](inspect.md) to see which keys have signed an image.

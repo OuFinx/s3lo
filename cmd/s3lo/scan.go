@@ -5,6 +5,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net/http"
@@ -29,10 +30,10 @@ Trivy must be installed, or s3lo can install it automatically.
 Use --install-trivy to skip the confirmation prompt.`,
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/scan/
 
-  s3lo scan s3://my-bucket/myapp:v1.0
-  s3lo scan s3://my-bucket/myapp:v1.0 --severity HIGH,CRITICAL
-  s3lo scan s3://my-bucket/myapp:v1.0 --format json
-  s3lo scan s3://my-bucket/myapp:v1.0 --platform linux/arm64`,
+  s3lo security scan s3://my-bucket/myapp:v1.0
+  s3lo security scan s3://my-bucket/myapp:v1.0 --severity HIGH,CRITICAL
+  s3lo security scan s3://my-bucket/myapp:v1.0 --format json
+  s3lo security scan s3://my-bucket/myapp:v1.0 --platform linux/arm64`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireTag(args[0]); err != nil {
@@ -149,12 +150,21 @@ func doInstallTrivy(ctx context.Context) (string, error) {
 	}
 	// Version has no "v" prefix in archive names.
 	bare := strings.TrimPrefix(version, "v")
-	url := fmt.Sprintf("https://github.com/aquasecurity/trivy/releases/download/%s/trivy_%s_%s.tar.gz", version, bare, platform)
+	archiveName := fmt.Sprintf("trivy_%s_%s.tar.gz", bare, platform)
+	url := fmt.Sprintf("https://github.com/aquasecurity/trivy/releases/download/%s/%s", version, archiveName)
+
+	// Fetch the published checksum so the downloaded archive can be verified before
+	// its contents are extracted and executed — a tampered release asset or a
+	// TLS-terminating proxy must not be able to install a trojaned binary.
+	wantSHA, err := fetchTrivyChecksum(ctx, version, bare, archiveName)
+	if err != nil {
+		return "", fmt.Errorf("fetch trivy checksum: %w", err)
+	}
 
 	fmt.Printf("Installing Trivy %s to %s ...\n", version, filepath.Join(installDir, "trivy"))
 
 	installPath := filepath.Join(installDir, "trivy")
-	if err := downloadAndExtractTrivy(ctx, url, installPath); err != nil {
+	if err := downloadAndExtractTrivy(ctx, url, installPath, wantSHA); err != nil {
 		return "", fmt.Errorf("install trivy: %w", err)
 	}
 
@@ -218,8 +228,38 @@ func trivyPlatformSuffix() (string, error) {
 // maxTrivyBinarySize caps the Trivy binary extraction at 500 MB.
 const maxTrivyBinarySize = 500 << 20
 
-// downloadAndExtractTrivy downloads a .tar.gz archive and extracts the "trivy" binary to destPath.
-func downloadAndExtractTrivy(ctx context.Context, url, destPath string) error {
+// fetchTrivyChecksum downloads Trivy's published checksums file for a release and
+// returns the expected sha256 (hex) for archiveName.
+func fetchTrivyChecksum(ctx context.Context, version, bare, archiveName string) (string, error) {
+	checksumURL := fmt.Sprintf("https://github.com/aquasecurity/trivy/releases/download/%s/trivy_%s_checksums.txt", version, bare)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, checksumURL, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("download checksums: HTTP %d", resp.StatusCode)
+	}
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return "", err
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) == 2 && fields[1] == archiveName {
+			return fields[0], nil
+		}
+	}
+	return "", fmt.Errorf("checksum for %s not found in checksums file", archiveName)
+}
+
+// downloadAndExtractTrivy downloads a .tar.gz archive, verifies its sha256 against
+// wantSHA, and extracts the "trivy" binary to destPath.
+func downloadAndExtractTrivy(ctx context.Context, url, destPath, wantSHA string) error {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -233,7 +273,27 @@ func downloadAndExtractTrivy(ctx context.Context, url, destPath string) error {
 		return fmt.Errorf("download failed: HTTP %d", resp.StatusCode)
 	}
 
-	gz, err := gzip.NewReader(resp.Body)
+	// Stream the archive to a temp file while hashing, then verify before extracting.
+	archive, err := os.CreateTemp("", "trivy-archive-*.tar.gz")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(archive.Name())
+	defer archive.Close()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(archive, io.TeeReader(resp.Body, hasher)); err != nil {
+		return fmt.Errorf("download archive: %w", err)
+	}
+	gotSHA := fmt.Sprintf("%x", hasher.Sum(nil))
+	if !strings.EqualFold(gotSHA, wantSHA) {
+		return fmt.Errorf("checksum mismatch: expected %s, got %s (refusing to install)", wantSHA, gotSHA)
+	}
+	if _, err := archive.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	gz, err := gzip.NewReader(archive)
 	if err != nil {
 		return fmt.Errorf("gzip: %w", err)
 	}

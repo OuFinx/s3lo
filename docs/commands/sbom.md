@@ -3,7 +3,7 @@
 Download an image from storage and generate a Software Bill of Materials using [Trivy](https://trivy.dev).
 
 ```
-s3lo sbom <s3-ref> [flags]
+s3lo security sbom <s3-ref> [flags]
 ```
 
 The reference must include an explicit tag. Both `s3://` and `local://` references are supported.
@@ -36,7 +36,7 @@ trivy not found — install it (https://trivy.dev) or run with --install-trivy t
 Pass `--install-trivy` in CI to enable auto-install:
 
 ```yaml
-- run: s3lo sbom s3://my-bucket/myapp:v1.0 -o sbom.cdx.json --install-trivy
+- run: s3lo security sbom s3://my-bucket/myapp:v1.0 -o sbom.cdx.json --install-trivy
 ```
 
 ## Examples
@@ -44,31 +44,31 @@ Pass `--install-trivy` in CI to enable auto-install:
 **Basic SBOM (CycloneDX, printed to stdout):**
 
 ```bash
-s3lo sbom s3://my-bucket/myapp:v1.0
+s3lo security sbom s3://my-bucket/myapp:v1.0
 ```
 
 **Write CycloneDX SBOM to a file:**
 
 ```bash
-s3lo sbom s3://my-bucket/myapp:v1.0 -o myapp.cdx.json
+s3lo security sbom s3://my-bucket/myapp:v1.0 -o myapp.cdx.json
 ```
 
 **SPDX JSON format:**
 
 ```bash
-s3lo sbom s3://my-bucket/myapp:v1.0 --format spdx-json -o myapp.spdx.json
+s3lo security sbom s3://my-bucket/myapp:v1.0 --format spdx-json -o myapp.spdx.json
 ```
 
 **SPDX tag-value format:**
 
 ```bash
-s3lo sbom s3://my-bucket/myapp:v1.0 --format spdx -o myapp.spdx
+s3lo security sbom s3://my-bucket/myapp:v1.0 --format spdx -o myapp.spdx
 ```
 
 **Multi-arch image — select a specific platform:**
 
 ```bash
-s3lo sbom s3://my-bucket/myapp:v1.0 --platform linux/amd64 -o myapp.cdx.json
+s3lo security sbom s3://my-bucket/myapp:v1.0 --platform linux/amd64 -o myapp.cdx.json
 ```
 
 ## Output
@@ -76,7 +76,7 @@ s3lo sbom s3://my-bucket/myapp:v1.0 --platform linux/amd64 -o myapp.cdx.json
 When `-o`/`--output` is omitted, the SBOM is written to stdout so it can be piped or redirected:
 
 ```bash
-s3lo sbom s3://my-bucket/myapp:v1.0 | jq '.metadata.component.name'
+s3lo security sbom s3://my-bucket/myapp:v1.0 | jq '.metadata.component.name'
 ```
 
 Progress output (the download bar) is written to stderr so it does not pollute the SBOM data on stdout.
@@ -99,7 +99,7 @@ SBOM written to myapp.cdx.json
 
 - name: Generate SBOM
   run: |
-    s3lo sbom s3://my-bucket/${{ github.repository }}:${{ github.sha }} \
+    s3lo security sbom s3://my-bucket/${{ github.repository }}:${{ github.sha }} \
       --format cyclonedx \
       -o sbom.cdx.json \
       --install-trivy

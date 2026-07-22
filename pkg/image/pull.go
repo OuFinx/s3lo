@@ -108,6 +108,9 @@ func resolvePlatformManifest(ctx context.Context, client storage.Backend, bucket
 			if err != nil {
 				return nil, fmt.Errorf("fetch platform manifest for %s: %w", target, err)
 			}
+			if err := verifyBytesDigest(data, d); err != nil {
+				return nil, fmt.Errorf("verify platform manifest for %s: %w", target, err)
+			}
 			return data, nil
 		}
 	}
@@ -145,8 +148,14 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 
 	// Download config blob.
 	configDigest := manifest.Config.Digest.Encoded()
-	if err := client.DownloadObjectToFile(ctx, parsed.Bucket, "blobs/sha256/"+configDigest, filepath.Join(blobsDir, configDigest)); err != nil {
+	configPath := filepath.Join(blobsDir, configDigest)
+	if err := client.DownloadObjectToFile(ctx, parsed.Bucket, "blobs/sha256/"+configDigest, configPath); err != nil {
 		return fmt.Errorf("download config blob: %w", err)
+	}
+	// Verify content against its digest — the store is content-addressable, so a
+	// corrupted or tampered blob must never be handed to the Docker daemon.
+	if err := verifyFileDigest(configPath, configDigest); err != nil {
+		return fmt.Errorf("verify config blob: %w", err)
 	}
 	if onBlob != nil {
 		onBlob(configDigest, manifest.Config.Size)
@@ -159,8 +168,12 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 		layer := layer
 		g.Go(func() error {
 			d := layer.Digest.Encoded()
-			if err := client.DownloadObjectToFile(gCtx, parsed.Bucket, "blobs/sha256/"+d, filepath.Join(blobsDir, d)); err != nil {
+			layerPath := filepath.Join(blobsDir, d)
+			if err := client.DownloadObjectToFile(gCtx, parsed.Bucket, "blobs/sha256/"+d, layerPath); err != nil {
 				return err
+			}
+			if err := verifyFileDigest(layerPath, d); err != nil {
+				return fmt.Errorf("verify layer blob: %w", err)
 			}
 			if onBlob != nil {
 				onBlob(d, layer.Size)

@@ -28,11 +28,11 @@ with a local file.
 Use --tags to only prune tags, or --blobs to only collect blobs.`,
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/clean/
 
-  s3lo clean s3://my-bucket/                  # dry run
-  s3lo clean s3://my-bucket/ --confirm         # prune tags + gc blobs
-  s3lo clean s3://my-bucket/ --tags       # dry run, tags only
-  s3lo clean s3://my-bucket/ --blobs      # dry run, blobs only
-  s3lo clean s3://my-bucket/ --confirm --tags`,
+  s3lo bucket clean s3://my-bucket/                  # dry run
+  s3lo bucket clean s3://my-bucket/ --confirm         # prune tags + gc blobs
+  s3lo bucket clean s3://my-bucket/ --tags       # dry run, tags only
+  s3lo bucket clean s3://my-bucket/ --blobs      # dry run, blobs only
+  s3lo bucket clean s3://my-bucket/ --confirm --tags`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if cleanTags && cleanBlobs {
@@ -81,7 +81,7 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 			fmt.Println("\nRun with --confirm to apply changes.")
 		} else if cleanTags {
 			fmt.Println("\nNote: orphaned blobs from deleted tags remain until GC runs.")
-			fmt.Printf("      Run: s3lo clean %s --blobs --confirm\n", s3Ref)
+			fmt.Printf("      Run: s3lo bucket clean %s --blobs --confirm\n", s3Ref)
 		}
 
 		return nil

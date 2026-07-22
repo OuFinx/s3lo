@@ -209,7 +209,7 @@ func fetchTagStatsCmd(ctx context.Context, s3Ref, imageName, tagName string) tea
 // deleteTagCmd deletes a tag from S3.
 func deleteTagCmd(ctx context.Context, tagRef string) tea.Cmd {
 	return func() tea.Msg {
-		return deleteResultMsg{err: image.Delete(ctx, tagRef)}
+		return deleteResultMsg{err: image.Delete(ctx, tagRef, false)}
 	}
 }
 

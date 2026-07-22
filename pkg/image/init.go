@@ -39,11 +39,11 @@ default:
 func Init(ctx context.Context, s3BucketRef string) (*InitResult, error) {
 	switch {
 	case strings.HasPrefix(s3BucketRef, "local://"):
-		return nil, fmt.Errorf("use s3lo init --local for local storage")
+		return nil, fmt.Errorf("use s3lo bucket init --local for local storage")
 	case strings.HasPrefix(s3BucketRef, "gs://"):
-		return nil, fmt.Errorf("s3lo init is not yet supported for Google Cloud Storage")
+		return nil, fmt.Errorf("s3lo bucket init is not yet supported for Google Cloud Storage")
 	case strings.HasPrefix(s3BucketRef, "az://"):
-		return nil, fmt.Errorf("s3lo init is not yet supported for Azure Blob Storage")
+		return nil, fmt.Errorf("s3lo bucket init is not yet supported for Azure Blob Storage")
 	}
 
 	bucket, _, err := ParseBucketRef(s3BucketRef)
@@ -84,9 +84,15 @@ func Init(ctx context.Context, s3BucketRef string) (*InitResult, error) {
 		})
 	}
 
-	// Write default s3lo.yaml if not already present.
+	// Write default s3lo.yaml only if it genuinely does not exist yet.
 	_, cfgErr := client.GetObject(ctx, bucket, bucketConfigKey)
-	if cfgErr != nil {
+	switch {
+	case cfgErr == nil:
+		result.Checks = append(result.Checks, InitCheck{
+			Label: "s3lo.yaml already exists — skipped",
+			OK:    true,
+		})
+	case storage.IsNotFound(cfgErr):
 		// Config doesn't exist — write default.
 		if err := client.PutObject(ctx, bucket, bucketConfigKey, []byte(defaultBucketConfig)); err != nil {
 			result.Checks = append(result.Checks, InitCheck{
@@ -101,10 +107,14 @@ func Init(ctx context.Context, s3BucketRef string) (*InitResult, error) {
 			})
 			result.ConfigWrote = true
 		}
-	} else {
+	default:
+		// A transient error (throttling, 5xx, permission blip) must NOT be treated
+		// as "config absent" — overwriting here would silently wipe existing
+		// lifecycle rules, policies, and immutability settings.
 		result.Checks = append(result.Checks, InitCheck{
-			Label: "s3lo.yaml already exists — skipped",
-			OK:    true,
+			Label: "Check for existing s3lo.yaml",
+			OK:    false,
+			Note:  "could not read existing config, leaving it untouched: " + cfgErr.Error(),
 		})
 	}
 

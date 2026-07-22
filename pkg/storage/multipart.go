@@ -55,7 +55,12 @@ func uploadFileMultipart(ctx context.Context, client *s3.Client, bucket, key, lo
 	uploadID := createResp.UploadId
 
 	abortUpload := func() {
-		_, abortErr := client.AbortMultipartUpload(ctx, &s3.AbortMultipartUploadInput{
+		// Use a fresh, short-lived context: the request ctx may already be cancelled
+		// (e.g. the user hit Ctrl-C), and reusing it would make the abort fail
+		// immediately, leaving orphaned multipart parts that keep accruing S3 charges.
+		abortCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cancel()
+		_, abortErr := client.AbortMultipartUpload(abortCtx, &s3.AbortMultipartUploadInput{
 			Bucket:   &bucket,
 			Key:      &key,
 			UploadId: uploadID,

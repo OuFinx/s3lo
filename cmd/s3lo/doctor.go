@@ -12,8 +12,8 @@ var doctorCmd = &cobra.Command{
 	Short: "Check bucket health and report integrity issues",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/doctor/
 
-  s3lo doctor s3://my-bucket/
-  s3lo doctor s3://my-bucket/ --output json`,
+  s3lo bucket doctor s3://my-bucket/
+  s3lo bucket doctor s3://my-bucket/ --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFmt, _ := cmd.Flags().GetString("output")
@@ -73,7 +73,7 @@ func printDoctorResult(r *image.DoctorResult) {
 			}
 		}
 		if r.OrphanedBlobs > 0 {
-			fmt.Printf("  s3lo clean %s%s/ --blobs --confirm\n", r.Scheme, r.Bucket)
+			fmt.Printf("  s3lo bucket clean %s%s/ --blobs --confirm\n", r.Scheme, r.Bucket)
 		}
 	}
 }
