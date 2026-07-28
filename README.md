@@ -1,11 +1,13 @@
 # s3lo
 
+Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster pulls, cheaper storage, no registry to manage.
+
+![s3lo demo](docs/assets/demo.gif)
+
 [![CI](https://github.com/OuFinx/s3lo/actions/workflows/ci.yml/badge.svg)](https://github.com/OuFinx/s3lo/actions/workflows/ci.yml)
 [![Release](https://github.com/OuFinx/s3lo/actions/workflows/release.yml/badge.svg)](https://github.com/OuFinx/s3lo/releases)
 [![Go Report Card](https://goreportcard.com/badge/github.com/OuFinx/s3lo)](https://goreportcard.com/report/github.com/OuFinx/s3lo)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster pulls, cheaper storage, no registry to manage.
 
 ## Why s3lo?
 
