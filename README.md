@@ -244,9 +244,13 @@ All public APIs accept `context.Context` for cancellation and timeout support.
 
 See the [documentation site](https://oufinx.github.io/s3lo/) for the full reference: all commands with detailed flags and examples, S3 storage layout, deduplication mechanics, IAM policies, Go library usage, CI integration patterns, and FAQ.
 
+For the background story behind the project, read [How I Built an Alternative to Docker Registries Using Just an S3 Bucket](https://tutoria.dev/posts/s3lo-alternative-docker-registry/).
+
 ## Contributing
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+Looking for somewhere to start? Issues labelled [good first issue](https://github.com/OuFinx/s3lo/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are small and self-contained.
 
 ## License
 
