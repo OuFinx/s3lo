@@ -69,6 +69,72 @@ func sha256File(t *testing.T, path string) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
+// TestIntegration_DirectoryRoundTrip covers UploadDirectory and DownloadDirectory,
+// including nested keys. It replaces a pair of older tests that built a client
+// without the context endpoint and so silently targeted real AWS.
+func TestIntegration_DirectoryRoundTrip(t *testing.T) {
+	ctx, bucket := transferCtx(t)
+
+	client, err := NewBackendFromRef(ctx, fmt.Sprintf("s3://%s/", bucket))
+	if err != nil {
+		t.Fatalf("new backend: %v", err)
+	}
+
+	want := map[string]string{
+		"manifest.json":         `{"test":true}`,
+		"config.json":           `{"arch":"amd64"}`,
+		"blobs/sha256/deadbeef": "layer one",
+		"blobs/sha256/cafebabe": "layer two",
+	}
+
+	srcDir := t.TempDir()
+	for rel, content := range want {
+		path := filepath.Join(srcDir, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("mkdir for %s: %v", rel, err)
+		}
+		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+
+	// UploadDirectory is only on the S3 *Client, not the Backend interface.
+	s3Client, ok := client.(*Client)
+	if !ok {
+		t.Fatalf("expected *Client for an s3:// ref, got %T", client)
+	}
+
+	prefix := "s3lo-test/dir-roundtrip"
+	if err := s3Client.UploadDirectory(ctx, srcDir, bucket, prefix); err != nil {
+		t.Fatalf("upload directory: %v", err)
+	}
+	t.Cleanup(func() {
+		keys, err := client.ListKeys(context.WithoutCancel(ctx), bucket, prefix)
+		if err != nil {
+			t.Logf("cleanup list %s: %v", prefix, err)
+			return
+		}
+		if err := client.DeleteObjects(context.WithoutCancel(ctx), bucket, keys); err != nil {
+			t.Logf("cleanup delete %s: %v", prefix, err)
+		}
+	})
+
+	dstDir := t.TempDir()
+	if err := client.DownloadDirectory(ctx, bucket, prefix, dstDir); err != nil {
+		t.Fatalf("download directory: %v", err)
+	}
+
+	for rel, content := range want {
+		got, err := os.ReadFile(filepath.Join(dstDir, filepath.FromSlash(rel)))
+		if err != nil {
+			t.Fatalf("read back %s: %v", rel, err)
+		}
+		if string(got) != content {
+			t.Errorf("%s: got %q, want %q", rel, got, content)
+		}
+	}
+}
+
 // TestIntegration_MultipartRoundTrip covers objects that span more than one
 // transfer part, which is the only path that exercises parallel multipart upload
 // and parallel ranged download. A single-part object would pass even if the
