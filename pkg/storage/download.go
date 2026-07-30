@@ -249,22 +249,16 @@ func downloadObject(ctx context.Context, client *s3.Client, bucket, key, localPa
 		return err
 	}
 
-	resp, err := client.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: &bucket,
-		Key:    &key,
-	})
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
 	f, err := os.Create(localPath)
 	if err != nil {
 		return err
 	}
 	defer f.Close()
 
-	_, err = io.Copy(f, resp.Body)
+	_, err = newDownloader(client).Download(ctx, f, &s3.GetObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
 	return err
 }
 
