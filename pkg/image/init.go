@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/aws/aws-sdk-go-v2/service/s3"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 // InitCheck describes a single check performed during bucket initialization.

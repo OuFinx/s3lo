@@ -9,18 +9,18 @@ import (
 )
 
 const (
-	mediaTypeOCIIndex     = "application/vnd.oci.image.index.v1+json"
-	mediaTypeDockerList   = "application/vnd.docker.distribution.manifest.list.v2+json"
-	mediaTypeOCIManifest  = "application/vnd.oci.image.manifest.v1+json"
-	mediaTypeDockerV2     = "application/vnd.docker.distribution.manifest.v2+json"
+	mediaTypeOCIIndex    = "application/vnd.oci.image.index.v1+json"
+	mediaTypeDockerList  = "application/vnd.docker.distribution.manifest.list.v2+json"
+	mediaTypeOCIManifest = "application/vnd.oci.image.manifest.v1+json"
+	mediaTypeDockerV2    = "application/vnd.docker.distribution.manifest.v2+json"
 )
 
 // isImageIndex returns true if the manifest data is an OCI Image Index or Docker manifest list.
 func isImageIndex(data []byte) bool {
 	var probe struct {
-		MediaType    string `json:"mediaType"`
-		SchemaVersion int   `json:"schemaVersion"`
-		Manifests    []json.RawMessage `json:"manifests"`
+		MediaType     string            `json:"mediaType"`
+		SchemaVersion int               `json:"schemaVersion"`
+		Manifests     []json.RawMessage `json:"manifests"`
 	}
 	if err := json.Unmarshal(data, &probe); err != nil {
 		return false

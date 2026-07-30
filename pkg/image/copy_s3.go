@@ -119,7 +119,6 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 	}
 
 	destPrefix := destParsed.ManifestsPrefix()
-	ociLayout := []byte(`{"imageLayoutVersion":"1.0.0"}`)
 
 	if isImageIndex(manifestData) {
 		idx, err := parseIndex(manifestData)
@@ -220,9 +219,6 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 		}
 		if err := destClient.PutObject(ctx, destParsed.Bucket, destPrefix+"manifest.json", writeManifestData); err != nil {
 			return nil, fmt.Errorf("write manifest.json: %w", err)
-		}
-		if err := destClient.PutObject(ctx, destParsed.Bucket, destPrefix+"oci-layout", ociLayout); err != nil {
-			return nil, fmt.Errorf("write oci-layout: %w", err)
 		}
 
 		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, writeManifestData))

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
 )
 
 // Recommendation describes a single actionable suggestion for the bucket.

@@ -16,15 +16,15 @@ import (
 
 // ImageInfo holds metadata about an image stored on S3.
 type ImageInfo struct {
-	Reference string           `json:"reference" yaml:"reference"`
-	IsIndex   bool             `json:"is_index" yaml:"is_index"`
+	Reference string `json:"reference" yaml:"reference"`
+	IsIndex   bool   `json:"is_index" yaml:"is_index"`
 	// Single-arch fields (IsIndex == false).
-	Manifest  ocispec.Manifest `json:"-" yaml:"-"`
-	Layers    []LayerDetail    `json:"layers,omitempty" yaml:"layers,omitempty"`
-	TotalSize  int64           `json:"total_size,omitempty" yaml:"total_size,omitempty"`
-	Signatures []SignatureInfo `json:"signatures,omitempty" yaml:"signatures,omitempty"`
+	Manifest   ocispec.Manifest `json:"-" yaml:"-"`
+	Layers     []LayerDetail    `json:"layers,omitempty" yaml:"layers,omitempty"`
+	TotalSize  int64            `json:"total_size,omitempty" yaml:"total_size,omitempty"`
+	Signatures []SignatureInfo  `json:"signatures,omitempty" yaml:"signatures,omitempty"`
 	// Multi-arch fields (IsIndex == true).
-	Platforms []PlatformInfo   `json:"platforms,omitempty" yaml:"platforms,omitempty"`
+	Platforms []PlatformInfo `json:"platforms,omitempty" yaml:"platforms,omitempty"`
 }
 
 // SignatureInfo describes a stored signature for an image.
@@ -173,4 +173,3 @@ func (i *ImageInfo) FormatJSON() (string, error) {
 	}
 	return string(b), nil
 }
-

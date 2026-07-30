@@ -166,4 +166,3 @@ func finalizeOCILayout(dir string, manifestData []byte) error {
 
 	return nil
 }
-

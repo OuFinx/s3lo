@@ -14,8 +14,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
-// manifestFiles are the per-tag metadata files uploaded to manifests/<image>/<tag>/.
-var manifestFiles = []string{"manifest.json", "config.json", "index.json", "oci-layout"}
+// tagManifestFile is the single object that constitutes a tag.
+//
+// A tag used to be four objects (manifest.json, config.json, index.json,
+// oci-layout) written in a loop, which made every tag update non-atomic: a
+// reader could observe a new manifest against a stale config, and a push that
+// died halfway left the tag permanently inconsistent. Nothing ever read the
+// other three — every reader in this package resolves a tag through
+// manifest.json and then fetches blobs by digest — and the per-tag directory was
+// not a valid OCI layout anyway, because blobs/ lives at the bucket root rather
+// than beside it. Collapsing a tag to one object makes the write atomic by
+// construction: S3 PutObject either lands or it does not.
+const tagManifestFile = "manifest.json"
 
 // PushOptions controls push behavior.
 type PushOptions struct {
@@ -135,17 +145,11 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return err
 	}
 
-	// Upload manifest files to manifests/<image>/<tag>/ with Standard storage class.
+	// Publish the tag last: every blob it references is already in the bucket, so
+	// this single write is what makes the image visible, all at once.
 	manifestPrefix := parsed.ManifestsPrefix()
-	for _, name := range manifestFiles {
-		localPath := filepath.Join(tmpDir, name)
-		if _, statErr := os.Stat(localPath); os.IsNotExist(statErr) {
-			continue
-		}
-		key := manifestPrefix + name
-		if err := client.UploadFile(ctx, localPath, parsed.Bucket, key, ""); err != nil {
-			return fmt.Errorf("upload %s: %w", name, err)
-		}
+	if err := client.PutObject(ctx, parsed.Bucket, manifestPrefix+tagManifestFile, manifestData); err != nil {
+		return fmt.Errorf("publish tag: %w", err)
 	}
 
 	// Record push history (best-effort — don't fail the push on history errors).

@@ -129,7 +129,6 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	}
 
 	manifestPrefix := destParsed.ManifestsPrefix()
-	ociLayout := []byte(`{"imageLayoutVersion":"1.0.0"}`)
 
 	if isImageIndex(manifestData) {
 		idx, err := parseIndex(manifestData)
@@ -255,9 +254,6 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"manifest.json", writeManifestData); err != nil {
 			return nil, fmt.Errorf("write manifest.json: %w", err)
 		}
-		if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"oci-layout", ociLayout); err != nil {
-			return nil, fmt.Errorf("write oci-layout: %w", err)
-		}
 
 		_ = recordHistory(ctx, s3c, destParsed, writeManifestData, manifestLogicalSize(ctx, s3c, destParsed.Bucket, writeManifestData))
 
@@ -296,9 +292,6 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	}
 	if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"manifest.json", manifestData); err != nil {
 		return nil, fmt.Errorf("write manifest.json: %w", err)
-	}
-	if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"oci-layout", ociLayout); err != nil {
-		return nil, fmt.Errorf("write oci-layout: %w", err)
 	}
 
 	_ = recordHistory(ctx, s3c, destParsed, manifestData, manifestLogicalSize(ctx, s3c, destParsed.Bucket, manifestData))
