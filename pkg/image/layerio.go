@@ -69,6 +69,54 @@ func storeLayer(ctx context.Context, client storage.Backend, bucket, localPath, 
 	return stats, stats.BytesUploaded == 0, nil
 }
 
+// copyChunkedLayer transfers a layer that the source bucket stores as chunks,
+// reproducing it in the same form at the destination. It returns false when the
+// source has no recipe for this digest, leaving the caller to copy a whole blob.
+//
+// Copying chunk by chunk keeps deduplication intact across the copy: a
+// destination that already shares chunks with the source only receives what it
+// is actually missing.
+func copyChunkedLayer(ctx context.Context, srcClient, destClient storage.Backend,
+	srcBucket, destBucket, digest string) (bool, error) {
+
+	recipe, chunked, err := chunkstore.LoadRecipe(ctx, srcClient, srcBucket, digest)
+	if err != nil {
+		return false, err
+	}
+	if !chunked {
+		return false, nil
+	}
+
+	for _, c := range recipe.Chunks {
+		key := chunkstore.ChunkKey(c.Digest)
+		exists, err := destClient.HeadObjectExists(ctx, destBucket, key)
+		if err != nil {
+			return true, fmt.Errorf("check chunk %s: %w", short(c.Digest), err)
+		}
+		if exists {
+			continue
+		}
+		data, err := srcClient.GetObject(ctx, srcBucket, key)
+		if err != nil {
+			return true, fmt.Errorf("fetch chunk %s: %w", short(c.Digest), err)
+		}
+		if err := destClient.PutObject(ctx, destBucket, key, data); err != nil {
+			return true, fmt.Errorf("write chunk %s: %w", short(c.Digest), err)
+		}
+	}
+
+	// The recipe is written last: until it exists the layer is not resolvable,
+	// which matches how push publishes a tag only once its blobs are in place.
+	recipeData, err := srcClient.GetObject(ctx, srcBucket, chunkstore.RecipeKey(digest))
+	if err != nil {
+		return true, fmt.Errorf("fetch recipe %s: %w", short(digest), err)
+	}
+	if err := destClient.PutObject(ctx, destBucket, chunkstore.RecipeKey(digest), recipeData); err != nil {
+		return true, fmt.Errorf("write recipe %s: %w", short(digest), err)
+	}
+	return true, nil
+}
+
 func short(digest string) string {
 	if len(digest) > 12 {
 		return digest[:12]

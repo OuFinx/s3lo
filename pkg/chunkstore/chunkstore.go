@@ -256,6 +256,33 @@ func Fetch(ctx context.Context, client storage.Backend, bucket string, recipe Re
 	return nil
 }
 
+// Stream writes a chunked layer to w in order, verifying each chunk against its
+// digest as it goes. It is the read path for callers that hand bytes straight to
+// a client rather than to a file, where seeking is not available.
+//
+// ponytail: chunks are fetched one at a time, so throughput is bounded by a
+// single connection's round trip. A bounded read-ahead window (fetch chunk i+1..
+// i+n while writing chunk i) is the upgrade when serve throughput matters.
+func Stream(ctx context.Context, client storage.Backend, bucket string, recipe Recipe, w io.Writer) error {
+	for _, c := range recipe.Chunks {
+		stored, err := client.GetObject(ctx, bucket, ChunkKey(c.Digest))
+		if err != nil {
+			return fmt.Errorf("fetch chunk %s: %w", c.Digest[:12], err)
+		}
+		data, err := dec().DecodeAll(stored, nil)
+		if err != nil {
+			return fmt.Errorf("decompress chunk %s: %w", c.Digest[:12], err)
+		}
+		if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != c.Digest {
+			return fmt.Errorf("chunk %s failed digest check", c.Digest[:12])
+		}
+		if _, err := w.Write(data); err != nil {
+			return fmt.Errorf("write chunk %s: %w", c.Digest[:12], err)
+		}
+	}
+	return nil
+}
+
 // verifyFile is the reason chunking is safe to enable: a layer assembled from
 // the wrong chunks, in the wrong order, is caught here rather than handed to the
 // container runtime.

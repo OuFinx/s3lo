@@ -6,9 +6,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 
+	"github.com/OuFinx/s3lo/pkg/chunkstore"
 	"github.com/OuFinx/s3lo/pkg/storage"
 )
 
@@ -127,7 +129,18 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request, digest strin
 		return
 	}
 	if !exists {
-		writeOCIError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
+		// A chunked layer has no single object to redirect to, so the only way to
+		// serve it is to assemble it here, in the data path.
+		recipe, chunked, rErr := chunkstore.LoadRecipe(ctx, s.Client, s.Bucket, hexDigest)
+		if rErr != nil {
+			writeOCIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "storage error")
+			return
+		}
+		if !chunked {
+			writeOCIError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
+			return
+		}
+		s.serveChunkedBlob(w, r, digest, recipe)
 		return
 	}
 
@@ -165,4 +178,27 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request, digest strin
 	w.Header().Set("Docker-Content-Digest", digest)
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(data)
+}
+
+// serveChunkedBlob streams a layer assembled from chunks. Content-Length comes
+// from the recipe, so the client still sees an ordinary blob response; the fact
+// that it never existed as one object is invisible to it.
+func (s *Server) serveChunkedBlob(w http.ResponseWriter, r *http.Request, digest string, recipe chunkstore.Recipe) {
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", recipe.Size))
+	w.Header().Set("Docker-Content-Digest", digest)
+
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+	if err := chunkstore.Stream(r.Context(), s.Client, s.Bucket, recipe, w); err != nil {
+		// The status line is already on the wire by now, so the only honest signal
+		// left is to cut the response short of Content-Length; the client will
+		// report a truncated body rather than accept a corrupt layer.
+		slog.Error("stream chunked blob", "digest", digest, "error", err)
+		return
+	}
 }

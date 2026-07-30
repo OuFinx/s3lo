@@ -64,6 +64,21 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			slog.Debug("blob already exists, skipping", "digest", digest[:12])
 			return nil
 		}
+		// A chunked source has no whole-layer blob to copy, so the layer has to be
+		// moved as its recipe plus chunks instead.
+		copied, err := copyChunkedLayer(ctx, srcClient, destClient, srcParsed.Bucket, destParsed.Bucket, digest)
+		if err != nil {
+			return err
+		}
+		if copied {
+			blobsCopied.Add(1)
+			if platform != "" && opts.OnBlob != nil {
+				opts.OnBlob(platform, digest, size, false)
+			}
+			slog.Debug("chunked layer copied", "digest", digest[:12], "size", size)
+			return nil
+		}
+
 		if sameBucket {
 			if err := destClient.CopyObject(ctx, destParsed.Bucket, srcKey, destKey); err != nil {
 				return fmt.Errorf("copy blob %s: %w", digest[:12], err)
