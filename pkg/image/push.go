@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/OuFinx/s3lo/pkg/chunkstore"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
@@ -36,6 +37,10 @@ type PushOptions struct {
 	// OnBlob is called for each blob after it is processed (uploaded or skipped).
 	// digest is the sha256 digest (without "sha256:" prefix), size in bytes, skipped=true if already existed.
 	OnBlob func(digest string, size int64, skipped bool)
+	// OnTransfer is called once after all blobs are stored, with how much of the
+	// image had to be uploaded versus reused. On a chunked bucket this is where
+	// sub-layer deduplication becomes visible.
+	OnTransfer func(stats chunkstore.Stats)
 }
 
 // Push exports a local Docker image and uploads it to S3 using the v1.1.0 layout:
@@ -94,9 +99,19 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		}
 	}
 
+	// Chunking is a property of the bucket, read once per push.
+	cfg, err := GetBucketConfig(ctx, client, parsed.Bucket)
+	if err != nil {
+		return fmt.Errorf("read bucket config: %w", err)
+	}
+	chunked := cfg.ChunkedEnabled()
+
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(blobConcurrency)
-	var onBlobMu sync.Mutex
+	var (
+		onBlobMu sync.Mutex
+		total    chunkstore.Stats
+	)
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -105,44 +120,37 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		entry := entry
 		g.Go(func() error {
 			localPath := filepath.Join(blobsDir, entry.Name())
-			key := "blobs/sha256/" + entry.Name()
 
 			info, err := os.Stat(localPath)
 			if err != nil {
 				return fmt.Errorf("stat blob %s: %w", entry.Name(), err)
 			}
 
-			// Single dedup check — UploadFile skips internally when the object exists,
-			// but we need to know the outcome for OnBlob reporting.
-			exists, err := client.HeadObjectExists(gCtx, parsed.Bucket, key)
+			stats, skipped, err := storeLayer(gCtx, client, parsed.Bucket, localPath,
+				entry.Name(), info.Size(), chunked)
 			if err != nil {
-				return fmt.Errorf("check blob %s: %w", entry.Name(), err)
+				return err
 			}
-			if !exists {
-				slog.Debug("uploading blob", "digest", entry.Name()[:12], "size", info.Size())
-				if err := client.UploadFile(gCtx, localPath, parsed.Bucket, key, storage.StorageClassIntelligentTiering); err != nil {
-					return fmt.Errorf("upload blob %s: %w", entry.Name(), err)
-				}
-			} else {
-				slog.Debug("blob already exists, skipping", "digest", entry.Name()[:12])
-				// Refresh the existing blob's timestamp so it stays inside the GC
-				// grace window while this push writes its manifest (avoids a concurrent
-				// GC reaping a dedup-shared blob as "unreferenced"). Best-effort.
-				if err := client.TouchObject(gCtx, parsed.Bucket, key); err != nil {
-					slog.Debug("touch existing blob failed", "digest", entry.Name()[:12], "err", err)
-				}
-			}
+			slog.Debug("stored blob", "digest", entry.Name()[:12], "size", info.Size(),
+				"chunks", stats.Chunks, "uploaded", stats.BytesUploaded, "skipped", skipped)
 
+			onBlobMu.Lock()
+			total.Chunks += stats.Chunks
+			total.ChunksUploaded += stats.ChunksUploaded
+			total.Bytes += stats.Bytes
+			total.BytesUploaded += stats.BytesUploaded
 			if opts.OnBlob != nil {
-				onBlobMu.Lock()
-				opts.OnBlob(entry.Name(), info.Size(), exists)
-				onBlobMu.Unlock()
+				opts.OnBlob(entry.Name(), info.Size(), skipped)
 			}
+			onBlobMu.Unlock()
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
 		return err
+	}
+	if opts.OnTransfer != nil {
+		opts.OnTransfer(total)
 	}
 
 	// Publish the tag last: every blob it references is already in the bucket, so

@@ -169,11 +169,10 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 		g.Go(func() error {
 			d := layer.Digest.Encoded()
 			layerPath := filepath.Join(blobsDir, d)
-			if err := client.DownloadObjectToFile(gCtx, parsed.Bucket, "blobs/sha256/"+d, layerPath); err != nil {
-				return err
-			}
-			if err := verifyFileDigest(layerPath, d); err != nil {
-				return fmt.Errorf("verify layer blob: %w", err)
+			// Resolves the layer whether the bucket stores it whole or as chunks,
+			// and verifies it against its digest either way.
+			if err := fetchLayer(gCtx, client, parsed.Bucket, d, layerPath); err != nil {
+				return fmt.Errorf("fetch layer %s: %w", short(d), err)
 			}
 			if onBlob != nil {
 				onBlob(d, layer.Size)

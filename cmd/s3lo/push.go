@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 
+	"github.com/OuFinx/s3lo/pkg/chunkstore"
 	"github.com/OuFinx/s3lo/pkg/image"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
@@ -11,8 +12,8 @@ import (
 var pushForce bool
 
 var pushCmd = &cobra.Command{
-	Use:     "push <local-image> <s3-ref>",
-	Short:   "Push a local Docker image to S3",
+	Use:   "push <local-image> <s3-ref>",
+	Short: "Push a local Docker image to S3",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/push/
 
   s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0`,
@@ -23,8 +24,10 @@ var pushCmd = &cobra.Command{
 		}
 		fmt.Printf("Pushing %s to %s\n", args[0], args[1])
 		var bar *progressbar.ProgressBar
+		var transferred chunkstore.Stats
 		opts := image.PushOptions{
-			Force: pushForce,
+			OnTransfer: func(s chunkstore.Stats) { transferred = s },
+			Force:      pushForce,
 			OnStart: func(total int64) {
 				bar = newProgressBar("  uploading", total)
 			},
@@ -40,6 +43,11 @@ var pushCmd = &cobra.Command{
 		}
 		if err != nil {
 			return err
+		}
+		if transferred.Bytes > 0 && transferred.Chunks > 0 {
+			fmt.Printf("Chunked: uploaded %.1f MB of %.1f MB (%.1f%% deduplicated, %d/%d chunks)\n",
+				float64(transferred.BytesUploaded)/(1<<20), float64(transferred.Bytes)/(1<<20),
+				transferred.Deduplicated()*100, transferred.ChunksUploaded, transferred.Chunks)
 		}
 		fmt.Println("Done.")
 		return nil

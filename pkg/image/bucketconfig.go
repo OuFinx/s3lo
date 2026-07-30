@@ -33,6 +33,22 @@ type BucketConfig struct {
 	Default  ImageConfig            `yaml:"default,omitempty" json:"default,omitempty"`
 	Images   map[string]ImageConfig `yaml:"images,omitempty" json:"images,omitempty"`
 	Policies []PolicyRule           `yaml:"policies,omitempty" json:"policies,omitempty"`
+
+	// Chunked makes push store layers as content-defined chunks shared across
+	// every image in the bucket, instead of one object per layer.
+	//
+	// It is deliberately bucket-wide rather than per-image: the chunk store is
+	// shared, so a per-image switch would only make reasoning about garbage
+	// collection harder without making anything more useful. Turning it on or
+	// off is safe at any time — reads resolve a layer through its recipe when one
+	// exists and fall back to a whole-layer blob when it does not, so a bucket
+	// may hold both without migration.
+	Chunked *bool `yaml:"chunked,omitempty" json:"chunked,omitempty"`
+}
+
+// ChunkedEnabled reports whether push should store layers as chunks.
+func (c *BucketConfig) ChunkedEnabled() bool {
+	return c != nil && c.Chunked != nil && *c.Chunked
 }
 
 // PolicyCheck identifies the kind of check a policy performs.
