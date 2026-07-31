@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 308" width="760" height="308" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif" role="img">
+<text x="62" y="20" font-size="13" font-weight="600" fill="#101312">First push of never-before-seen content</text>
+<rect x="554" y="12" width="10" height="10" rx="2" fill="#eb6834"/>
+<text x="570" y="21" font-size="11" fill="#4d5350">ECR</text>
+<rect x="614" y="12" width="10" height="10" rx="2" fill="#2a78d6"/>
+<text x="630" y="21" font-size="11" fill="#4d5350">s3lo</text>
+<line x1="62" x2="744" y1="262.0" y2="262.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="266.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">0s</text>
+<line x1="62" x2="744" y1="205.0" y2="205.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="209.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">18s</text>
+<line x1="62" x2="744" y1="148.0" y2="148.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="152.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">35s</text>
+<line x1="62" x2="744" y1="91.0" y2="91.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="95.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">53s</text>
+<line x1="62" x2="744" y1="34.0" y2="34.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="38.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">71s</text>
+<rect x="111.2" y="244.9" width="34.0" height="17.1" rx="3" fill="#eb6834"/>
+<text x="128.2" y="237.9" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">5.3</text>
+<rect x="149.2" y="256.2" width="34.0" height="5.8" rx="3" fill="#2a78d6"/>
+<text x="166.2" y="249.2" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">1.8</text>
+<rect x="281.8" y="195.5" width="34.0" height="66.5" rx="3" fill="#eb6834"/>
+<text x="298.8" y="188.5" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">20.6</text>
+<rect x="319.8" y="232.6" width="34.0" height="29.4" rx="3" fill="#2a78d6"/>
+<text x="336.8" y="225.6" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">9.1</text>
+<rect x="452.2" y="138.1" width="34.0" height="123.9" rx="3" fill="#eb6834"/>
+<text x="469.2" y="131.1" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">38.4</text>
+<rect x="490.2" y="186.8" width="34.0" height="75.2" rx="3" fill="#2a78d6"/>
+<text x="507.2" y="179.8" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">23.3</text>
+<rect x="622.8" y="72.0" width="34.0" height="190.0" rx="3" fill="#eb6834"/>
+<text x="639.8" y="65.0" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">58.9</text>
+<rect x="660.8" y="124.3" width="34.0" height="137.7" rx="3" fill="#2a78d6"/>
+<text x="677.8" y="117.3" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">42.7</text>
+<text x="147.2" y="290" text-anchor="middle" font-size="12" fill="#4d5350">99 MB</text>
+<text x="317.8" y="290" text-anchor="middle" font-size="12" fill="#4d5350">499 MB</text>
+<text x="488.2" y="290" text-anchor="middle" font-size="12" fill="#4d5350">999 MB</text>
+<text x="658.8" y="290" text-anchor="middle" font-size="12" fill="#4d5350">1795 MB</text>
+<line x1="62" x2="744" y1="262" y2="262" stroke="#d9dcd9" stroke-width="1"/>
+<text x="62" y="300" font-size="11" fill="#767c78">Seconds, lower is better. c6id.xlarge, us-east-1, real S3 and ECR.</text>
+</svg>

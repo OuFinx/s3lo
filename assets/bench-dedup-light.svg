@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 308" width="760" height="308" font-family="ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif" role="img">
+<text x="62" y="20" font-size="13" font-weight="600" fill="#101312">Re-push after editing one file inside the image</text>
+<line x1="62" x2="744" y1="262.0" y2="262.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="266.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">0</text>
+<line x1="62" x2="744" y1="205.0" y2="205.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="209.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">528</text>
+<line x1="62" x2="744" y1="148.0" y2="148.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="152.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">1055</text>
+<line x1="62" x2="744" y1="91.0" y2="91.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="95.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">1583</text>
+<line x1="62" x2="744" y1="34.0" y2="34.0" stroke="#e8eae8" stroke-width="1"/>
+<text x="52" y="38.0" text-anchor="end" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#767c78">2110</text>
+<rect x="118.2" y="250.3" width="58.0" height="11.7" rx="3" fill="#2a78d6" opacity="0.16"/>
+<rect x="118.2" y="259.0" width="58.0" height="3.0" rx="3" fill="#2a78d6"/>
+<text x="147.2" y="242.3" text-anchor="middle" font-size="12" font-weight="650" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#0f7a4f">96.1%</text>
+<text x="147.2" y="252.0" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">4.2</text>
+<rect x="288.8" y="206.9" width="58.0" height="55.1" rx="3" fill="#2a78d6" opacity="0.16"/>
+<rect x="288.8" y="259.0" width="58.0" height="3.0" rx="3" fill="#2a78d6"/>
+<text x="317.8" y="198.9" text-anchor="middle" font-size="12" font-weight="650" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#0f7a4f">99.2%</text>
+<text x="317.8" y="252.0" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">4.2</text>
+<rect x="459.2" y="152.4" width="58.0" height="109.6" rx="3" fill="#2a78d6" opacity="0.16"/>
+<rect x="459.2" y="259.0" width="58.0" height="3.0" rx="3" fill="#2a78d6"/>
+<text x="488.2" y="144.4" text-anchor="middle" font-size="12" font-weight="650" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#0f7a4f">99.6%</text>
+<text x="488.2" y="252.0" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">4.2</text>
+<rect x="629.8" y="65.4" width="58.0" height="196.6" rx="3" fill="#2a78d6" opacity="0.16"/>
+<rect x="629.8" y="259.0" width="58.0" height="3.0" rx="3" fill="#2a78d6"/>
+<text x="658.8" y="57.4" text-anchor="middle" font-size="12" font-weight="650" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#0f7a4f">99.8%</text>
+<text x="658.8" y="252.0" text-anchor="middle" font-size="11" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" fill="#4d5350">4.2</text>
+<text x="147.2" y="290" text-anchor="middle" font-size="12" fill="#4d5350">99 MB</text>
+<text x="317.8" y="290" text-anchor="middle" font-size="12" fill="#4d5350">499 MB</text>
+<text x="488.2" y="290" text-anchor="middle" font-size="12" fill="#4d5350">999 MB</text>
+<text x="658.8" y="290" text-anchor="middle" font-size="12" fill="#4d5350">1795 MB</text>
+<line x1="62" x2="744" y1="262" y2="262" stroke="#d9dcd9" stroke-width="1"/>
+<text x="62" y="300" font-size="11" fill="#767c78">MB uploaded (solid) against the layer being re-pushed (pale). One chunk changes, whatever the layer weighs.</text>
+</svg>
