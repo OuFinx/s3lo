@@ -15,8 +15,8 @@ Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster 
 |---|---|---|
 | **Re-push after editing one file** | whole layer again | one chunk (~4 MB) |
 | **Deduplication** | whole layers only | content-defined chunks, bucket-wide |
-| **First push, 1.6 GB image** | 47.5 s | 36.9 s |
-| **Cold pull** | see [benchmarks](#measured-numbers) | see [benchmarks](#measured-numbers) |
+| **First push, 1.8 GB image** | 58.9 s | 42.7 s |
+| **Cold pull, 1.8 GB image** | 15.65 s | 15.14 s |
 | **Storage cost** | $0.10/GB/month | $0.023/GB/month |
 | **Registry management** | Lifecycle policies, permissions | Just a bucket |
 | **Cloud support** | AWS only | AWS S3, GCS, Azure Blob, MinIO, R2, Ceph |
@@ -25,15 +25,20 @@ Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster 
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-dedup-dark.svg">
-  <img alt="Re-push after editing one file: 4.1 MB uploaded regardless of layer size, 96.9% to 99.8% deduplicated" src="docs/assets/bench-dedup-light.svg">
+  <img alt="Re-push after editing one file: 4.2 MB uploaded regardless of layer size, 96.1% to 99.8% deduplicated" src="docs/assets/bench-dedup-light.svg">
 </picture>
 
 A registry re-uploads the whole layer for this edit. s3lo re-uploads the one
-chunk that changed — the same 4.1 MB whether the layer is 131 MB or 1.6 GB.
+chunk that changed — the same 4.2 MB whether the layer is 108 MB or 1.8 GB.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-push-dark.svg">
-  <img alt="First push: s3lo 2.4s/8.2s/21.9s/36.9s against ECR 6.3s/19.4s/33.3s/47.5s" src="docs/assets/bench-push-light.svg">
+  <img alt="First push: s3lo 1.8s/9.1s/23.3s/42.7s against ECR 5.3s/20.6s/38.4s/58.9s" src="docs/assets/bench-push-light.svg">
+</picture>
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-pull-dark.svg">
+  <img alt="Cold pull: s3lo 0.80s/2.83s/8.11s/15.14s against ECR 1.46s/4.81s/9.87s/15.65s" src="docs/assets/bench-pull-light.svg">
 </picture>
 
 Measured on a `c6id.xlarge` in us-east-1, containerd via `crictl`, layers on
@@ -42,14 +47,16 @@ local NVMe, median of three cold pulls. Payloads built from real Python wheels
 
 | Payload | Pull ECR | Pull s3lo | Push ECR | Push s3lo | Re-push s3lo |
 |---|---|---|---|---|---|
-| 123 MB | 1.70 s | 1.26 s | 6.3 s | 2.4 s | 4.1 MB (96.9% dedup) |
-| 500 MB | 4.51 s | 5.29 s | 19.4 s | 8.2 s | 4.1 MB (99.2%) |
-| 999 MB | 10.80 s | 12.99 s | 33.3 s | 21.9 s | 4.1 MB (99.6%) |
-| 1647 MB | 15.29 s | 19.97 s | 47.5 s | 36.9 s | 4.1 MB (99.8%) |
+| 99 MB | 1.46 s | 0.80 s | 5.3 s | 1.8 s | 4.2 MB (96.1% dedup) |
+| 499 MB | 4.81 s | 2.83 s | 20.6 s | 9.1 s | 4.2 MB (99.2%) |
+| 999 MB | 9.87 s | 8.11 s | 38.4 s | 23.3 s | 4.2 MB (99.6%) |
+| 1795 MB | 15.65 s | 15.14 s | 58.9 s | 42.7 s | 4.2 MB (99.8%) |
 
-Those pull figures predate serving layers compressed; they are the honest
-numbers from the last full run and will be replaced once the current build is
-re-measured. Push and deduplication are current.
+`serve` hands containerd the stored chunks untouched — a valid zstd stream,
+since zstd frames concatenate — so containerd decompresses exactly as it does
+for any registry, and s3lo moves 5-7% fewer bytes than ECR does. The pull margin
+is widest on small images and closes to a tie at 1.8 GB, where both sides are
+bound by decompressing and unpacking the layer rather than by fetching it.
 
 This is one node pulling one image, which is what a pod start is. It says
 nothing about registry behaviour under simultaneous scale-out — that was not
