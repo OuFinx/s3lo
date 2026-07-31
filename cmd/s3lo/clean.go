@@ -64,6 +64,7 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 			}
 			result.BlobsDeleted = gcResult.Deleted
 			result.FreedBytes = gcResult.FreedBytes
+			result.SkippedRecent = gcResult.SkippedRecent
 		}
 
 		ok, err := writeOutput(outputFormat(cmd), result)
@@ -83,11 +84,18 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 		}
 		if !cleanTags {
 			if dryRun {
-				status("Blobs: %d unreferenced (%.2f MB would be freed)\n",
-					result.BlobsDeleted, float64(result.FreedBytes)/1024/1024)
+				status("Blobs: %d unreferenced (%s would be freed)\n",
+					result.BlobsDeleted, formatBytes(result.FreedBytes))
 			} else {
-				status("Blobs: %d deleted (%.2f MB freed)\n",
-					result.BlobsDeleted, float64(result.FreedBytes)/1024/1024)
+				status("Blobs: %d deleted (%s freed)\n",
+					result.BlobsDeleted, formatBytes(result.FreedBytes))
+			}
+			// Otherwise deleting a tag and running clean straight after prints a
+			// bare "0 deleted" and reads as broken, when the sweep is simply
+			// waiting out the window that keeps it from racing a running push.
+			if result.SkippedRecent > 0 {
+				status("       %d unreferenced object(s) left for now: anything written in the last hour is\n", result.SkippedRecent)
+				status("       held back so a concurrent push cannot have its blobs swept before its manifest lands.\n")
 			}
 		}
 
@@ -111,6 +119,7 @@ type cleanResult struct {
 	TagsDeleted   int    `json:"tags_deleted" yaml:"tags_deleted"`
 	BlobsDeleted  int    `json:"blobs_deleted" yaml:"blobs_deleted"`
 	FreedBytes    int64  `json:"freed_bytes" yaml:"freed_bytes"`
+	SkippedRecent int    `json:"skipped_recent" yaml:"skipped_recent"`
 }
 
 func loadCleanConfig(cmd *cobra.Command, s3Ref string) (*image.BucketConfig, error) {
