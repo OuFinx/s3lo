@@ -25,6 +25,12 @@ type GCResult struct {
 	// on buckets that have never had a chunked push.
 	ChunksScanned int
 	ChunksDeleted int
+
+	// SkippedRecent counts unreferenced objects left alone only because they
+	// are younger than the grace period. Without it, deleting a tag and
+	// immediately running clean prints "0 deleted" and looks broken, when in
+	// fact the sweep is waiting out a concurrent-push window.
+	SkippedRecent int
 }
 
 // gcGracePeriod protects recently uploaded blobs from deletion to avoid
@@ -94,25 +100,29 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 		DryRun:        dryRun,
 	}
 
-	toDelete, freed := sweep(blobs, blobsPrefix, referenced, now)
+	toDelete, freed, skipped := sweep(blobs, blobsPrefix, referenced, now)
 	result.FreedBytes += freed
+	result.SkippedRecent += skipped
 
 	// Recipes are keyed by the layer digest they rebuild, so they are reachable
 	// under exactly the same reference set as whole-layer blobs.
-	recipeDelete, recipeFreed := sweep(recipes, recipesPrefix, referenced, now)
+	recipeDelete, recipeFreed, recipeSkipped := sweep(recipes, recipesPrefix, referenced, now)
 	toDelete = append(toDelete, recipeDelete...)
 	result.FreedBytes += recipeFreed
+	result.SkippedRecent += recipeSkipped
 
 	// A file index is keyed by the same digest as the recipe beside it, so it
 	// lives and dies with it. Sweeping it here is what keeps indexes from being
 	// the one thing in the bucket that only ever grows.
-	indexDelete, indexFreed := sweep(indexes, indexesPrefix, referenced, now)
+	indexDelete, indexFreed, indexSkipped := sweep(indexes, indexesPrefix, referenced, now)
 	toDelete = append(toDelete, indexDelete...)
 	result.FreedBytes += indexFreed
+	result.SkippedRecent += indexSkipped
 
-	chunkDelete, chunkFreed := sweep(chunks, chunksPrefix, referencedChunks, now)
+	chunkDelete, chunkFreed, chunkSkipped := sweep(chunks, chunksPrefix, referencedChunks, now)
 	toDelete = append(toDelete, chunkDelete...)
 	result.FreedBytes += chunkFreed
+	result.SkippedRecent += chunkSkipped
 	result.ChunksDeleted = len(chunkDelete)
 
 	result.Deleted = len(toDelete)
@@ -130,10 +140,11 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 // which are older than the grace period. The grace period is what keeps a
 // concurrent push safe: its objects are written before the manifest that makes
 // them reachable, so for that window they are legitimately unreferenced.
-func sweep(objs []storage.ObjectMeta, keyPrefix string, referenced map[string]bool, now time.Time) ([]string, int64) {
+func sweep(objs []storage.ObjectMeta, keyPrefix string, referenced map[string]bool, now time.Time) ([]string, int64, int) {
 	var (
 		toDelete []string
 		freed    int64
+		skipped  int
 	)
 	for _, obj := range objs {
 		digest := strings.TrimPrefix(obj.Key, keyPrefix)
@@ -141,12 +152,13 @@ func sweep(objs []storage.ObjectMeta, keyPrefix string, referenced map[string]bo
 			continue
 		}
 		if now.Sub(obj.LastModified) < gcGracePeriod {
+			skipped++
 			continue
 		}
 		toDelete = append(toDelete, obj.Key)
 		freed += obj.Size
 	}
-	return toDelete, freed
+	return toDelete, freed, skipped
 }
 
 // collectChunkReferences reads the recipes that are still reachable and returns
