@@ -218,6 +218,16 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request, bucket, dige
 			writeOCIError(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob unknown")
 			return
 		}
+		if recipe.CompressedDigest == "" || recipe.CompressedSize == 0 {
+			// A recipe without a compressed identity cannot be served: its
+			// Content-Length would be zero and the body would be cut short, which
+			// a client reports as a corrupt layer rather than a server error.
+			slog.Error("recipe has no compressed identity", "digest", digest)
+			s.observeBlob("error")
+			writeOCIError(w, http.StatusInternalServerError, "INTERNAL_ERROR",
+				"layer recipe is missing its compressed form")
+			return
+		}
 		s.serveChunkedBlob(w, r, bucket, digest, recipe)
 		return
 	}
