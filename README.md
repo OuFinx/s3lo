@@ -133,10 +133,6 @@ s3lo list s3://my-bucket/
 # Inspect image metadata
 s3lo inspect s3://my-bucket/myapp:v1.0
 
-# Store layers as shared chunks: a re-push after a small edit sends only the
-# chunk that changed (see docs/concepts/chunking.md)
-s3lo config set s3://my-bucket/ chunked=true
-
 # Show storage stats and deduplication savings
 s3lo bucket stats s3://my-bucket/
 

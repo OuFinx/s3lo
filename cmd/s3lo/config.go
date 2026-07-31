@@ -27,7 +27,7 @@ Use s3://bucket/image or s3://bucket/dev/* to set per-image overrides.
 
 Available keys:
   immutable              true/false
-  chunked                true|false (bucket-wide: store layers as shared chunks)
+  chunked                true|false, default true (bucket-wide: store layers as shared chunks)
   lifecycle.keep_last    number (e.g. 10)
   lifecycle.max_age      duration (e.g. 30d, 7d, 168h)
   lifecycle.keep_tags    comma-separated tags (e.g. latest,stable)`,

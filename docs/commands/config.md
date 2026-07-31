@@ -19,17 +19,20 @@ Both `s3://` and `local://` references are supported.
 | `lifecycle.keep_last` | integer | Keep N most recently pushed tags |
 | `lifecycle.max_age` | duration (`30d`, `168h`) | Delete tags older than this |
 | `lifecycle.keep_tags` | comma-separated tags | Tags never deleted by lifecycle |
-| `chunked` | `true` / `false` | Store layers as shared chunks — bucket-wide only |
+| `chunked` | `true` / `false` (default `true`) | Store layers as shared chunks — bucket-wide only |
 
 ### `chunked`
 
-```bash
-s3lo config set s3://my-bucket/ chunked=true
-```
+On by default. Layers are stored as content-defined chunks shared across every
+image in the bucket, so re-pushing an image after a small edit uploads only the
+chunk that changed. See [Chunked storage](../concepts/chunking.md).
 
-Stores layers as content-defined chunks shared across every image in the bucket,
-so re-pushing an image after a small edit uploads only the chunk that changed.
-See [Chunked storage](../concepts/chunking.md).
+To store whole layers instead — the only reason being clients still on s3lo v1,
+which cannot read a chunked layer:
+
+```bash
+s3lo config set s3://my-bucket/ chunked=false
+```
 
 It applies to the whole bucket and cannot be set per image: the chunk store is
 shared, so a per-image switch would only make garbage collection harder to reason
