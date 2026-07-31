@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/docker/docker/api/types/image"
 	"github.com/docker/docker/client"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
@@ -24,16 +25,67 @@ type dockerManifestEntry struct {
 	Layers   []string
 }
 
-// ExportImage exports a Docker image to an OCI layout directory.
+// LocalPlatforms reports the platforms of imageRef that the daemon actually
+// holds, as "os/arch" or "os/arch/variant".
+//
+// It returns nil when the daemon has no per-platform view of the image, which is
+// the normal case: the classic image store keeps one platform per tag, and only
+// the containerd image store can hold several. Attestation manifests are
+// excluded — buildx attaches SBOM and provenance as manifests with platform
+// "unknown/unknown", and publishing those as platforms would be nonsense.
+func LocalPlatforms(ctx context.Context, imageRef string) ([]string, error) {
+	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
+	if err != nil {
+		return nil, fmt.Errorf("create docker client: %w", err)
+	}
+	defer cli.Close()
+
+	resp, err := cli.ImageInspect(ctx, imageRef)
+	if err != nil {
+		return nil, fmt.Errorf("inspect image %q: %w", imageRef, err)
+	}
+
+	var platforms []string
+	for _, m := range resp.Manifests {
+		if m.Kind != image.ManifestKindImage || !m.Available || m.ImageData == nil {
+			continue
+		}
+		platforms = append(platforms, PlatformString(m.ImageData.Platform))
+	}
+	return platforms, nil
+}
+
+// PlatformString renders an OCI platform the way the CLI accepts it.
+func PlatformString(p ocispec.Platform) string {
+	s := p.OS + "/" + p.Architecture
+	if p.Variant != "" {
+		s += "/" + p.Variant
+	}
+	return s
+}
+
+// ExportImage exports one platform of a Docker image to an OCI layout directory.
 // Returns layer descriptors, manifest bytes, and config bytes.
-func ExportImage(ctx context.Context, imageRef string, destDir string) ([]ocispec.Descriptor, []byte, []byte, error) {
+//
+// platform selects which one when the daemon holds several; empty means let the
+// daemon choose, which is what it did before this was selectable.
+func ExportImage(ctx context.Context, imageRef, destDir, platform string) ([]ocispec.Descriptor, []byte, []byte, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("create docker client: %w", err)
 	}
 	defer cli.Close()
 
-	rc, err := cli.ImageSave(ctx, []string{imageRef})
+	var saveOpts []client.ImageSaveOption
+	if platform != "" {
+		p, err := ParsePlatform(platform)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		saveOpts = append(saveOpts, client.ImageSaveWithPlatforms(p))
+	}
+
+	rc, err := cli.ImageSave(ctx, []string{imageRef}, saveOpts...)
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("image save %q: %w", imageRef, err)
 	}
@@ -379,4 +431,17 @@ func tarWriteFile(tw *tar.Writer, name string, data []byte) error {
 	}
 	_, err := tw.Write(data)
 	return err
+}
+
+// ParsePlatform turns "linux/arm64" or "linux/arm/v7" into an OCI platform.
+func ParsePlatform(s string) (ocispec.Platform, error) {
+	parts := strings.Split(s, "/")
+	switch len(parts) {
+	case 2:
+		return ocispec.Platform{OS: parts[0], Architecture: parts[1]}, nil
+	case 3:
+		return ocispec.Platform{OS: parts[0], Architecture: parts[1], Variant: parts[2]}, nil
+	default:
+		return ocispec.Platform{}, fmt.Errorf("invalid platform %q: want os/arch or os/arch/variant", s)
+	}
 }
