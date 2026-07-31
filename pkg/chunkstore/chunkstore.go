@@ -225,20 +225,9 @@ func Fetch(ctx context.Context, client storage.Backend, bucket string, recipe Re
 	for i, c := range recipe.Chunks {
 		i, c := i, c
 		g.Go(func() error {
-			stored, err := client.GetObject(gCtx, bucket, ChunkKey(c.Digest))
+			data, err := fetchChunk(gCtx, client, bucket, c)
 			if err != nil {
-				return fmt.Errorf("fetch chunk %s: %w", c.Digest[:12], err)
-			}
-			data, err := dec().DecodeAll(stored, nil)
-			if err != nil {
-				return fmt.Errorf("decompress chunk %s: %w", c.Digest[:12], err)
-			}
-			if int64(len(data)) != c.Size {
-				return fmt.Errorf("chunk %s is %d bytes, recipe says %d",
-					c.Digest[:12], len(data), c.Size)
-			}
-			if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != c.Digest {
-				return fmt.Errorf("chunk %s failed digest check", c.Digest[:12])
+				return err
 			}
 			if _, err := f.WriteAt(data, offsets[i]); err != nil {
 				return fmt.Errorf("write chunk %s: %w", c.Digest[:12], err)
@@ -256,28 +245,91 @@ func Fetch(ctx context.Context, client storage.Backend, bucket string, recipe Re
 	return nil
 }
 
+// streamReadAhead is how many chunks may be fetched and held ahead of the
+// writer. It bounds both concurrency and memory: at most this many chunks, each
+// up to chunk.MaxSize, exist at once.
+const streamReadAhead = 4
+
+// fetchChunk retrieves one chunk, decompresses it and checks it against its
+// digest.
+func fetchChunk(ctx context.Context, client storage.Backend, bucket string, c ChunkRef) ([]byte, error) {
+	stored, err := client.GetObject(ctx, bucket, ChunkKey(c.Digest))
+	if err != nil {
+		return nil, fmt.Errorf("fetch chunk %s: %w", c.Digest[:12], err)
+	}
+	data, err := dec().DecodeAll(stored, nil)
+	if err != nil {
+		return nil, fmt.Errorf("decompress chunk %s: %w", c.Digest[:12], err)
+	}
+	if int64(len(data)) != c.Size {
+		return nil, fmt.Errorf("chunk %s is %d bytes, recipe says %d", c.Digest[:12], len(data), c.Size)
+	}
+	if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != c.Digest {
+		return nil, fmt.Errorf("chunk %s failed digest check", c.Digest[:12])
+	}
+	return data, nil
+}
+
+type chunkResult struct {
+	data []byte
+	err  error
+}
+
 // Stream writes a chunked layer to w in order, verifying each chunk against its
 // digest as it goes. It is the read path for callers that hand bytes straight to
 // a client rather than to a file, where seeking is not available.
 //
-// ponytail: chunks are fetched one at a time, so throughput is bounded by a
-// single connection's round trip. A bounded read-ahead window (fetch chunk i+1..
-// i+n while writing chunk i) is the upgrade when serve throughput matters.
+// Chunks are fetched and decompressed concurrently but emitted strictly in
+// order, which is what makes this faster than a registry serving the same layer:
+// a single gzipped blob arrives over one connection and decompresses on one
+// core, while these chunks arrive over several connections and decompress on
+// several. A bounded window keeps the reader from running arbitrarily far ahead
+// of a slow consumer and buffering the whole layer in memory.
 func Stream(ctx context.Context, client storage.Backend, bucket string, recipe Recipe, w io.Writer) error {
-	for _, c := range recipe.Chunks {
-		stored, err := client.GetObject(ctx, bucket, ChunkKey(c.Digest))
-		if err != nil {
-			return fmt.Errorf("fetch chunk %s: %w", c.Digest[:12], err)
+	if len(recipe.Chunks) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make([]chan chunkResult, len(recipe.Chunks))
+	for i := range results {
+		// Capacity one, so a fetcher never blocks handing off its result and can
+		// always exit; the window below is what limits how many are in flight.
+		results[i] = make(chan chunkResult, 1)
+	}
+
+	window := make(chan struct{}, streamReadAhead)
+
+	go func() {
+		for i, c := range recipe.Chunks {
+			select {
+			case window <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			go func(i int, c ChunkRef) {
+				data, err := fetchChunk(ctx, client, bucket, c)
+				results[i] <- chunkResult{data: data, err: err}
+			}(i, c)
 		}
-		data, err := dec().DecodeAll(stored, nil)
-		if err != nil {
-			return fmt.Errorf("decompress chunk %s: %w", c.Digest[:12], err)
-		}
-		if sum := sha256.Sum256(data); hex.EncodeToString(sum[:]) != c.Digest {
-			return fmt.Errorf("chunk %s failed digest check", c.Digest[:12])
-		}
-		if _, err := w.Write(data); err != nil {
-			return fmt.Errorf("write chunk %s: %w", c.Digest[:12], err)
+	}()
+
+	for i := range recipe.Chunks {
+		select {
+		case res := <-results[i]:
+			if res.err != nil {
+				return res.err
+			}
+			if _, err := w.Write(res.data); err != nil {
+				return fmt.Errorf("write chunk %d of layer %s: %w", i, recipe.Layer, err)
+			}
+			// Released only after the bytes are out, so the window measures
+			// memory actually held rather than requests merely started.
+			<-window
+		case <-ctx.Done():
+			return ctx.Err()
 		}
 	}
 	return nil
