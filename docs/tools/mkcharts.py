@@ -8,14 +8,14 @@ thing that actually works there.
 import pathlib
 
 DATA = [
-    dict(label="123 MB",  layer=131.7,  repush=4.1, dedup=96.9, chunks=(1, 36),
-         ecr_push=6.3,  s3lo_push=2.4),
-    dict(label="500 MB",  layer=511.8,  repush=4.1, dedup=99.2, chunks=(1, 127),
-         ecr_push=19.4, s3lo_push=8.2),
-    dict(label="999 MB",  layer=1018.5, repush=4.1, dedup=99.6, chunks=(1, 247),
-         ecr_push=33.3, s3lo_push=21.9),
-    dict(label="1647 MB", layer=1673.0, repush=4.1, dedup=99.8, chunks=(1, 354),
-         ecr_push=47.5, s3lo_push=36.9),
+    dict(label="99 MB",   layer=108.3,  repush=4.2, dedup=96.1, chunks=(1, 29),
+         ecr_push=5.3,  s3lo_push=1.8,  ecr_pull=1.46,  s3lo_pull=0.80),
+    dict(label="499 MB",  layer=509.6,  repush=4.2, dedup=99.2, chunks=(1, 132),
+         ecr_push=20.6, s3lo_push=9.1,  ecr_pull=4.81,  s3lo_pull=2.83),
+    dict(label="999 MB",  layer=1014.0, repush=4.2, dedup=99.6, chunks=(1, 258),
+         ecr_push=38.4, s3lo_push=23.3, ecr_pull=9.87,  s3lo_pull=8.11),
+    dict(label="1795 MB", layer=1819.0, repush=4.2, dedup=99.8, chunks=(1, 429),
+         ecr_push=58.9, s3lo_push=42.7, ecr_pull=15.65, s3lo_pull=15.14),
 ]
 
 THEMES = {
@@ -87,13 +87,15 @@ def dedup_chart(theme):
     return "\n".join(out)
 
 
-def push_chart(theme):
+def versus_chart(theme, phase, title, caption):
+    """Paired ECR/s3lo bars for one phase — push or pull read the same way."""
     t = THEMES[theme]
+    ecr_key, s3lo_key = f"ecr_{phase}", f"s3lo_{phase}"
     out = head(t)
-    maxv = max(max(d["ecr_push"], d["s3lo_push"]) for d in DATA) * 1.2
+    maxv = max(max(d[ecr_key], d[s3lo_key]) for d in DATA) * 1.2
     fmt = lambda v: f"{v:.0f}s"
     out.append(f'<text x="{L}" y="20" font-size="13" font-weight="600" fill="{t["ink"]}">'
-               f'First push of never-before-seen content</text>')
+               f'{title}</text>')
     # Legend, so identity is never carried by colour alone.
     lx = W - R - 190
     out.append(f'<rect x="{lx}" y="12" width="10" height="10" rx="2" fill="{t["ecr"]}"/>')
@@ -105,7 +107,7 @@ def push_chart(theme):
     bw = min(34, (gw - 30) / 2)
     for i, d in enumerate(DATA):
         gx = L + gw * i + (gw - bw * 2 - 4) / 2
-        for j, (key, col) in enumerate((("ecr_push", t["ecr"]), ("s3lo_push", t["s3lo"]))):
+        for j, (key, col) in enumerate(((ecr_key, t["ecr"]), (s3lo_key, t["s3lo"]))):
             v = d[key]
             h = max(2.0, IH * v / maxv)
             x = gx + j * (bw + 4)
@@ -114,15 +116,20 @@ def push_chart(theme):
             out.append(f'<text x="{x+bw/2:.1f}" y="{T+IH-h-7:.1f}" text-anchor="middle" '
                        f'font-size="11" font-family="{MONO}" fill="{t["ink2"]}">{v}</text>')
     xlabels(out, t, gw)
-    out.append(f'<text x="{L}" y="{H-8}" font-size="11" fill="{t["ink3"]}">'
-               f'Seconds, lower is better. c6id.xlarge, us-east-1, real S3 and ECR.</text>')
+    out.append(f'<text x="{L}" y="{H-8}" font-size="11" fill="{t["ink3"]}">{caption}</text>')
     out.append("</svg>")
     return "\n".join(out)
 
 
+BED = "c6id.xlarge, us-east-1, real S3 and ECR."
 dest = pathlib.Path(__file__).resolve().parent.parent / "assets"
 dest.mkdir(parents=True, exist_ok=True)
 for theme in ("light", "dark"):
     (dest / f"bench-dedup-{theme}.svg").write_text(dedup_chart(theme))
-    (dest / f"bench-push-{theme}.svg").write_text(push_chart(theme))
+    (dest / f"bench-push-{theme}.svg").write_text(versus_chart(
+        theme, "push", "First push of never-before-seen content",
+        f"Seconds, lower is better. {BED}"))
+    (dest / f"bench-pull-{theme}.svg").write_text(versus_chart(
+        theme, "pull", "Cold pull into containerd",
+        f"Seconds, lower is better, median of three. {BED}"))
 print("wrote", *(p.name for p in sorted(dest.glob("bench-*.svg"))))
