@@ -243,3 +243,26 @@ func TestDiskCacheKeyCannotEscapeDir(t *testing.T) {
 		t.Fatalf("cache path %q escaped %q", got, dir)
 	}
 }
+
+// TestChunkedBlob_RecipeWithoutCompressedForm covers a recipe that predates
+// compressed serving. Content-Length would be zero, so writing the body would
+// overrun it and the client would see a truncated layer rather than an error.
+func TestChunkedBlob_RecipeWithoutCompressedForm(t *testing.T) {
+	b := newFakeBackend()
+	// Recipe keyed by digest but carrying no compressed identity.
+	b.set("testbucket", "recipes/sha256/"+strings.Repeat("a", 64),
+		[]byte(`{"layer":"`+strings.Repeat("b", 64)+`","size":12,"chunks":[{"digest":"`+
+			strings.Repeat("c", 64)+`","size":12}]}`))
+
+	ts := httptest.NewServer(&Server{Client: b, Bucket: "testbucket"})
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/myapp/blobs/sha256:" + strings.Repeat("a", 64))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("status %d, want 500 — a malformed recipe must not produce a short body", resp.StatusCode)
+	}
+}
