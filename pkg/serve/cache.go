@@ -1,6 +1,10 @@
 package serve
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 )
@@ -11,15 +15,16 @@ import (
 // Blobs are deliberately absent — they are orders of magnitude larger and are
 // already served either by redirect or by streaming.
 //
-// ponytail: in-memory only. A disk cache would survive a restart, but manifests
-// are kilobytes and refetching them costs one GET; add persistence only if
-// restart storms show up as real object-storage load.
+// Setting Dir adds best-effort disk persistence so a restarted process does not
+// have to refill the cache from object storage, which matters for a node-local
+// proxy that restarts with its pod.
 type Cache struct {
 	mu      sync.RWMutex
 	entries map[string]cacheEntry
 	order   []string // insertion order, for FIFO eviction
 	max     int
 	ttl     time.Duration
+	dir     string
 }
 
 type cacheEntry struct {
@@ -27,14 +32,54 @@ type cacheEntry struct {
 	expiresAt time.Time
 }
 
-// NewCache returns a cache holding at most max manifests for ttl each.
-// A max of zero means unlimited; a ttl of zero means entries never expire.
+// NewCache returns an in-memory cache holding at most max manifests for ttl
+// each. A max of zero means unlimited; a ttl of zero means entries never expire.
 func NewCache(max int, ttl time.Duration) *Cache {
 	return &Cache{
 		entries: make(map[string]cacheEntry),
 		max:     max,
 		ttl:     ttl,
 	}
+}
+
+// NewDiskCache is NewCache plus best-effort persistence under dir. Disk errors
+// are ignored throughout: a cache that fails to persist must still serve.
+func NewDiskCache(max int, ttl time.Duration, dir string) *Cache {
+	c := NewCache(max, ttl)
+	c.dir = dir
+	return c
+}
+
+// diskPath maps a cache key to a file name by hashing it. Keys contain slashes
+// and arbitrary tag text, so hashing is both the escaping strategy and the
+// guarantee that a crafted image name cannot walk out of the cache directory.
+func (c *Cache) diskPath(key string) string {
+	sum := sha256.Sum256([]byte(key))
+	return filepath.Join(c.dir, "manifests", hex.EncodeToString(sum[:]))
+}
+
+func (c *Cache) readDisk(key string) ([]byte, bool) {
+	path := c.diskPath(key)
+	info, err := os.Stat(path)
+	if err != nil {
+		return nil, false
+	}
+	if c.ttl > 0 && time.Since(info.ModTime()) > c.ttl {
+		return nil, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, false
+	}
+	return data, true
+}
+
+func (c *Cache) writeDisk(key string, data []byte) {
+	path := c.diskPath(key)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return
+	}
+	_ = os.WriteFile(path, data, 0o644)
 }
 
 // Manifest returns a cached manifest, if present and unexpired.
@@ -46,7 +91,15 @@ func (c *Cache) Manifest(key string) ([]byte, bool) {
 	e, ok := c.entries[key]
 	c.mu.RUnlock()
 	if !ok {
-		return nil, false
+		if c.dir == "" {
+			return nil, false
+		}
+		data, found := c.readDisk(key)
+		if !found {
+			return nil, false
+		}
+		c.PutManifest(key, data) // warm the in-memory tier
+		return data, true
 	}
 	if !e.expiresAt.IsZero() && time.Now().After(e.expiresAt) {
 		c.mu.Lock()
@@ -79,6 +132,10 @@ func (c *Cache) PutManifest(key string, data []byte) {
 		expires = time.Now().Add(c.ttl)
 	}
 	c.entries[key] = cacheEntry{data: data, expiresAt: expires}
+
+	if c.dir != "" {
+		c.writeDisk(key, data)
+	}
 }
 
 // Len reports how many manifests are currently held.

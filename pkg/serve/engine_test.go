@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -202,5 +203,43 @@ func TestWritesAreRejected(t *testing.T) {
 	resp.Body.Close()
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("POST status %d, want 405", resp.StatusCode)
+	}
+}
+
+// TestDiskCacheSurvivesRestart covers what the in-memory tier cannot: a proxy
+// that restarts with its pod should not have to refill from object storage.
+func TestDiskCacheSurvivesRestart(t *testing.T) {
+	dir := t.TempDir()
+
+	first := NewDiskCache(10, time.Minute, dir)
+	first.PutManifest("bucket/myapp/v1", []byte(testManifest))
+
+	// A brand new cache, as after a restart: nothing in memory, everything on disk.
+	second := NewDiskCache(10, time.Minute, dir)
+	if second.Len() != 0 {
+		t.Fatalf("fresh cache started with %d entries in memory", second.Len())
+	}
+	data, ok := second.Manifest("bucket/myapp/v1")
+	if !ok {
+		t.Fatal("manifest did not survive on disk")
+	}
+	if string(data) != testManifest {
+		t.Error("manifest read back from disk does not match")
+	}
+	if second.Len() != 1 {
+		t.Error("disk hit did not warm the in-memory tier")
+	}
+}
+
+// TestDiskCacheKeyCannotEscapeDir guards the path handling: image names arrive
+// from the network and contain slashes.
+func TestDiskCacheKeyCannotEscapeDir(t *testing.T) {
+	dir := t.TempDir()
+	c := NewDiskCache(10, time.Minute, dir)
+	c.PutManifest("../../etc/passwd", []byte("x"))
+
+	got := c.diskPath("../../etc/passwd")
+	if !strings.HasPrefix(got, dir) {
+		t.Fatalf("cache path %q escaped %q", got, dir)
 	}
 }
