@@ -25,7 +25,7 @@ func TestSelectPushPlatform(t *testing.T) {
 			host: "linux/amd64",
 		},
 		{
-			name: "single platform, nothing to report",
+			name:      "single platform, nothing to report",
 			available: []string{"linux/amd64"}, host: "linux/amd64",
 			wantChosen: "linux/amd64",
 		},
