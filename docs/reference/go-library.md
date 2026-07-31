@@ -3,24 +3,24 @@
 s3lo exposes its core packages for use in other Go programs.
 
 ```bash
-go get github.com/OuFinx/s3lo
+go get github.com/OuFinx/s3lo/v2
 ```
 
 ## Packages
 
 | Package | Description |
 |---------|-------------|
-| `github.com/OuFinx/s3lo/pkg/image` | High-level operations: push, pull, copy, list, inspect, delete, GC, stats, scan |
-| `github.com/OuFinx/s3lo/pkg/ref` | Parse `s3://`, `gs://`, `az://`, `local://` references |
-| `github.com/OuFinx/s3lo/pkg/storage` | Storage backend interface + AWS S3, GCS, Azure Blob, and local filesystem implementations |
-| `github.com/OuFinx/s3lo/pkg/oci` | OCI manifest and config types |
+| `github.com/OuFinx/s3lo/v2/pkg/image` | High-level operations: push, pull, copy, list, inspect, delete, GC, stats |
+| `github.com/OuFinx/s3lo/v2/pkg/ref` | Parse `s3://`, `gs://`, `az://`, `local://` references |
+| `github.com/OuFinx/s3lo/v2/pkg/storage` | Storage backend interface + AWS S3, GCS, Azure Blob, and local filesystem implementations |
+| `github.com/OuFinx/s3lo/v2/pkg/oci` | OCI manifest and config types |
 
 All functions accept `context.Context` as the first argument.
 
 ## Push
 
 ```go
-import "github.com/OuFinx/s3lo/pkg/image"
+import "github.com/OuFinx/s3lo/v2/pkg/image"
 
 err := image.Push(ctx, "myapp:v1.0", "s3://my-bucket/myapp:v1.0", image.PushOptions{})
 ```
@@ -119,7 +119,7 @@ fmt.Printf("dedup savings: %d bytes\n", stats.LogicalBytes-stats.ActualBytes)
 ## Parse a reference
 
 ```go
-import "github.com/OuFinx/s3lo/pkg/ref"
+import "github.com/OuFinx/s3lo/v2/pkg/ref"
 
 r, err := ref.Parse("s3://my-bucket/myapp:v1.0")
 fmt.Println(r.Scheme)            // "s3"
@@ -142,7 +142,7 @@ ref.Parse("local://./store/myapp:v1.0")       // local filesystem
 To use MinIO, Cloudflare R2, or Ceph, pass the endpoint via context:
 
 ```go
-import "github.com/OuFinx/s3lo/pkg/storage"
+import "github.com/OuFinx/s3lo/v2/pkg/storage"
 
 ctx = storage.WithEndpoint(ctx, "http://localhost:9000")
 err := image.Push(ctx, "myapp:v1.0", "s3://my-bucket/myapp:v1.0", image.PushOptions{})
@@ -154,7 +154,7 @@ err := image.Push(ctx, "myapp:v1.0", "s3://my-bucket/myapp:v1.0", image.PushOpti
 either of the two forms a chunked layer has:
 
 ```go
-import "github.com/OuFinx/s3lo/pkg/chunkstore"
+import "github.com/OuFinx/s3lo/v2/pkg/chunkstore"
 
 // Split a layer into chunks, uploading only the ones the bucket lacks.
 recipe, stats, err := chunkstore.Store(ctx, client, "my-bucket", "/tmp/layer.tar", rawDigest)

@@ -65,7 +65,9 @@ var versionCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.CompletionOptions.DisableDefaultCmd = true
+	// Shell completion comes free with cobra and was switched off. Leaving it
+	// off costs nothing to build and everything to discover: a CLI that cannot
+	// complete its own subcommands reads as unfinished.
 	rootCmd.PersistentFlags().BoolVar(&verbose, "verbose", false, "Enable verbose debug output")
 	rootCmd.PersistentFlags().StringVar(&endpoint, "endpoint", "", "Override storage endpoint URL (for MinIO, R2, Ceph)")
 	rootCmd.PersistentFlags().DurationVar(&timeout, "timeout", 0, "Maximum time for a command to run (e.g. 30m, 2h). Default: no timeout.")
