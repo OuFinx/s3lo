@@ -10,6 +10,12 @@ type CopyResult struct {
 	BlobsCopied  int
 	BlobsSkipped int
 	Platforms    int // number of platforms copied (1 for single-arch)
+	// SignaturesDropped counts signature records that could not travel because
+	// the destination manifest was rewritten, which happens when --platform
+	// filters a multi-arch index. A signature covers the manifest's digest, so
+	// carrying it would produce an image that claims to be signed and fails to
+	// verify.
+	SignaturesDropped int
 }
 
 // CopyOptions controls copy behavior.

@@ -70,6 +70,30 @@ Use `--platform` to copy only one platform (results in a single-arch image at th
 s3lo copy alpine:latest s3://my-bucket/alpine:latest --platform linux/amd64
 ```
 
+## Signatures
+
+A signature covers the digest of the manifest bytes stored at
+`manifests/<image>/<tag>/manifest.json`. What happens to it on a copy follows
+from that:
+
+| Copy | Manifest at the destination | Signature |
+|---|---|---|
+| Bucket → bucket, all platforms | byte for byte identical | travels, still verifies |
+| Bucket → bucket, `--platform` | rewritten to the filtered index | dropped, and `copy` says so |
+| Registry → bucket | written from the registry's manifest | none exists to carry; sign the copy |
+
+A stale signature is worse than no signature: the image would claim to be signed
+and then fail to verify. So when the manifest is rewritten the signature is left
+behind and the copy tells you to re-sign:
+
+```
+Warning: 1 signature(s) not copied — filtering platforms rewrites the manifest,
+so the old signature cannot verify against it. Re-sign the copy:
+  s3lo security sign s3://my-bucket/myapp:amd64 --key <key>
+```
+
+See [sign](sign.md) and [verify](verify.md).
+
 ## How it works
 
 === "Registry → S3"
