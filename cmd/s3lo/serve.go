@@ -48,6 +48,8 @@ For GCS, Azure, and local backends, blobs are streamed.`,
 		tlsCert, _ := cmd.Flags().GetString("tls-cert")
 		tlsKey, _ := cmd.Flags().GetString("tls-key")
 		presignTTL, _ := cmd.Flags().GetDuration("presign-ttl")
+		cacheEntries, _ := cmd.Flags().GetInt("cache-entries")
+		cacheTTL, _ := cmd.Flags().GetDuration("cache-ttl")
 
 		bucket, _, err := image.ParseConfigRef(args[0])
 		if err != nil {
@@ -59,11 +61,14 @@ For GCS, Azure, and local backends, blobs are streamed.`,
 			return err
 		}
 
-		srv := &serve.Server{
+		srv := serve.NewServer(serve.Server{
 			Client:     client,
 			Bucket:     bucket,
 			PresignTTL: presignTTL,
-		}
+			// Manifests are re-read on every pull and are kilobytes each, so a small
+			// cache removes most of the request traffic at negligible memory cost.
+			Cache: serve.NewCache(cacheEntries, cacheTTL),
+		})
 
 		addr := fmt.Sprintf("%s:%d", host, port)
 		scheme := "http"
@@ -122,5 +127,7 @@ func init() {
 	serveCmd.Flags().String("tls-cert", "", "TLS certificate file (enables HTTPS)")
 	serveCmd.Flags().String("tls-key", "", "TLS key file")
 	serveCmd.Flags().Duration("presign-ttl", time.Hour, "TTL for S3 presigned blob URLs")
+	serveCmd.Flags().Int("cache-entries", 1000, "Manifests to keep cached in memory (0 = unlimited)")
+	serveCmd.Flags().Duration("cache-ttl", 5*time.Minute, "How long a cached manifest stays valid")
 	rootCmd.AddCommand(serveCmd)
 }
