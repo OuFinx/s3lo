@@ -3,6 +3,8 @@ package image
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 
 	"github.com/OuFinx/s3lo/pkg/chunk"
 	"github.com/OuFinx/s3lo/pkg/chunkstore"
@@ -12,26 +14,43 @@ import (
 // blobKey is where whole-layer blobs live, shared across every image in the bucket.
 func blobKey(digest string) string { return "blobs/sha256/" + digest }
 
-// fetchLayer materialises a layer at destPath, whichever way the bucket happens
-// to store it, and verifies the result against digest either way.
+// fetchLayer materialises a layer as a raw tar in dir, whichever way the bucket
+// stores it, and returns the raw layer's digest and size.
+//
+// digest is what the manifest advertises: for a chunked layer that is the
+// compressed stream's digest, and the raw digest that comes back differs. Callers
+// handing the result to a container runtime need the raw identity, so it is
+// returned rather than assumed.
 //
 // The recipe lookup costs one HEAD per layer on buckets that have never been
 // chunked. That is the price of letting a bucket hold both forms at once, which
 // is what makes enabling or disabling chunking a no-op rather than a migration.
-func fetchLayer(ctx context.Context, client storage.Backend, bucket, digest, destPath string) error {
+func fetchLayer(ctx context.Context, client storage.Backend, bucket, digest, dir string) (string, int64, error) {
 	recipe, chunked, err := chunkstore.LoadRecipe(ctx, client, bucket, digest)
 	if err != nil {
-		return err
+		return "", 0, err
 	}
 	if chunked {
 		// Fetch verifies the assembled layer against recipe.Layer itself.
-		return chunkstore.Fetch(ctx, client, bucket, recipe, destPath)
+		dest := filepath.Join(dir, recipe.Layer)
+		if err := chunkstore.Fetch(ctx, client, bucket, recipe, dest); err != nil {
+			return "", 0, err
+		}
+		return recipe.Layer, recipe.Size, nil
 	}
 
-	if err := client.DownloadObjectToFile(ctx, bucket, blobKey(digest), destPath); err != nil {
-		return err
+	dest := filepath.Join(dir, digest)
+	if err := client.DownloadObjectToFile(ctx, bucket, blobKey(digest), dest); err != nil {
+		return "", 0, err
 	}
-	return verifyFileDigest(destPath, digest)
+	if err := verifyFileDigest(dest, digest); err != nil {
+		return "", 0, err
+	}
+	info, err := os.Stat(dest)
+	if err != nil {
+		return "", 0, err
+	}
+	return digest, info.Size(), nil
 }
 
 // storeLayer writes a layer to the bucket, chunked or whole, and reports whether
@@ -41,32 +60,32 @@ func fetchLayer(ctx context.Context, client storage.Backend, bucket, digest, des
 // recipe object and an indirection for no deduplication, since a sub-chunk layer
 // produces exactly one chunk anyway.
 func storeLayer(ctx context.Context, client storage.Backend, bucket, localPath, digest string,
-	size int64, chunked bool) (chunkstore.Stats, bool, error) {
+	size int64, chunked bool) (chunkstore.Recipe, chunkstore.Stats, bool, error) {
 
 	if !chunked || size < chunk.MinSize {
 		exists, err := client.HeadObjectExists(ctx, bucket, blobKey(digest))
 		if err != nil {
-			return chunkstore.Stats{}, false, fmt.Errorf("check blob %s: %w", short(digest), err)
+			return chunkstore.Recipe{}, chunkstore.Stats{}, false, fmt.Errorf("check blob %s: %w", short(digest), err)
 		}
 		if exists {
 			// Refresh the timestamp so a concurrent GC keeps the blob inside its
 			// grace window while this push writes the manifest that references it.
 			if err := client.TouchObject(ctx, bucket, blobKey(digest)); err != nil {
-				return chunkstore.Stats{}, true, nil
+				return chunkstore.Recipe{}, chunkstore.Stats{}, true, nil
 			}
-			return chunkstore.Stats{}, true, nil
+			return chunkstore.Recipe{}, chunkstore.Stats{}, true, nil
 		}
 		if err := client.UploadFile(ctx, localPath, bucket, blobKey(digest), storage.StorageClassIntelligentTiering); err != nil {
-			return chunkstore.Stats{}, false, fmt.Errorf("upload blob %s: %w", short(digest), err)
+			return chunkstore.Recipe{}, chunkstore.Stats{}, false, fmt.Errorf("upload blob %s: %w", short(digest), err)
 		}
-		return chunkstore.Stats{Bytes: size, BytesUploaded: size}, false, nil
+		return chunkstore.Recipe{}, chunkstore.Stats{Bytes: size, BytesUploaded: size}, false, nil
 	}
 
-	stats, err := chunkstore.Store(ctx, client, bucket, localPath, digest)
+	recipe, stats, err := chunkstore.Store(ctx, client, bucket, localPath, digest)
 	if err != nil {
-		return stats, false, err
+		return recipe, stats, false, err
 	}
-	return stats, stats.BytesUploaded == 0, nil
+	return recipe, stats, stats.BytesUploaded == 0, nil
 }
 
 // copyChunkedLayer transfers a layer that the source bucket stores as chunks,

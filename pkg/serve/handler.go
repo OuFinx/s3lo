@@ -267,9 +267,14 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request, bucket, dige
 // serveChunkedBlob streams a layer assembled from chunks. Content-Length comes
 // from the recipe, so the client still sees an ordinary blob response; that it
 // never existed as one object is invisible to it.
+//
+// The chunk objects are shipped exactly as stored, which makes the response a
+// valid zstd stream matching the digest the manifest advertises. Nothing is
+// decompressed here: the client decompresses, as it would for any registry, and
+// roughly a third of the bytes move.
 func (s *Server) serveChunkedBlob(w http.ResponseWriter, r *http.Request, bucket, digest string, recipe chunkstore.Recipe) {
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", recipe.Size))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", recipe.CompressedSize))
 	w.Header().Set("Docker-Content-Digest", digest)
 
 	if r.Method == http.MethodHead {
@@ -279,7 +284,7 @@ func (s *Server) serveChunkedBlob(w http.ResponseWriter, r *http.Request, bucket
 
 	s.observeBlob("chunked")
 	w.WriteHeader(http.StatusOK)
-	if err := chunkstore.Stream(r.Context(), s.Client, bucket, recipe, w); err != nil {
+	if err := chunkstore.StreamCompressed(r.Context(), s.Client, bucket, recipe, w); err != nil {
 		// The status line is already on the wire by now, so the only honest signal
 		// left is to cut the response short of Content-Length; the client reports a
 		// truncated body rather than accepting a corrupt layer.

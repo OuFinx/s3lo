@@ -48,7 +48,7 @@ func TestStoreFetchLayer_BothModes(t *testing.T) {
 			dir := t.TempDir()
 			src, digest, want := writeLayerFile(t, dir, "layer.tar", tc.size, 11)
 
-			stats, skipped, err := storeLayer(ctx, client, bucket, src, digest, int64(tc.size), tc.chunked)
+			rec, stats, skipped, err := storeLayer(ctx, client, bucket, src, digest, int64(tc.size), tc.chunked)
 			if err != nil {
 				t.Fatalf("storeLayer: %v", err)
 			}
@@ -69,11 +69,16 @@ func TestStoreFetchLayer_BothModes(t *testing.T) {
 				t.Errorf("whole-layer blob present = %v, want %v", blobExists, !tc.wantChunked)
 			}
 
-			dst := filepath.Join(dir, "out.tar")
-			if err := fetchLayer(ctx, client, bucket, digest, dst); err != nil {
+			outDir := t.TempDir()
+			lookup := digest
+			if rec.CompressedDigest != "" {
+				lookup = rec.CompressedDigest
+			}
+			rawDigest, _, err := fetchLayer(ctx, client, bucket, lookup, outDir)
+			if err != nil {
 				t.Fatalf("fetchLayer: %v", err)
 			}
-			got, err := os.ReadFile(dst)
+			got, err := os.ReadFile(filepath.Join(outDir, rawDigest))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,7 +87,7 @@ func TestStoreFetchLayer_BothModes(t *testing.T) {
 			}
 
 			// Storing it again must be a no-op transfer.
-			_, skipped, err = storeLayer(ctx, client, bucket, src, digest, int64(tc.size), tc.chunked)
+			_, _, skipped, err = storeLayer(ctx, client, bucket, src, digest, int64(tc.size), tc.chunked)
 			if err != nil {
 				t.Fatalf("second storeLayer: %v", err)
 			}
@@ -103,7 +108,7 @@ func TestStoreLayer_ChunkedRePushUploadsOnlyTheEdit(t *testing.T) {
 
 	size := 16 * chunk.MinSize
 	src, digest, original := writeLayerFile(t, dir, "v1.tar", size, 12)
-	if _, _, err := storeLayer(ctx, client, bucket, src, digest, int64(size), true); err != nil {
+	if _, _, _, err := storeLayer(ctx, client, bucket, src, digest, int64(size), true); err != nil {
 		t.Fatalf("store v1: %v", err)
 	}
 
@@ -116,7 +121,7 @@ func TestStoreLayer_ChunkedRePushUploadsOnlyTheEdit(t *testing.T) {
 	sum := sha256.Sum256(edited)
 	digest2 := hex.EncodeToString(sum[:])
 
-	stats, _, err := storeLayer(ctx, client, bucket, src2, digest2, int64(len(edited)), true)
+	rec2, stats, _, err := storeLayer(ctx, client, bucket, src2, digest2, int64(len(edited)), true)
 	if err != nil {
 		t.Fatalf("store v2: %v", err)
 	}
@@ -135,11 +140,12 @@ func TestStoreLayer_ChunkedRePushUploadsOnlyTheEdit(t *testing.T) {
 	}
 
 	// And the edited layer must still come back byte-exact from the mixed chunks.
-	dst := filepath.Join(dir, "v2-out.tar")
-	if err := fetchLayer(ctx, client, bucket, digest2, dst); err != nil {
+	outDir := t.TempDir()
+	rawDigest, _, err := fetchLayer(ctx, client, bucket, rec2.CompressedDigest, outDir)
+	if err != nil {
 		t.Fatalf("fetchLayer v2: %v", err)
 	}
-	got, err := os.ReadFile(dst)
+	got, err := os.ReadFile(filepath.Join(outDir, rawDigest))
 	if err != nil {
 		t.Fatal(err)
 	}

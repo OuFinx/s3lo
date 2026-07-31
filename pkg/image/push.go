@@ -8,10 +8,14 @@ import (
 	"path/filepath"
 	"sync"
 
+	"encoding/json"
+
 	"github.com/OuFinx/s3lo/pkg/chunkstore"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -111,6 +115,9 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 	var (
 		onBlobMu sync.Mutex
 		total    chunkstore.Stats
+		// Layers that ended up chunked, keyed by their raw digest, so the manifest
+		// can be pointed at the compressed form afterwards.
+		compressed = map[string]chunkstore.Recipe{}
 	)
 
 	for _, entry := range entries {
@@ -126,7 +133,7 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 				return fmt.Errorf("stat blob %s: %w", entry.Name(), err)
 			}
 
-			stats, skipped, err := storeLayer(gCtx, client, parsed.Bucket, localPath,
+			recipe, stats, skipped, err := storeLayer(gCtx, client, parsed.Bucket, localPath,
 				entry.Name(), info.Size(), chunked)
 			if err != nil {
 				return err
@@ -135,6 +142,9 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 				"chunks", stats.Chunks, "uploaded", stats.BytesUploaded, "skipped", skipped)
 
 			onBlobMu.Lock()
+			if recipe.CompressedDigest != "" {
+				compressed[entry.Name()] = recipe
+			}
 			total.Chunks += stats.Chunks
 			total.ChunksUploaded += stats.ChunksUploaded
 			total.Bytes += stats.Bytes
@@ -153,10 +163,18 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		opts.OnTransfer(total)
 	}
 
+	// Point the manifest at the compressed form of every chunked layer. The image
+	// config is untouched — its diff_ids are the raw digests, which is exactly what
+	// the spec wants — so the image ID does not change.
+	published, err := retargetManifest(manifestData, compressed)
+	if err != nil {
+		return err
+	}
+
 	// Publish the tag last: every blob it references is already in the bucket, so
 	// this single write is what makes the image visible, all at once.
 	manifestPrefix := parsed.ManifestsPrefix()
-	if err := client.PutObject(ctx, parsed.Bucket, manifestPrefix+tagManifestFile, manifestData); err != nil {
+	if err := client.PutObject(ctx, parsed.Bucket, manifestPrefix+tagManifestFile, published); err != nil {
 		return fmt.Errorf("publish tag: %w", err)
 	}
 
@@ -174,4 +192,40 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 	}
 
 	return nil
+}
+
+// retargetManifest rewrites layer descriptors for layers stored as chunks so they
+// advertise the compressed stream a client should fetch. Layers stored whole are
+// left alone, which is what keeps a mixed bucket readable.
+func retargetManifest(manifestData []byte, compressed map[string]chunkstore.Recipe) ([]byte, error) {
+	if len(compressed) == 0 {
+		return manifestData, nil
+	}
+	var m ocispec.Manifest
+	if err := json.Unmarshal(manifestData, &m); err != nil {
+		// An image index carries no layers of its own; nothing to retarget.
+		return manifestData, nil
+	}
+	if len(m.Layers) == 0 {
+		return manifestData, nil
+	}
+	changed := false
+	for i, l := range m.Layers {
+		r, ok := compressed[l.Digest.Encoded()]
+		if !ok {
+			continue
+		}
+		m.Layers[i].Digest = digest.Digest("sha256:" + r.CompressedDigest)
+		m.Layers[i].Size = r.CompressedSize
+		m.Layers[i].MediaType = ocispec.MediaTypeImageLayerZstd
+		changed = true
+	}
+	if !changed {
+		return manifestData, nil
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("marshal retargeted manifest: %w", err)
+	}
+	return out, nil
 }

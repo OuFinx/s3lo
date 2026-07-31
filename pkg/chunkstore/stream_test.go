@@ -69,10 +69,11 @@ func storeStreamLayer(t *testing.T, client storage.Backend, bucket string, size 
 
 	dir := t.TempDir()
 	path, digest := writeLayerData(t, dir, "layer.tar", data)
-	if _, err := Store(context.Background(), client, bucket, path, digest); err != nil {
+	rec, _, err := Store(context.Background(), client, bucket, path, digest)
+	if err != nil {
 		t.Fatalf("Store: %v", err)
 	}
-	recipe, ok, err := LoadRecipe(context.Background(), client, bucket, digest)
+	recipe, ok, err := LoadRecipe(context.Background(), client, bucket, rec.CompressedDigest)
 	if err != nil || !ok {
 		t.Fatalf("LoadRecipe: ok=%v err=%v", ok, err)
 	}
@@ -202,4 +203,46 @@ func TestStream_StopsWhenWriterFails(t *testing.T) {
 	if err := Stream(ctx, client, bucket, recipe, &failingWriter{remaining: 1}); err == nil {
 		t.Fatal("Stream kept going after the writer failed")
 	}
+}
+
+// TestStreamCompressed_MatchesManifestIdentity pins the contract the image
+// manifest now depends on: the concatenated chunk objects must hash to
+// CompressedDigest and decode to exactly the raw layer. If either half breaks, a
+// client rejects the blob or unpacks the wrong bytes.
+func TestStreamCompressed_MatchesManifestIdentity(t *testing.T) {
+	ctx := context.Background()
+	bucket := t.TempDir()
+	client := storage.NewLocalClient()
+
+	recipe, raw := storeStreamLayer(t, client, bucket, 40<<20)
+	if recipe.CompressedDigest == "" {
+		t.Fatal("recipe carries no compressed identity")
+	}
+
+	var out bytes.Buffer
+	if err := StreamCompressed(ctx, client, bucket, recipe, &out); err != nil {
+		t.Fatalf("StreamCompressed: %v", err)
+	}
+
+	if int64(out.Len()) != recipe.CompressedSize {
+		t.Errorf("streamed %d bytes, recipe says %d", out.Len(), recipe.CompressedSize)
+	}
+	if sum := sha256.Sum256(out.Bytes()); hex.EncodeToString(sum[:]) != recipe.CompressedDigest {
+		t.Fatal("compressed stream does not hash to the digest the manifest advertises")
+	}
+
+	decoded, err := dec().DecodeAll(out.Bytes(), nil)
+	if err != nil {
+		t.Fatalf("client-side decode of the served stream: %v", err)
+	}
+	if !bytes.Equal(decoded, raw) {
+		t.Fatal("served stream decodes to something other than the original layer")
+	}
+	if sum := sha256.Sum256(decoded); hex.EncodeToString(sum[:]) != recipe.Layer {
+		t.Fatal("decoded layer does not match the diff_id the image config carries")
+	}
+
+	t.Logf("served %.1f MB compressed for a %.1f MB layer (%.2fx)",
+		float64(out.Len())/(1<<20), float64(len(raw))/(1<<20),
+		float64(len(raw))/float64(out.Len()))
 }

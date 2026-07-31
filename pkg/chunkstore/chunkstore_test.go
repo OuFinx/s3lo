@@ -53,7 +53,7 @@ func TestStore_FetchRoundTrip(t *testing.T) {
 	dir := t.TempDir()
 	src, digest := writeLayer(t, dir, "layer.tar", 40<<20, 1)
 
-	stats, err := Store(ctx, client, bucket, src, digest)
+	rec, stats, err := Store(ctx, client, bucket, src, digest)
 	if err != nil {
 		t.Fatalf("Store: %v", err)
 	}
@@ -61,7 +61,7 @@ func TestStore_FetchRoundTrip(t *testing.T) {
 		t.Fatalf("expected the layer to split into several chunks, got %d", stats.Chunks)
 	}
 
-	recipe, ok, err := LoadRecipe(ctx, client, bucket, digest)
+	recipe, ok, err := LoadRecipe(ctx, client, bucket, rec.CompressedDigest)
 	if err != nil || !ok {
 		t.Fatalf("LoadRecipe: ok=%v err=%v", ok, err)
 	}
@@ -91,7 +91,7 @@ func TestStore_IdenticalLayerUploadsNothingTwice(t *testing.T) {
 	dir := t.TempDir()
 	src, digest := writeLayer(t, dir, "layer.tar", 40<<20, 2)
 
-	first, err := Store(ctx, client, bucket, src, digest)
+	_, first, err := Store(ctx, client, bucket, src, digest)
 	if err != nil {
 		t.Fatalf("first Store: %v", err)
 	}
@@ -99,7 +99,7 @@ func TestStore_IdenticalLayerUploadsNothingTwice(t *testing.T) {
 		t.Fatalf("first push should upload every chunk: %d of %d", first.ChunksUploaded, first.Chunks)
 	}
 
-	second, err := Store(ctx, client, bucket, src, digest)
+	_, second, err := Store(ctx, client, bucket, src, digest)
 	if err != nil {
 		t.Fatalf("second Store: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestStore_EditedLayerUploadsOnlyChangedChunks(t *testing.T) {
 	rand.New(rand.NewSource(3)).Read(original)
 	src, digest := writeLayerData(t, dir, "v1.tar", original)
 
-	if _, err := Store(ctx, client, bucket, src, digest); err != nil {
+	if _, _, err := Store(ctx, client, bucket, src, digest); err != nil {
 		t.Fatalf("Store v1: %v", err)
 	}
 
@@ -131,7 +131,7 @@ func TestStore_EditedLayerUploadsOnlyChangedChunks(t *testing.T) {
 	edited = append(edited, original[mid:]...)
 	src2, digest2 := writeLayerData(t, dir, "v2.tar", edited)
 
-	stats, err := Store(ctx, client, bucket, src2, digest2)
+	rec2, stats, err := Store(ctx, client, bucket, src2, digest2)
 	if err != nil {
 		t.Fatalf("Store v2: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestStore_EditedLayerUploadsOnlyChangedChunks(t *testing.T) {
 	}
 
 	// The edited layer must still reassemble correctly from the mixed chunk set.
-	recipe, ok, err := LoadRecipe(ctx, client, bucket, digest2)
+	recipe, ok, err := LoadRecipe(ctx, client, bucket, rec2.CompressedDigest)
 	if err != nil || !ok {
 		t.Fatalf("LoadRecipe v2: ok=%v err=%v", ok, err)
 	}
@@ -173,10 +173,11 @@ func TestFetch_DetectsCorruptedChunk(t *testing.T) {
 	dir := t.TempDir()
 	src, digest := writeLayer(t, dir, "layer.tar", 40<<20, 4)
 
-	if _, err := Store(ctx, client, bucket, src, digest); err != nil {
+	rec, _, err := Store(ctx, client, bucket, src, digest)
+	if err != nil {
 		t.Fatalf("Store: %v", err)
 	}
-	recipe, _, err := LoadRecipe(ctx, client, bucket, digest)
+	recipe, _, err := LoadRecipe(ctx, client, bucket, rec.CompressedDigest)
 	if err != nil {
 		t.Fatalf("LoadRecipe: %v", err)
 	}
@@ -200,10 +201,11 @@ func TestFetch_DetectsReorderedRecipe(t *testing.T) {
 	dir := t.TempDir()
 	src, digest := writeLayer(t, dir, "layer.tar", 40<<20, 5)
 
-	if _, err := Store(ctx, client, bucket, src, digest); err != nil {
+	rec, _, err := Store(ctx, client, bucket, src, digest)
+	if err != nil {
 		t.Fatalf("Store: %v", err)
 	}
-	recipe, _, err := LoadRecipe(ctx, client, bucket, digest)
+	recipe, _, err := LoadRecipe(ctx, client, bucket, rec.CompressedDigest)
 	if err != nil {
 		t.Fatalf("LoadRecipe: %v", err)
 	}

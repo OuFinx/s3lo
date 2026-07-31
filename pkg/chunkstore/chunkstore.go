@@ -40,19 +40,32 @@ const (
 	chunkConcurrency = 4
 )
 
-// Recipe is the ordered chunk list that reconstitutes one layer.
+// Recipe is the ordered chunk list that reconstitutes one layer, in both the
+// forms the layer can take.
+//
+// Layer/Size describe the raw tar: that digest is the image config's diff_id and
+// never changes. CompressedDigest/CompressedSize describe the concatenation of
+// the stored chunk objects, which is itself a valid zstd stream because zstd
+// frames concatenate. That second identity is what the image manifest references,
+// so a client can be handed the compressed bytes and decompress them natively
+// instead of having s3lo decompress on its behalf.
 type Recipe struct {
-	// Layer is the hex sha256 of the assembled layer, without the "sha256:" prefix.
-	Layer  string     `json:"layer"`
-	Size   int64      `json:"size"`
-	Chunks []ChunkRef `json:"chunks"`
+	// Layer is the hex sha256 of the assembled raw layer, without "sha256:".
+	Layer string `json:"layer"`
+	Size  int64  `json:"size"`
+	// CompressedDigest is the hex sha256 of the chunk objects concatenated in
+	// order, and is the key this recipe is stored under.
+	CompressedDigest string     `json:"compressedDigest"`
+	CompressedSize   int64      `json:"compressedSize"`
+	Chunks           []ChunkRef `json:"chunks"`
 }
 
-// ChunkRef identifies one chunk and its length in the assembled layer. Size is
-// the uncompressed length; the stored object is compressed and shorter.
+// ChunkRef identifies one chunk. Size is its length in the assembled raw layer;
+// CompressedSize is the size of the stored object.
 type ChunkRef struct {
-	Digest string `json:"digest"`
-	Size   int64  `json:"size"`
+	Digest         string `json:"digest"`
+	Size           int64  `json:"size"`
+	CompressedSize int64  `json:"compressedSize"`
 }
 
 // Stats reports what a Store call actually transferred, which is the whole point
@@ -101,11 +114,16 @@ func ChunkKey(chunkDigest string) string { return ChunksPrefix + chunkDigest }
 
 // Store splits localPath into chunks, uploads the ones the bucket does not
 // already have, and writes the recipe. layerDigest is the hex sha256 of
-// localPath's contents and becomes the recipe's key.
-func Store(ctx context.Context, client storage.Backend, bucket, localPath, layerDigest string) (Stats, error) {
+// localPath's raw contents. The returned Recipe carries the compressed identity
+// the image manifest must reference.
+//
+// Compression happens on the splitting goroutine rather than in the uploaders,
+// because the compressed digest is a hash over the frames in order and cannot be
+// assembled out of order. Uploads still run concurrently.
+func Store(ctx context.Context, client storage.Backend, bucket, localPath, layerDigest string) (Recipe, Stats, error) {
 	f, err := os.Open(localPath)
 	if err != nil {
-		return Stats{}, fmt.Errorf("open layer %s: %w", layerDigest, err)
+		return Recipe{}, Stats{}, fmt.Errorf("open layer %s: %w", layerDigest, err)
 	}
 	defer f.Close()
 
@@ -113,6 +131,7 @@ func Store(ctx context.Context, client storage.Backend, bucket, localPath, layer
 		mu     sync.Mutex
 		stats  Stats
 		recipe = Recipe{Layer: layerDigest}
+		cHash  = sha256.New()
 	)
 
 	g, gCtx := errgroup.WithContext(ctx)
@@ -123,17 +142,16 @@ func Store(ctx context.Context, client storage.Backend, bucket, localPath, layer
 		digest := hex.EncodeToString(sum[:])
 		size := int64(len(data))
 
-		mu.Lock()
-		recipe.Chunks = append(recipe.Chunks, ChunkRef{Digest: digest, Size: size})
+		compressed := enc().EncodeAll(data, nil)
+		cHash.Write(compressed)
+
+		recipe.Chunks = append(recipe.Chunks, ChunkRef{
+			Digest: digest, Size: size, CompressedSize: int64(len(compressed)),
+		})
 		recipe.Size += size
+		recipe.CompressedSize += int64(len(compressed))
 		stats.Chunks++
 		stats.Bytes += size
-		mu.Unlock()
-
-		// Split reuses its buffer, so the chunk must be copied before it is
-		// handed to a goroutine that outlives this callback.
-		payload := make([]byte, len(data))
-		copy(payload, data)
 
 		g.Go(func() error {
 			key := ChunkKey(digest)
@@ -144,7 +162,7 @@ func Store(ctx context.Context, client storage.Backend, bucket, localPath, layer
 			if exists {
 				return nil
 			}
-			if err := client.PutObject(gCtx, bucket, key, enc().EncodeAll(payload, nil)); err != nil {
+			if err := client.PutObject(gCtx, bucket, key, compressed); err != nil {
 				return fmt.Errorf("upload chunk %s: %w", digest[:12], err)
 			}
 			mu.Lock()
@@ -160,25 +178,31 @@ func Store(ctx context.Context, client storage.Backend, bucket, localPath, layer
 	// abandoned mid-write.
 	waitErr := g.Wait()
 	if splitErr != nil {
-		return stats, fmt.Errorf("split layer %s: %w", layerDigest, splitErr)
+		return recipe, stats, fmt.Errorf("split layer %s: %w", layerDigest, splitErr)
 	}
 	if waitErr != nil {
-		return stats, waitErr
+		return recipe, stats, waitErr
 	}
+
+	recipe.CompressedDigest = hex.EncodeToString(cHash.Sum(nil))
 
 	recipeData, err := json.Marshal(recipe)
 	if err != nil {
-		return stats, fmt.Errorf("marshal recipe %s: %w", layerDigest, err)
+		return recipe, stats, fmt.Errorf("marshal recipe %s: %w", layerDigest, err)
 	}
-	if err := client.PutObject(ctx, bucket, RecipeKey(layerDigest), recipeData); err != nil {
-		return stats, fmt.Errorf("write recipe %s: %w", layerDigest, err)
+	// Keyed by the compressed digest because that is what the manifest points at.
+	if err := client.PutObject(ctx, bucket, RecipeKey(recipe.CompressedDigest), recipeData); err != nil {
+		return recipe, stats, fmt.Errorf("write recipe %s: %w", layerDigest, err)
 	}
-	return stats, nil
+	return recipe, stats, nil
 }
 
-// LoadRecipe reads the recipe for a layer digest. It returns false when the
-// layer is not chunked in this bucket, so callers can fall back to a whole-layer
-// blob without treating a plain bucket as an error.
+// LoadRecipe reads the recipe stored under digest. The key is the layer's
+// compressed digest, which is exactly what an image manifest references, so
+// callers can pass a manifest layer digest straight through.
+//
+// It returns false when there is no recipe, so a caller can fall back to a
+// whole-layer blob without treating a plain bucket as an error.
 func LoadRecipe(ctx context.Context, client storage.Backend, bucket, layerDigest string) (Recipe, bool, error) {
 	exists, err := client.HeadObjectExists(ctx, bucket, RecipeKey(layerDigest))
 	if err != nil {
@@ -327,6 +351,68 @@ func Stream(ctx context.Context, client storage.Backend, bucket string, recipe R
 			}
 			// Released only after the bytes are out, so the window measures
 			// memory actually held rather than requests merely started.
+			<-window
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	return nil
+}
+
+// StreamCompressed writes the layer's chunk objects to w exactly as stored, in
+// order, without decompressing anything.
+//
+// The result is a valid zstd stream whose digest is recipe.CompressedDigest,
+// which is what the image manifest advertises. This is the fast read path: it
+// moves roughly a third of the bytes the raw form does, and the decompression
+// happens in the client that was always going to decompress a layer anyway.
+func StreamCompressed(ctx context.Context, client storage.Backend, bucket string, recipe Recipe, w io.Writer) error {
+	if len(recipe.Chunks) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	results := make([]chan chunkResult, len(recipe.Chunks))
+	for i := range results {
+		results[i] = make(chan chunkResult, 1)
+	}
+	window := make(chan struct{}, streamReadAhead)
+
+	go func() {
+		for i, c := range recipe.Chunks {
+			select {
+			case window <- struct{}{}:
+			case <-ctx.Done():
+				return
+			}
+			go func(i int, c ChunkRef) {
+				data, err := client.GetObject(ctx, bucket, ChunkKey(c.Digest))
+				if err != nil {
+					err = fmt.Errorf("fetch chunk %s: %w", c.Digest[:12], err)
+				}
+				results[i] <- chunkResult{data: data, err: err}
+			}(i, c)
+		}
+	}()
+
+	for i, c := range recipe.Chunks {
+		select {
+		case res := <-results[i]:
+			if res.err != nil {
+				return res.err
+			}
+			// The stored object is opaque here, so the only cheap check available
+			// is its length; the client verifies the whole stream against the
+			// manifest digest, which is the real guarantee.
+			if c.CompressedSize > 0 && int64(len(res.data)) != c.CompressedSize {
+				return fmt.Errorf("chunk %s is %d stored bytes, recipe says %d",
+					c.Digest[:12], len(res.data), c.CompressedSize)
+			}
+			if _, err := w.Write(res.data); err != nil {
+				return fmt.Errorf("write chunk %d of layer %s: %w", i, recipe.Layer, err)
+			}
 			<-window
 		case <-ctx.Done():
 			return ctx.Err()
