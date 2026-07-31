@@ -99,54 +99,6 @@ func (v InspectView) View() string {
 	)
 }
 
-// ScanResultsView shows scan status. Trivy runs via tea.ExecProcess; this overlay
-// just shows loading / completion state.
-type ScanResultsView struct {
-	done bool
-	err  error
-}
-
-func newScanResultsView() ScanResultsView {
-	return ScanResultsView{}
-}
-
-func (v ScanResultsView) Init() tea.Cmd { return nil }
-
-func (v ScanResultsView) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case scanResultMsg:
-		v.done = true
-		v.err = msg.err
-		return v, nil
-	case tea.KeyMsg:
-		if v.done || msg.String() == "esc" || msg.String() == "q" {
-			return v, func() tea.Msg { return dismissOverlayMsg{} }
-		}
-	}
-	return v, nil
-}
-
-func (v ScanResultsView) View() string {
-	if !v.done {
-		return overlayStyle.Render(
-			titleStyle.Render("Scan") + "\n\n  Preparing image for Trivy...\n\n" +
-				dimStyle.Render("[esc] cancel"),
-		)
-	}
-	if v.err != nil {
-		return overlayStyle.Render(
-			titleStyle.Render("Scan") + "\n\n" +
-				redStyle.Render("Error: "+v.err.Error()) + "\n\n" +
-				dimStyle.Render("[any key] close"),
-		)
-	}
-	return overlayStyle.Render(
-		titleStyle.Render("Scan") + "\n\n" +
-			greenStyle.Render("Scan complete.") + "\n\n" +
-			dimStyle.Render("[any key] close"),
-	)
-}
-
 // CleanPreviewView shows a dry-run summary and asks for confirmation.
 type CleanPreviewView struct {
 	loading bool

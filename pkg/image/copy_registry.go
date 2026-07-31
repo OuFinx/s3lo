@@ -255,8 +255,6 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 			return nil, fmt.Errorf("write manifest.json: %w", err)
 		}
 
-		_ = recordHistory(ctx, s3c, destParsed, writeManifestData, manifestLogicalSize(ctx, s3c, destParsed.Bucket, writeManifestData))
-
 		return &CopyResult{
 			Platforms:    len(selected),
 			BlobsCopied:  int(blobsCopied.Load()),
@@ -293,8 +291,6 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 	if err := s3c.PutObject(ctx, destParsed.Bucket, manifestPrefix+"manifest.json", manifestData); err != nil {
 		return nil, fmt.Errorf("write manifest.json: %w", err)
 	}
-
-	_ = recordHistory(ctx, s3c, destParsed, manifestData, manifestLogicalSize(ctx, s3c, destParsed.Bucket, manifestData))
 
 	return &CopyResult{
 		Platforms:    1,

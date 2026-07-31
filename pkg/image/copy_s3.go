@@ -236,8 +236,6 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			return nil, fmt.Errorf("write manifest.json: %w", err)
 		}
 
-		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, writeManifestData))
-
 		return &CopyResult{
 			Platforms:    len(selected),
 			BlobsCopied:  int(blobsCopied.Load()),
@@ -295,7 +293,6 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			}
 		}
 	}
-	_ = recordHistory(ctx, destClient, destParsed, manifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, manifestData))
 
 	return &CopyResult{
 		Platforms:    1,

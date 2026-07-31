@@ -203,9 +203,6 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 			}
 		}
 	}
-	if err := recordHistory(ctx, client, parsed, manifestData, totalSize); err != nil {
-		slog.Debug("record history failed (non-fatal)", "error", err)
-	}
 
 	return nil
 }

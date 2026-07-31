@@ -57,9 +57,9 @@ func isUsageError(err error) bool {
 		"unknown flag:",
 		"unknown shorthand flag:",
 		"flag needs an argument:",
-		"invalid argument \"",       // pflag: invalid argument "x" for "--flag"
-		"arg(s), received",          // ExactArgs / MaximumNArgs / RangeArgs
-		"arg(s), only received",     // MinimumNArgs
+		"invalid argument \"",   // pflag: invalid argument "x" for "--flag"
+		"arg(s), received",      // ExactArgs / MaximumNArgs / RangeArgs
+		"arg(s), only received", // MinimumNArgs
 	} {
 		if strings.Contains(msg, marker) {
 			return true
