@@ -69,8 +69,24 @@ Total size:   2.4 GB
 Dedup savings: 1.8 GB (43% saved)
 
 Estimated monthly cost: $0.06
-vs ECR equivalent:      $0.24 (4.3x cheaper)
+vs ECR equivalent:      $0.19 (3.2x cheaper)
 ```
+
+## How the ECR figure is derived
+
+ECR is priced per stored gigabyte, and it stores layers gzip-compressed. s3lo
+stores raw tars unless the bucket is chunked, in which case chunks are stored
+zstd-compressed.
+
+Comparing s3lo's stored bytes against ECR's price per *uncompressed* gigabyte
+would credit s3lo with a saving it has not earned, so the estimate divides by a
+measured gzip ratio of 3.4x before applying ECR's rate. That ratio was measured
+across the layers of `python:3.12-slim`; source-heavy images compress a little
+better and images full of compiled binaries a little worse.
+
+Turning chunking on shrinks the s3lo side substantially, because the bucket then
+holds compressed chunks rather than raw layers: the same `python:3.12-slim`
+occupies 142 MB unchunked and 37 MB chunked.
 
 ## Request costs
 

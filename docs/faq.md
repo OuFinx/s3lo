@@ -32,7 +32,7 @@ Blob uploads are safe (same content, same key). However, two simultaneous pushes
 
 **Why does s3lo require an explicit tag?**
 
-Commands like `pull`, `push`, `delete`, `inspect`, `scan`, and `copy` require an explicit tag (e.g. `s3://my-bucket/myapp:v1.0`). Writing `s3://my-bucket/myapp` without a tag is an error. This prevents accidental operations that silently default to `:latest`.
+Commands like `pull`, `push`, `delete`, `inspect`, and `copy` require an explicit tag (e.g. `s3://my-bucket/myapp:v1.0`). Writing `s3://my-bucket/myapp` without a tag is an error. This prevents accidental operations that silently default to `:latest`.
 
 **Why does pull show "Done" but `docker images` shows nothing?**
 
@@ -97,7 +97,7 @@ Authentication uses `DefaultAzureCredential` — `az login` locally, or service 
 
 **Can I use s3lo without an AWS account?**
 
-Yes. Use `s3lo bucket init --local ./my-store` to create a local directory with the OCI layout, then use `local://` references (e.g. `local://./my-store/myapp:v1.0`). All commands — push, pull, list, history, inspect, delete, copy — work with local storage.
+Yes. Use `s3lo bucket init --local ./my-store` to create a local directory with the OCI layout, then use `local://` references (e.g. `local://./my-store/myapp:v1.0`). All commands — push, pull, list, inspect, delete, copy — work with local storage.
 
 ---
 
@@ -124,26 +124,6 @@ Bucket-wide defaults apply to all images. Per-image overrides take precedence. W
 **What does the 1-hour GC grace period protect against?**
 
 If a push is in progress and `clean --blobs` runs simultaneously, blobs that have been uploaded but whose manifest hasn't been written yet would be incorrectly identified as unreferenced and deleted. The grace period prevents this race condition.
-
----
-
-## Vulnerability scanning
-
-**Does s3lo include a vulnerability scanner?**
-
-Yes, since v1.5.0. `s3lo scan` downloads an image from S3 and scans it with [Trivy](https://trivy.dev). Trivy is auto-installed to `~/.local/bin/trivy` on first use — s3lo will prompt you, or you can pass `--install-trivy` to skip the prompt in CI.
-
-**Do I need to install Trivy separately?**
-
-No. If Trivy isn't found in `PATH` or `~/.local/bin/`, s3lo offers to download it. Use `--install-trivy` in CI workflows to enable auto-install without a prompt.
-
-**Can I fail a CI build when vulnerabilities are found?**
-
-Yes. Pass `--severity HIGH,CRITICAL` (or any subset of `LOW,MEDIUM,HIGH,CRITICAL`). s3lo exits non-zero when Trivy finds vulnerabilities at or above the requested severity, which fails the workflow step.
-
-**Does scanning require Docker?**
-
-No. `s3lo scan` downloads the image blobs directly from S3 — Docker is not involved.
 
 ---
 

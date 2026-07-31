@@ -13,11 +13,34 @@ Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster 
 
 | | ECR | s3lo |
 |---|---|---|
-| **Pull speed** | ~1-5 Gbps | Up to 100 Gbps on EC2 |
-| **Storage cost** | $0.10/GB/month | $0.023/GB/month (S3 Standard) |
+| **Re-push after editing one file** | whole layer again | one chunk (~4 MB) |
+| **Deduplication** | whole layers only | content-defined chunks, bucket-wide |
+| **First push, 1.6 GB image** | 47.5 s | 36.9 s |
+| **Cold pull** | see [benchmarks](#measured-numbers) | see [benchmarks](#measured-numbers) |
+| **Storage cost** | $0.10/GB/month | $0.023/GB/month |
 | **Registry management** | Lifecycle policies, permissions | Just a bucket |
-| **Multi-region** | Replicate per region | Native cloud replication |
 | **Cloud support** | AWS only | AWS S3, GCS, Azure Blob, MinIO, R2, Ceph |
+
+### Measured numbers
+
+Measured on a `c6id.xlarge` in us-east-1, containerd via `crictl`, layers on
+local NVMe, median of three cold pulls. Payloads built from real Python wheels
+(gzip 2.15x, zstd 2.69x).
+
+| Payload | Pull ECR | Pull s3lo | Push ECR | Push s3lo | Re-push s3lo |
+|---|---|---|---|---|---|
+| 123 MB | 1.70 s | 1.26 s | 6.3 s | 2.4 s | 4.1 MB (96.9% dedup) |
+| 500 MB | 4.51 s | 5.29 s | 19.4 s | 8.2 s | 4.1 MB (99.2%) |
+| 999 MB | 10.80 s | 12.99 s | 33.3 s | 21.9 s | 4.1 MB (99.6%) |
+| 1647 MB | 15.29 s | 19.97 s | 47.5 s | 36.9 s | 4.1 MB (99.8%) |
+
+Those pull figures predate serving layers compressed; they are the honest
+numbers from the last full run and will be replaced once the current build is
+re-measured. Push and deduplication are current.
+
+This is one node pulling one image, which is what a pod start is. It says
+nothing about registry behaviour under simultaneous scale-out — that was not
+tested and is not claimed.
 
 ## Quick Start
 
@@ -90,6 +113,10 @@ s3lo list s3://my-bucket/
 # Inspect image metadata
 s3lo inspect s3://my-bucket/myapp:v1.0
 
+# Store layers as shared chunks: a re-push after a small edit sends only the
+# chunk that changed (see docs/concepts/chunking.md)
+s3lo config set s3://my-bucket/ chunked=true
+
 # Show storage stats and deduplication savings
 s3lo bucket stats s3://my-bucket/
 
@@ -103,15 +130,8 @@ s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
 s3lo bucket clean s3://my-bucket/
 s3lo bucket clean s3://my-bucket/ --confirm
 
-# Analyze bucket configuration and get recommendations
-s3lo config recommend s3://my-bucket/
-
 # Enable per-image tag immutability
 s3lo config set s3://my-bucket/myapp immutable=true
-
-# Show push history
-s3lo history s3://my-bucket/
-s3lo history s3://my-bucket/myapp
 
 # Browse and manage images interactively
 s3lo tui s3://my-bucket/
@@ -148,7 +168,6 @@ s3lo bucket init --local ./local-s3
 s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
 s3lo pull local://./local-s3/myapp:v1.0
 s3lo list local://./local-s3/
-s3lo history local://./local-s3/
 ```
 
 ## How It Works

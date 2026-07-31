@@ -30,7 +30,7 @@ Storage class breakdown:
   STANDARD:                      0.2 GB (9%)
 
 Estimated monthly cost: $0.06
-vs ECR equivalent:      $0.24 (4.3x cheaper)
+vs ECR equivalent:      $0.19 (3.2x cheaper)
 ```
 
 ## What it calculates

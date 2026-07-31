@@ -61,7 +61,6 @@ The status bar is always pinned to the bottom line.
 | `esc` | Return to image list |
 | `d` | Delete selected tag (with confirmation) |
 | `i` | Inspect selected tag — shows metadata as formatted JSON |
-| `s` | Scan selected tag for vulnerabilities with Trivy |
 | `g` | Open layer sharing matrix for all tags of this image |
 | `c` | Open clean preview |
 | `r` | Refresh |
@@ -110,12 +109,6 @@ Press `esc`, `q`, or `g` again to close the overlay.
 Press `i` on a tag to view its full metadata as pretty-printed JSON: layers, digests, sizes, platforms (for multi-arch images), and signatures.
 
 Press `esc` or `q` to close.
-
-## Scan overlay (`s`)
-
-Press `s` on a tag to scan it for vulnerabilities using Trivy. s3lo downloads the image to a temporary OCI layout directory and passes it to Trivy, which opens in the terminal.
-
-Press `esc` to cancel before the scan starts.
 
 ## Clean preview (`c`)
 

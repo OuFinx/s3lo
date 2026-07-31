@@ -27,9 +27,9 @@ Container registries are a solved problem — but ECR and Docker Hub are generic
 
 | | ECR | s3lo + S3 |
 |---|---|---|
-| **Pull speed (EC2)** | ~1–5 Gbps | Up to 100 Gbps |
+| **Deduplication** | Whole layers only | Content-defined chunks, bucket-wide |
+| **Re-push after a one-file edit** | Whole layer again | One chunk, about 4 MB |
 | **Storage cost** | $0.10/GB/month | $0.023/GB/month |
-| **Deduplication** | None | Bucket-wide, SHA256 |
 | **Multi-arch** | Yes | Yes (OCI Image Index) |
 | **Registry to manage** | Lifecycle policies, permissions, replication | Just a bucket |
 | **Auth** | ECR token (expires in 12h) | Standard cloud credentials |
@@ -53,13 +53,13 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 
 **Push:** s3lo exports the image from Docker, splits it into content-addressable blobs, and uploads only the blobs that don't already exist in S3.
 
-**Pull:** s3lo downloads all blobs in parallel and imports the reassembled image into Docker. On EC2 with enhanced networking, this can reach 100 Gbps — limited by the instance, not the registry.
+**Pull:** s3lo downloads blobs in parallel and imports the reassembled image into Docker. On a chunked bucket, `s3lo serve` hands a client the stored chunks as a single zstd stream, so the client decompresses and roughly a third of the raw bytes move.
 
 **Serve:** s3lo starts a lightweight OCI Distribution Spec HTTP server backed by your bucket. Any node with Docker or kubectl can `docker pull localhost:5000/myapp:v1.0` directly — no `s3lo pull` required.
 
 **Copy:** s3lo pulls directly from any OCI registry (Docker Hub, ECR, GHCR) and uploads to S3 — without going through the local Docker daemon.
 
-**TUI:** `s3lo tui s3://my-bucket/` opens an interactive terminal UI to browse images, inspect tags, view layer sharing across tags, scan for vulnerabilities, and run lifecycle clean — all without leaving the terminal.
+**TUI:** `s3lo tui s3://my-bucket/` opens an interactive terminal UI to browse images, inspect tags, view layer sharing across tags, and run lifecycle clean — all without leaving the terminal.
 
 ---
 

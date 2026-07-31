@@ -19,6 +19,25 @@ Both `s3://` and `local://` references are supported.
 | `lifecycle.keep_last` | integer | Keep N most recently pushed tags |
 | `lifecycle.max_age` | duration (`30d`, `168h`) | Delete tags older than this |
 | `lifecycle.keep_tags` | comma-separated tags | Tags never deleted by lifecycle |
+| `chunked` | `true` / `false` | Store layers as shared chunks — bucket-wide only |
+
+### `chunked`
+
+```bash
+s3lo config set s3://my-bucket/ chunked=true
+```
+
+Stores layers as content-defined chunks shared across every image in the bucket,
+so re-pushing an image after a small edit uploads only the chunk that changed.
+See [Chunked storage](../concepts/chunking.md).
+
+It applies to the whole bucket and cannot be set per image: the chunk store is
+shared, so a per-image switch would only make garbage collection harder to reason
+about without making anything more useful. Switching it on or off is safe at any
+time — images already in the bucket stay readable either way.
+
+The first chunked push also records `chunk_format` in `s3lo.yaml`. That value is
+managed by s3lo and should not be edited by hand.
 
 ## Scope
 
@@ -99,95 +118,4 @@ s3lo config remove s3://my-bucket/myapp immutable
 
 # Remove all lifecycle overrides
 s3lo config remove s3://my-bucket/myapp lifecycle
-```
-
-## config validate
-
-Run all policies defined in `s3lo.yaml` against a stored image tag.
-
-```bash
-s3lo config validate s3://my-bucket/myapp:v1.0
-```
-
-Exit codes:
-
-- `0` — all policies passed
-- `1` — one or more policies failed
-
-### Policy configuration
-
-Define policies in `s3lo.yaml` under the `policies` key:
-
-```yaml
-policies:
-  - name: no-critical-vulns
-    check: scan
-    max_severity: HIGH
-  - name: max-age
-    check: age
-    max_days: 90
-  - name: require-signature
-    check: signed
-    key_ref: cosign.pub
-  - name: max-size
-    check: size
-    max_bytes: 1073741824
-```
-
-### Policy checks
-
-| Check | Description | Parameters |
-|-------|-------------|------------|
-| `scan` | Run Trivy; fail if vulnerabilities at or above severity | `max_severity`: LOW, MEDIUM, HIGH, CRITICAL |
-| `age` | Fail if image is older than N days | `max_days` |
-| `signed` | Verify the current manifest with a trusted key | `key_ref`: public key or KMS/Vault verifier reference |
-| `size` | Fail if total image size exceeds N bytes | `max_bytes` |
-
-### Example output
-
-```
-✓ no-critical-vulns    passed
-✗ max-age              FAILED (image is 127 days old, limit is 90)
-✓ require-signature    passed (verified by 3b780f64bd6940e1)
-
-1 policy failed.
-```
-
-### CI integration
-
-```yaml
-# GitHub Actions
-- name: Validate image policies
-  run: s3lo config validate s3://my-bucket/myapp:${{ github.sha }}
-```
-
-The non-zero exit code causes the CI step to fail automatically when any policy is violated.
-
----
-
-## config recommend
-
-Analyzes the bucket and suggests configuration changes.
-
-```bash
-s3lo config recommend s3://my-bucket/
-```
-
-Output:
-```
-Analysis for s3://my-bucket/:
-
-  [good] Versioning: disabled
-  [bad]  S3 lifecycle rules: none
-  [good] Incomplete multipart uploads: none
-  [bad]  s3lo lifecycle config: not configured
-
-Recommendations:
-
-1. Add an S3 lifecycle rule to abort incomplete multipart uploads after 1 day.
-   This prevents orphaned uploads from accumulating storage costs.
-
-2. Configure lifecycle rules to automatically clean old tags:
-   s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
-   s3lo bucket clean s3://my-bucket/ --confirm
 ```

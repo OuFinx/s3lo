@@ -82,7 +82,7 @@
 
 ## v1.12.0 — Long-Term Vision
 
-- [ ] `s3lo serve` — OCI Distribution Spec proxy over S3
+- [x] `s3lo serve` — OCI Distribution Spec proxy over S3
 
 ## v1.13.0
 

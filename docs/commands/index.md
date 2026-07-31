@@ -14,10 +14,7 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 | [`clean`](clean.md) | Prune old tags and garbage collect unreferenced blobs |
 | [`stats`](stats.md) | Show storage usage, deduplication savings, and cost estimate |
 | [`config`](config.md) | Manage per-image and bucket-wide configuration |
-| [`history`](history.md) | Show push history for a bucket or repository |
 | [`tui`](tui.md) | Interactive terminal UI for browsing images and managing lifecycle |
-| [`scan`](scan.md) | Scan an image for vulnerabilities with Trivy |
-| [`sbom`](sbom.md) | Generate a Software Bill of Materials (SBOM) for an image |
 | [`sign`](sign.md) | Sign an image manifest with AWS KMS or a local key |
 | [`verify`](verify.md) | Verify an image signature (exits 0/1/2 for CI gates) |
 
@@ -42,10 +39,10 @@ local://./local-s3/alpine:latest
 ```
 
 The scheme prefix (`s3://`, `gs://`, `az://`, or `local://`) is always required. Commands that operate on
-a specific image (push, pull, delete, inspect, scan, copy) require an explicit tag —
+a specific image (push, pull, delete, inspect, copy) require an explicit tag —
 omitting the tag is an error.
 
-Bucket-level commands (list, history, stats, clean, config) accept a reference without a tag:
+Bucket-level commands (list, stats, clean, config) accept a reference without a tag:
 
 ```
 s3://my-bucket/
