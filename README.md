@@ -23,6 +23,19 @@ Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster 
 
 ### Measured numbers
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-dedup-dark.svg">
+  <img alt="Re-push after editing one file: 4.1 MB uploaded regardless of layer size, 96.9% to 99.8% deduplicated" src="docs/assets/bench-dedup-light.svg">
+</picture>
+
+A registry re-uploads the whole layer for this edit. s3lo re-uploads the one
+chunk that changed — the same 4.1 MB whether the layer is 131 MB or 1.6 GB.
+
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/assets/bench-push-dark.svg">
+  <img alt="First push: s3lo 2.4s/8.2s/21.9s/36.9s against ECR 6.3s/19.4s/33.3s/47.5s" src="docs/assets/bench-push-light.svg">
+</picture>
+
 Measured on a `c6id.xlarge` in us-east-1, containerd via `crictl`, layers on
 local NVMe, median of three cold pulls. Payloads built from real Python wheels
 (gzip 2.15x, zstd 2.69x).

@@ -26,6 +26,11 @@ a bucket can hold both forms with no migration step.
 
 ## What it does to a re-push
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="../assets/bench-dedup-dark.svg">
+  <img alt="Re-push uploads 4.1 MB regardless of layer size" src="../assets/bench-dedup-light.svg">
+</picture>
+
 Measured on a c6id.xlarge against real S3, rebuilding an image after editing one
 file inside it:
 
