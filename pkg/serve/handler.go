@@ -14,6 +14,13 @@ import (
 	"github.com/OuFinx/s3lo/pkg/storage"
 )
 
+// isNoSuchBucket reports whether err is an object-storage "bucket does not exist"
+// error. A missing bucket means the repository namespace does not exist, which
+// OCI clients should see as a definitive 404 rather than a retryable 5xx.
+func isNoSuchBucket(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "NoSuchBucket")
+}
+
 func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request, bucket, name, ref string) {
 	ctx := r.Context()
 
@@ -46,6 +53,10 @@ func (s *Server) handleManifest(w http.ResponseWriter, r *http.Request, bucket, 
 		s.observeManifest("error")
 		if storage.IsNotFound(err) {
 			writeOCIError(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest unknown")
+			return
+		}
+		if isNoSuchBucket(err) {
+			writeOCIError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known")
 			return
 		}
 		writeOCIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", err.Error())
@@ -186,6 +197,10 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request, bucket, dige
 	exists, err := s.Client.HeadObjectExists(ctx, bucket, key)
 	if err != nil {
 		s.observeBlob("error")
+		if isNoSuchBucket(err) {
+			writeOCIError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known")
+			return
+		}
 		writeOCIError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "storage error")
 		return
 	}
