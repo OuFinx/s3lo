@@ -151,7 +151,7 @@ func collectLayerSizes(ctx context.Context, client storage.Backend, bucket strin
 			g, gCtx := errgroup.WithContext(ctx)
 			g.SetLimit(scanConcurrency)
 			for _, desc := range idx.Manifests {
-				digest := desc.Digest.Encoded()
+				digest := encoded(desc.Digest)
 				// Skip cosign/SLSA attestation pseudo-manifests, but keep entries
 				// with no platform at all — those are ordinary manifests.
 				if digest == "" || (desc.Platform != nil && IsAttestationPlatform(platformString(desc.Platform))) {
@@ -183,7 +183,7 @@ func collectLayerSizes(ctx context.Context, client storage.Backend, bucket strin
 		}
 		mu.Lock()
 		for _, layer := range manifest.Layers {
-			if digest := layer.Digest.Encoded(); digest != "" {
+			if digest := encoded(layer.Digest); digest != "" {
 				sizes[digest] = layer.Size
 			}
 		}

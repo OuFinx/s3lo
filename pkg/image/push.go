@@ -280,7 +280,7 @@ func retargetManifest(manifestData []byte, compressed map[string]chunkstore.Reci
 	}
 	changed := false
 	for i, l := range m.Layers {
-		r, ok := compressed[l.Digest.Encoded()]
+		r, ok := compressed[encoded(l.Digest)]
 		if !ok {
 			continue
 		}

@@ -338,7 +338,11 @@ func ImportImage(ctx context.Context, srcDir string, imageRef string) error {
 
 	tw := tar.NewWriter(tmpFile)
 
-	// Write config blob
+	// Write config blob. The digest comes from a manifest on disk, and
+	// go-digest's Encoded() panics on a malformed one rather than erroring.
+	if err := manifest.Config.Digest.Validate(); err != nil {
+		return fmt.Errorf("manifest names a malformed config digest %q: %w", string(manifest.Config.Digest), err)
+	}
 	configDigest := manifest.Config.Digest.Encoded()
 	configPath := filepath.Join(srcDir, "blobs", "sha256", configDigest)
 	configData, err := os.ReadFile(configPath)
@@ -353,6 +357,9 @@ func ImportImage(ctx context.Context, srcDir string, imageRef string) error {
 	// Write layers
 	var layerNames []string
 	for _, layer := range manifest.Layers {
+		if err := layer.Digest.Validate(); err != nil {
+			return fmt.Errorf("manifest names a malformed layer digest %q: %w", string(layer.Digest), err)
+		}
 		layerDigest := layer.Digest.Encoded()
 		layerPath := filepath.Join(srcDir, "blobs", "sha256", layerDigest)
 

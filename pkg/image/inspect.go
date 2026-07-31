@@ -94,7 +94,7 @@ func Inspect(ctx context.Context, s3Ref string) (*ImageInfo, error) {
 		for i, desc := range idx.Manifests {
 			i, desc := i, desc
 			g.Go(func() error {
-				platManifestData, err := client.GetObject(gCtx, parsed.Bucket, "blobs/sha256/"+desc.Digest.Encoded())
+				platManifestData, err := client.GetObject(gCtx, parsed.Bucket, "blobs/sha256/"+encoded(desc.Digest))
 				if err != nil {
 					return fmt.Errorf("fetch platform manifest %s: %w", platformString(desc.Platform), err)
 				}
