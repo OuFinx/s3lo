@@ -10,6 +10,7 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 | [`copy`](copy.md) | Copy an image to S3 from any OCI registry or another S3 bucket |
 | [`list`](list.md) | List all images and tags in a bucket |
 | [`inspect`](inspect.md) | Show image metadata: layers, size, platforms |
+| [`cat`](cat.md) | Read one file out of an image without pulling it |
 | [`delete`](delete.md) | Delete an image tag |
 | [`clean`](clean.md) | Prune old tags and garbage collect unreferenced blobs |
 | [`stats`](stats.md) | Show storage usage, deduplication savings, and cost estimate |

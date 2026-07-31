@@ -186,6 +186,17 @@ func Store(ctx context.Context, client storage.Backend, bucket, localPath, layer
 
 	recipe.CompressedDigest = hex.EncodeToString(cHash.Sum(nil))
 
+	// The index goes in before the recipe, for the same reason chunks do: the
+	// recipe is what makes the layer resolvable, so everything a reader may want
+	// alongside it should already be there when it appears.
+	ix, err := BuildIndex(localPath, layerDigest)
+	if err != nil {
+		return recipe, stats, err
+	}
+	if err := StoreIndex(ctx, client, bucket, recipe.CompressedDigest, ix); err != nil {
+		return recipe, stats, err
+	}
+
 	recipeData, err := json.Marshal(recipe)
 	if err != nil {
 		return recipe, stats, fmt.Errorf("marshal recipe %s: %w", layerDigest, err)

@@ -69,6 +69,12 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 		return nil, fmt.Errorf("list chunks: %w", err)
 	}
 
+	indexesPrefix := prefix + chunkstore.IndexesPrefix
+	indexes, err := client.ListObjectsWithMeta(ctx, bucket, indexesPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("list indexes: %w", err)
+	}
+
 	// Step 3: a chunked layer is reachable as manifest -> recipe -> chunks.
 	// Without this expansion every chunk looks unreferenced and GC would empty
 	// the chunk store on its first run.
@@ -79,7 +85,7 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 
 	now := time.Now()
 	result := &GCResult{
-		Scanned:       len(blobs) + len(recipes) + len(chunks),
+		Scanned:       len(blobs) + len(recipes) + len(chunks) + len(indexes),
 		ChunksScanned: len(chunks),
 		DryRun:        dryRun,
 	}
@@ -92,6 +98,13 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 	recipeDelete, recipeFreed := sweep(recipes, recipesPrefix, referenced, now)
 	toDelete = append(toDelete, recipeDelete...)
 	result.FreedBytes += recipeFreed
+
+	// A file index is keyed by the same digest as the recipe beside it, so it
+	// lives and dies with it. Sweeping it here is what keeps indexes from being
+	// the one thing in the bucket that only ever grows.
+	indexDelete, indexFreed := sweep(indexes, indexesPrefix, referenced, now)
+	toDelete = append(toDelete, indexDelete...)
+	result.FreedBytes += indexFreed
 
 	chunkDelete, chunkFreed := sweep(chunks, chunksPrefix, referencedChunks, now)
 	toDelete = append(toDelete, chunkDelete...)

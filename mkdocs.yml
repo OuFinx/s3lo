@@ -67,6 +67,7 @@ nav:
     - copy: commands/copy.md
     - list: commands/list.md
     - inspect: commands/inspect.md
+    - cat: commands/cat.md
     - delete: commands/delete.md
     - clean: commands/clean.md
     - stats: commands/stats.md
