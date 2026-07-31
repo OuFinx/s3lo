@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+
+	digest "github.com/opencontainers/go-digest"
 )
 
 // verifyBytesDigest checks that sha256(data) equals the expected hex digest
@@ -38,4 +40,31 @@ func verifyFileDigest(path, wantHex string) error {
 		return fmt.Errorf("digest mismatch for %s: expected sha256:%s, got sha256:%s", path, wantHex, got)
 	}
 	return nil
+}
+
+// encoded returns the hex part of a descriptor digest, or "" when the digest is
+// absent or malformed.
+//
+// Every digest reaching this package comes out of a manifest, which is a file in
+// the bucket that some client — or an attacker — wrote. go-digest's Encoded()
+// panics on anything without a ":" separator, so a truncated or hand-edited
+// manifest crashed the tool with a stack trace instead of being reported. That
+// is precisely backwards for `doctor` and `stats`, whose job is to find corrupt
+// manifests. Callers treat "" as "this manifest does not name a usable digest".
+func encoded(d digest.Digest) string {
+	if d.Validate() != nil {
+		return ""
+	}
+	return d.Encoded()
+}
+
+// requireDigest returns the hex digest, or an error naming what was malformed.
+// Used on the paths that fetch a blob by digest, so a corrupt manifest reports
+// itself instead of asking storage for "blobs/sha256/" and reporting not-found.
+func requireDigest(d digest.Digest, what string) (string, error) {
+	e := encoded(d)
+	if e == "" {
+		return "", fmt.Errorf("manifest names a malformed %s digest %q", what, string(d))
+	}
+	return e, nil
 }

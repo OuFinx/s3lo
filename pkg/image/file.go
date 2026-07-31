@@ -81,7 +81,7 @@ func CatFile(ctx context.Context, s3Ref, filePath, platform string) (*CatResult,
 			deleted bool
 		)
 		for i := len(manifest.Layers) - 1; i >= 0 && res == nil && link == "" && !deleted; i-- {
-			d := manifest.Layers[i].Digest.Encoded()
+			d := encoded(manifest.Layers[i].Digest)
 			res, link, deleted, err = catFromLayer(ctx, client, parsed.Bucket, d, want, whiteouts)
 			if err != nil {
 				return nil, fmt.Errorf("read layer %s: %w", short(d), err)

@@ -165,7 +165,10 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			for i, desc := range selected {
 				i, desc := i, desc
 				g.Go(func() error {
-					d := desc.Digest.Encoded()
+					d, err := requireDigest(desc.Digest, "platform manifest")
+					if err != nil {
+						return err
+					}
 					data, err := srcClient.GetObject(gCtx, srcParsed.Bucket, "blobs/sha256/"+d)
 					if err != nil {
 						return fmt.Errorf("fetch manifest %s: %w", platformString(desc.Platform), err)

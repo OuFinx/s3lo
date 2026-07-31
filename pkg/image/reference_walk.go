@@ -37,7 +37,7 @@ func collectManifestSummary(ctx context.Context, client storage.Backend, bucket 
 				return fmt.Errorf("parse image index: %w", err)
 			}
 			for _, desc := range idx.Manifests {
-				digest := desc.Digest.Encoded()
+				digest := encoded(desc.Digest)
 				if digest == "" {
 					continue
 				}
@@ -63,12 +63,12 @@ func collectManifestSummary(ctx context.Context, client storage.Backend, bucket 
 			return fmt.Errorf("parse manifest: %w", err)
 		}
 
-		if digest := manifest.Config.Digest.Encoded(); digest != "" {
+		if digest := encoded(manifest.Config.Digest); digest != "" {
 			summary.References[digest] = struct{}{}
 			summary.LogicalSize += manifest.Config.Size
 		}
 		for _, layer := range manifest.Layers {
-			if digest := layer.Digest.Encoded(); digest != "" {
+			if digest := encoded(layer.Digest); digest != "" {
 				summary.References[digest] = struct{}{}
 				summary.LogicalSize += layer.Size
 			}

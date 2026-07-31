@@ -130,7 +130,10 @@ func resolvePlatformManifest(ctx context.Context, client storage.Backend, bucket
 
 	for _, desc := range idx.Manifests {
 		if matchesPlatform(desc, target) {
-			d := desc.Digest.Encoded()
+			d, err := requireDigest(desc.Digest, "platform manifest")
+			if err != nil {
+				return nil, err
+			}
 			data, err := client.GetObject(ctx, bucket, "blobs/sha256/"+d)
 			if err != nil {
 				return nil, fmt.Errorf("fetch platform manifest for %s: %w", target, err)
@@ -169,7 +172,10 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 	}
 
 	// Download config blob.
-	configDigest := manifest.Config.Digest.Encoded()
+	configDigest, err := requireDigest(manifest.Config.Digest, "config")
+	if err != nil {
+		return 0, err
+	}
 	configPath := filepath.Join(blobsDir, configDigest)
 	if err := client.DownloadObjectToFile(ctx, parsed.Bucket, "blobs/sha256/"+configDigest, configPath); err != nil {
 		return 0, fmt.Errorf("download config blob: %w", err)
@@ -191,7 +197,10 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 	for i, layer := range manifest.Layers {
 		i, layer := i, layer
 		g.Go(func() error {
-			d := layer.Digest.Encoded()
+			d, err := requireDigest(layer.Digest, "layer")
+			if err != nil {
+				return err
+			}
 			// Resolves the layer whether the bucket stores it whole or as chunks,
 			// and verifies it against its digest either way.
 			rawDigest, rawSize, err := fetchLayer(gCtx, client, parsed.Bucket, d, blobsDir)
