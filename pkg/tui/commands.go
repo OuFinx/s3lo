@@ -499,7 +499,7 @@ func collectTagLayers(ctx context.Context, st storage.Backend, bucket string, da
 		size    int64
 	}
 	var (
-		mu          sync.Mutex
+		mu             sync.Mutex
 		allChildLayers []layerEntry
 	)
 	g, gCtx := errgroup.WithContext(ctx)

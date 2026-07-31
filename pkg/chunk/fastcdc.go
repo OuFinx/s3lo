@@ -19,10 +19,16 @@ import (
 	"io"
 )
 
-// Chunking must stay byte-for-byte reproducible forever: if these values or the
-// gear table below ever change, previously written chunks stop matching newly
-// written ones and every bucket silently loses its deduplication. Treat any
-// change here as a new storage format, not a tweak.
+// FormatVersion identifies the chunking parameters below.
+//
+// Chunking must stay byte-for-byte reproducible: if the sizes, either mask, or
+// the gear table change, previously written chunks stop matching newly written
+// ones and a bucket silently loses its deduplication. So a change here is a new
+// storage format, not a tweak — bump this, and buckets stamped with the old
+// version are refused rather than quietly filled with a second, non-overlapping
+// copy of everything.
+const FormatVersion = 1
+
 const (
 	// MinSize is the smallest chunk the splitter will emit (except the last).
 	MinSize = 1 << 20 // 1 MB

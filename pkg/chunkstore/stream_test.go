@@ -80,7 +80,7 @@ func storeStreamLayer(t *testing.T, client storage.Backend, bucket string, size 
 	return recipe, data
 }
 
-func TestStream_EmitsChunksInOrder(t *testing.T) {
+func TestStreamCompressed_EmitsChunksInOrder(t *testing.T) {
 	ctx := context.Background()
 	bucket := t.TempDir()
 	client := storage.NewLocalClient()
@@ -91,21 +91,25 @@ func TestStream_EmitsChunksInOrder(t *testing.T) {
 	}
 
 	var got bytes.Buffer
-	if err := Stream(ctx, client, bucket, recipe, &got); err != nil {
-		t.Fatalf("Stream: %v", err)
+	if err := StreamCompressed(ctx, client, bucket, recipe, &got); err != nil {
+		t.Fatalf("StreamCompressed: %v", err)
 	}
-	if !bytes.Equal(got.Bytes(), want) {
-		t.Fatalf("streamed %d bytes, want %d; concurrent fetch reordered the output",
-			got.Len(), len(want))
+	decoded, err := dec().DecodeAll(got.Bytes(), nil)
+	if err != nil {
+		t.Fatalf("decode streamed frames: %v", err)
 	}
-	if sum := sha256.Sum256(got.Bytes()); hex.EncodeToString(sum[:]) != recipe.Layer {
-		t.Error("streamed layer does not hash to the recipe's layer digest")
+	if !bytes.Equal(decoded, want) {
+		t.Fatalf("streamed %d raw bytes, want %d; concurrent fetch reordered the output",
+			len(decoded), len(want))
+	}
+	if sum := sha256.Sum256(decoded); hex.EncodeToString(sum[:]) != recipe.Layer {
+		t.Error("streamed layer does not decode to the recipe's layer digest")
 	}
 }
 
 // TestStream_FetchesConcurrently is the whole point of the read-ahead window: a
 // gzipped blob from a registry arrives on one connection, these do not.
-func TestStream_FetchesConcurrently(t *testing.T) {
+func TestStreamCompressed_FetchesConcurrently(t *testing.T) {
 	ctx := context.Background()
 	bucket := t.TempDir()
 	local := storage.NewLocalClient()
@@ -117,10 +121,14 @@ func TestStream_FetchesConcurrently(t *testing.T) {
 	inst := &instrumentedBackend{Backend: local, delay: 20 * time.Millisecond}
 
 	var got bytes.Buffer
-	if err := Stream(ctx, inst, bucket, recipe, &got); err != nil {
-		t.Fatalf("Stream: %v", err)
+	if err := StreamCompressed(ctx, inst, bucket, recipe, &got); err != nil {
+		t.Fatalf("StreamCompressed: %v", err)
 	}
-	if !bytes.Equal(got.Bytes(), want) {
+	decoded, err := dec().DecodeAll(got.Bytes(), nil)
+	if err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if !bytes.Equal(decoded, want) {
 		t.Fatal("output differs under concurrency")
 	}
 
@@ -135,7 +143,7 @@ func TestStream_FetchesConcurrently(t *testing.T) {
 	}
 }
 
-func TestStream_PropagatesChunkErrors(t *testing.T) {
+func TestStreamCompressed_PropagatesChunkErrors(t *testing.T) {
 	ctx := context.Background()
 	bucket := t.TempDir()
 	local := storage.NewLocalClient()
@@ -146,13 +154,13 @@ func TestStream_PropagatesChunkErrors(t *testing.T) {
 		failKey: ChunkKey(recipe.Chunks[len(recipe.Chunks)-1].Digest),
 	}
 
-	err := Stream(ctx, inst, bucket, recipe, &bytes.Buffer{})
+	err := StreamCompressed(ctx, inst, bucket, recipe, &bytes.Buffer{})
 	if err == nil {
-		t.Fatal("Stream ignored a failing chunk read")
+		t.Fatal("StreamCompressed ignored a failing chunk read")
 	}
 }
 
-func TestStream_RejectsCorruptedChunk(t *testing.T) {
+func TestStreamCompressed_RejectsCorruptedChunk(t *testing.T) {
 	ctx := context.Background()
 	bucket := t.TempDir()
 	client := storage.NewLocalClient()
@@ -164,16 +172,16 @@ func TestStream_RejectsCorruptedChunk(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := Stream(ctx, client, bucket, recipe, &bytes.Buffer{}); err == nil {
-		t.Fatal("Stream served a corrupted chunk")
+	if err := StreamCompressed(ctx, client, bucket, recipe, &bytes.Buffer{}); err == nil {
+		t.Fatal("StreamCompressed served a chunk of the wrong size")
 	}
 }
 
-func TestStream_EmptyRecipe(t *testing.T) {
+func TestStreamCompressed_EmptyRecipe(t *testing.T) {
 	var buf bytes.Buffer
-	if err := Stream(context.Background(), storage.NewLocalClient(), t.TempDir(),
+	if err := StreamCompressed(context.Background(), storage.NewLocalClient(), t.TempDir(),
 		Recipe{Layer: "x"}, &buf); err != nil {
-		t.Fatalf("Stream on an empty recipe: %v", err)
+		t.Fatalf("StreamCompressed on an empty recipe: %v", err)
 	}
 	if buf.Len() != 0 {
 		t.Errorf("wrote %d bytes for an empty recipe", buf.Len())
@@ -194,14 +202,14 @@ func (f *failingWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func TestStream_StopsWhenWriterFails(t *testing.T) {
+func TestStreamCompressed_StopsWhenWriterFails(t *testing.T) {
 	ctx := context.Background()
 	bucket := t.TempDir()
 	client := storage.NewLocalClient()
 
 	recipe, _ := storeStreamLayer(t, client, bucket, 40<<20)
-	if err := Stream(ctx, client, bucket, recipe, &failingWriter{remaining: 1}); err == nil {
-		t.Fatal("Stream kept going after the writer failed")
+	if err := StreamCompressed(ctx, client, bucket, recipe, &failingWriter{remaining: 1}); err == nil {
+		t.Fatal("StreamCompressed kept going after the writer failed")
 	}
 }
 

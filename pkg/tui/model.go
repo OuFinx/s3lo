@@ -23,7 +23,7 @@ type RootModel struct {
 	prefix    string
 	leftPane  leftPane
 	right     StatsPanel
-	overlay   tea.Model // nil when no overlay is active
+	overlay   tea.Model           // nil when no overlay is active
 	tagCache  map[string]TagStats // keyed by "imageName:tagName"
 	status    string
 	statusErr bool

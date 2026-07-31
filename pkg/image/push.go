@@ -2,11 +2,14 @@ package image
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"syscall"
 
 	"encoding/json"
 
@@ -64,6 +67,14 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 
 	_, manifestData, configData, err := oci.ExportImage(ctx, imageRef, tmpDir)
 	if err != nil {
+		// Push stages the whole image on disk before uploading, so a large image
+		// can exhaust a small temp filesystem while the destination has room to
+		// spare. Say so, because "no space left on device" points at the wrong disk.
+		if errors.Is(err, syscall.ENOSPC) || strings.Contains(err.Error(), "no space left on device") {
+			return fmt.Errorf("export image: ran out of space staging the image under %s. "+
+				"Set TMPDIR to a filesystem with room for the uncompressed image and retry: %w",
+				os.TempDir(), err)
+		}
 		return fmt.Errorf("export image: %w", err)
 	}
 
@@ -87,6 +98,18 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return fmt.Errorf("read blobs dir: %w", err)
 	}
 
+	// Chunking is a property of the bucket, read once per push.
+	cfg, err := GetBucketConfig(ctx, client, parsed.Bucket)
+	if err != nil {
+		return fmt.Errorf("read bucket config: %w", err)
+	}
+	chunked := cfg.ChunkedEnabled()
+	if chunked {
+		if err := ensureChunkFormat(ctx, client, parsed.Bucket, cfg); err != nil {
+			return err
+		}
+	}
+
 	// Sum blob sizes for deterministic progress reporting.
 	if opts.OnStart != nil {
 		var totalBytes int64
@@ -102,13 +125,6 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 			opts.OnStart(totalBytes)
 		}
 	}
-
-	// Chunking is a property of the bucket, read once per push.
-	cfg, err := GetBucketConfig(ctx, client, parsed.Bucket)
-	if err != nil {
-		return fmt.Errorf("read bucket config: %w", err)
-	}
-	chunked := cfg.ChunkedEnabled()
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(blobConcurrency)

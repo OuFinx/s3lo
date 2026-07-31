@@ -2,11 +2,13 @@ package image
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
 	"strings"
 
+	"github.com/OuFinx/s3lo/pkg/chunk"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"gopkg.in/yaml.v3"
 )
@@ -44,6 +46,13 @@ type BucketConfig struct {
 	// exists and fall back to a whole-layer blob when it does not, so a bucket
 	// may hold both without migration.
 	Chunked *bool `yaml:"chunked,omitempty" json:"chunked,omitempty"`
+
+	// ChunkFormat records the chunking parameters this bucket's chunks were
+	// written with. It is stamped on the first chunked push and never changes
+	// afterwards, so a build of s3lo whose parameters differ is rejected instead
+	// of quietly filling the bucket with chunks that cannot match the existing
+	// ones. Zero means no chunked push has happened yet.
+	ChunkFormat int `yaml:"chunk_format,omitempty" json:"chunk_format,omitempty"`
 }
 
 // ChunkedEnabled reports whether push should store layers as chunks.
@@ -209,4 +218,31 @@ func ParseConfigRef(s3Ref string) (bucket, image string, err error) {
 		return "", "", fmt.Errorf("invalid reference %q: empty bucket", s3Ref)
 	}
 	return bucket, image, nil
+}
+
+// ErrChunkFormatMismatch is returned when a bucket's chunks were written with
+// chunking parameters this build does not produce.
+var ErrChunkFormatMismatch = errors.New("bucket chunk format mismatch")
+
+// ensureChunkFormat stamps the bucket with the chunker version on first use and
+// refuses to write into a bucket built by an incompatible one.
+//
+// Silently proceeding would be the worst outcome: every push would store a full
+// second copy of content that looks identical, deduplication would read as
+// broken, and nothing would say why.
+func ensureChunkFormat(ctx context.Context, client storage.Backend, bucket string, cfg *BucketConfig) error {
+	switch cfg.ChunkFormat {
+	case chunk.FormatVersion:
+		return nil
+	case 0:
+		cfg.ChunkFormat = chunk.FormatVersion
+		if err := SetBucketConfig(ctx, client, bucket, cfg); err != nil {
+			return fmt.Errorf("record chunk format: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: bucket was chunked with format %d, this build writes format %d; "+
+			"chunks from the two do not deduplicate against each other",
+			ErrChunkFormatMismatch, cfg.ChunkFormat, chunk.FormatVersion)
+	}
 }

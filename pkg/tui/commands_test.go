@@ -28,9 +28,9 @@ func setupLocalStore(t *testing.T) (storage.Backend, string, string) {
 		MediaType string `json:"mediaType"`
 	}
 	type fakeManifest struct {
-		SchemaVersion int        `json:"schemaVersion"`
-		MediaType     string     `json:"mediaType"`
-		Config        fakeConfig `json:"config"`
+		SchemaVersion int         `json:"schemaVersion"`
+		MediaType     string      `json:"mediaType"`
+		Config        fakeConfig  `json:"config"`
 		Layers        []fakeLayer `json:"layers"`
 	}
 

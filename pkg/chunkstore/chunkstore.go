@@ -299,66 +299,6 @@ type chunkResult struct {
 	err  error
 }
 
-// Stream writes a chunked layer to w in order, verifying each chunk against its
-// digest as it goes. It is the read path for callers that hand bytes straight to
-// a client rather than to a file, where seeking is not available.
-//
-// Chunks are fetched and decompressed concurrently but emitted strictly in
-// order, which is what makes this faster than a registry serving the same layer:
-// a single gzipped blob arrives over one connection and decompresses on one
-// core, while these chunks arrive over several connections and decompress on
-// several. A bounded window keeps the reader from running arbitrarily far ahead
-// of a slow consumer and buffering the whole layer in memory.
-func Stream(ctx context.Context, client storage.Backend, bucket string, recipe Recipe, w io.Writer) error {
-	if len(recipe.Chunks) == 0 {
-		return nil
-	}
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	results := make([]chan chunkResult, len(recipe.Chunks))
-	for i := range results {
-		// Capacity one, so a fetcher never blocks handing off its result and can
-		// always exit; the window below is what limits how many are in flight.
-		results[i] = make(chan chunkResult, 1)
-	}
-
-	window := make(chan struct{}, streamReadAhead)
-
-	go func() {
-		for i, c := range recipe.Chunks {
-			select {
-			case window <- struct{}{}:
-			case <-ctx.Done():
-				return
-			}
-			go func(i int, c ChunkRef) {
-				data, err := fetchChunk(ctx, client, bucket, c)
-				results[i] <- chunkResult{data: data, err: err}
-			}(i, c)
-		}
-	}()
-
-	for i := range recipe.Chunks {
-		select {
-		case res := <-results[i]:
-			if res.err != nil {
-				return res.err
-			}
-			if _, err := w.Write(res.data); err != nil {
-				return fmt.Errorf("write chunk %d of layer %s: %w", i, recipe.Layer, err)
-			}
-			// Released only after the bytes are out, so the window measures
-			// memory actually held rather than requests merely started.
-			<-window
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
-	return nil
-}
-
 // StreamCompressed writes the layer's chunk objects to w exactly as stored, in
 // order, without decompressing anything.
 //
