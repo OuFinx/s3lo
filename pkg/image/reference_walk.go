@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OuFinx/s3lo/pkg/oci"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/oci"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 // collectManifestReferences returns every blob digest referenced by a top-level

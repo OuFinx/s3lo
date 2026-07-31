@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/OuFinx/s3lo/pkg/image"
+	"github.com/OuFinx/s3lo/v2/pkg/image"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )

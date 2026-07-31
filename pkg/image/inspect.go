@@ -7,9 +7,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OuFinx/s3lo/pkg/oci"
-	"github.com/OuFinx/s3lo/pkg/ref"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/oci"
+	"github.com/OuFinx/s3lo/v2/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )

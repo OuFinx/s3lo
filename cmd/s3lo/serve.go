@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OuFinx/s3lo/pkg/image"
-	"github.com/OuFinx/s3lo/pkg/serve"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v2/pkg/serve"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 	"github.com/spf13/cobra"
 )
 

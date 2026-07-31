@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/OuFinx/s3lo/pkg/chunkstore"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/OuFinx/s3lo/pkg/image"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/image"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 	"github.com/spf13/cobra"
 )
 

@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 // newBucket returns a Backend backed by a temp directory, so these tests need no

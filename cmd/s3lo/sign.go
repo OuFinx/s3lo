@@ -10,7 +10,7 @@ import (
 	_ "github.com/sigstore/sigstore/pkg/signature/kms/aws"
 	_ "github.com/sigstore/sigstore/pkg/signature/kms/hashivault"
 
-	"github.com/OuFinx/s3lo/pkg/image"
+	"github.com/OuFinx/s3lo/v2/pkg/image"
 	"github.com/spf13/cobra"
 )
 

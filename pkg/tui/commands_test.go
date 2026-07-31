@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 func setupLocalStore(t *testing.T) (storage.Backend, string, string) {

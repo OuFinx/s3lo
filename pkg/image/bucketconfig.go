@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/OuFinx/s3lo/pkg/chunk"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/chunk"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 	"gopkg.in/yaml.v3"
 )
 
