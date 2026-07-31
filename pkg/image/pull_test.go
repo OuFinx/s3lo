@@ -6,7 +6,7 @@ import (
 )
 
 func TestPull_InvalidRef(t *testing.T) {
-	err := Pull(context.Background(), "http://invalid/ref", "", PullOptions{})
+	_, err := Pull(context.Background(), "http://invalid/ref", "", PullOptions{})
 	if err == nil {
 		t.Fatal("expected error for invalid ref")
 	}

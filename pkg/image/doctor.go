@@ -43,7 +43,7 @@ type DoctorResult struct {
 // It checks layout structure, manifest integrity (all referenced blobs exist),
 // orphaned blobs, and config validity.
 func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	bucket, nameFilter, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +75,21 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	}
 
 	// --- Layout check ---
-	manifestKeys, err := client.ListKeys(ctx, bucket, prefix+"manifests/")
+	// The integrity check honours the ref's image-name filter; the orphan check
+	// below cannot, because a blob is only an orphan when *no* image in the
+	// bucket references it.
+	manifestKeys, err := client.ListKeys(ctx, bucket, scopedManifests(nameFilter))
 	if err != nil {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
-	blobMeta, err := client.ListObjectsWithMeta(ctx, bucket, prefix+"blobs/sha256/")
+	allManifestKeys := manifestKeys
+	if nameFilter != "" {
+		allManifestKeys, err = client.ListKeys(ctx, bucket, manifestsRoot)
+		if err != nil {
+			return nil, fmt.Errorf("list manifests: %w", err)
+		}
+	}
+	blobMeta, err := client.ListObjectsWithMeta(ctx, bucket, "blobs/sha256/")
 	if err != nil {
 		return nil, fmt.Errorf("list blobs: %w", err)
 	}
@@ -88,7 +98,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	// A layer counts as present if the bucket holds it whole OR holds a recipe
 	// that rebuilds it from chunks. Without the second source every chunked layer
 	// looks missing and doctor tells the operator to delete healthy images.
-	recipeMeta, err := client.ListObjectsWithMeta(ctx, bucket, prefix+chunkstore.RecipesPrefix)
+	recipeMeta, err := client.ListObjectsWithMeta(ctx, bucket, chunkstore.RecipesPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list recipes: %w", err)
 	}
@@ -108,7 +118,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	// --- Config check ---
 	// An absent s3lo.yaml is fine (config is optional); only a config that exists
 	// but cannot be read is an actual problem.
-	_, cfgErr := client.GetObject(ctx, bucket, prefix+bucketConfigKey)
+	_, cfgErr := client.GetObject(ctx, bucket, bucketConfigKey)
 	switch {
 	case cfgErr == nil:
 		result.ConfigPresent = true
@@ -130,7 +140,6 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		}
 	}
 
-	manifestsPrefix := prefix + "manifests/"
 	var (
 		mu     sync.Mutex
 		issues []DoctorIssue
@@ -144,7 +153,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		g.Go(func() error {
 			data, err := client.GetObject(gCtx, bucket, key)
 			if err != nil {
-				rel := strings.TrimPrefix(key, manifestsPrefix)
+				rel := strings.TrimPrefix(key, manifestsRoot)
 				rel = strings.TrimSuffix(rel, "/manifest.json")
 				mu.Lock()
 				issues = append(issues, DoctorIssue{
@@ -155,7 +164,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 				return nil
 			}
 
-			rel := strings.TrimPrefix(key, manifestsPrefix)
+			rel := strings.TrimPrefix(key, manifestsRoot)
 			rel = strings.TrimSuffix(rel, "/manifest.json")
 			imageTag := imageTagFromManifestKey(rel)
 
@@ -194,9 +203,14 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	result.ManifestIssues = issues
 
 	// --- Orphaned blob check ---
-	// Collect all blob digests referenced by all parseable manifests.
+	// Collect all blob digests referenced by all parseable manifests. This walks
+	// every manifest in the bucket even when the ref narrowed the checks above:
+	// blobs are shared, so a blob is only orphaned when nothing at all wants it.
 	referenced := make(map[string]struct{})
-	for _, key := range manifestJsonKeys {
+	for _, key := range allManifestKeys {
+		if !strings.HasSuffix(key, "/manifest.json") {
+			continue
+		}
 		data, err := client.GetObject(ctx, bucket, key)
 		if err != nil {
 			continue

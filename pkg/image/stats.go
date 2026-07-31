@@ -67,8 +67,12 @@ func (s *StatsResult) DedupPercent() float64 {
 }
 
 // Stats collects storage statistics for a bucket.
+//
+// A ref with a trailing path scopes Images, Tags and LogicalBytes to the images
+// it names. Blob and chunk totals stay bucket-wide because storage is shared:
+// there is no honest way to attribute a deduplicated blob to one image.
 func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	bucket, nameFilter, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
@@ -81,8 +85,7 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 	result := &StatsResult{StorageByClass: make(map[string]int64)}
 
 	// Scan manifests for image/tag counts and logical byte totals.
-	manifestsPrefix := prefix + "manifests/"
-	manifestKeys, err := client.ListKeys(ctx, bucket, manifestsPrefix)
+	manifestKeys, err := client.ListKeys(ctx, bucket, scopedManifests(nameFilter))
 	if err != nil {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
@@ -97,7 +100,7 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 		keys = append(keys, key)
 
 		// Extract image name from: manifests/<image...>/<tag>/manifest.json
-		rel := strings.TrimPrefix(key, manifestsPrefix)
+		rel := strings.TrimPrefix(key, manifestsRoot)
 		rel = strings.TrimSuffix(rel, "/manifest.json")
 		if lastSlash := strings.LastIndex(rel, "/"); lastSlash >= 0 {
 			seenImages[rel[:lastSlash]] = true
@@ -144,8 +147,7 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 	// List actual stored objects with storage class info. On a chunked bucket
 	// most of the payload lives under chunks/, so counting only blobs/ would
 	// report a physical size several times smaller than reality.
-	blobsPrefix := prefix + "blobs/sha256/"
-	blobs, err := client.ListObjectsWithMeta(ctx, bucket, blobsPrefix)
+	blobs, err := client.ListObjectsWithMeta(ctx, bucket, "blobs/sha256/")
 	if err != nil {
 		return nil, fmt.Errorf("list blobs: %w", err)
 	}
@@ -160,7 +162,7 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 		result.StorageByClass[sc] += blob.Size
 	}
 
-	chunks, err := client.ListObjectsWithMeta(ctx, bucket, prefix+chunkstore.ChunksPrefix)
+	chunks, err := client.ListObjectsWithMeta(ctx, bucket, chunkstore.ChunksPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list chunks: %w", err)
 	}

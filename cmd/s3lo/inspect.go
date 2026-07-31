@@ -93,6 +93,6 @@ func printInspect(info *image.ImageInfo) {
 }
 
 func init() {
-	inspectCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
+	addOutputFlag(inspectCmd)
 	rootCmd.AddCommand(inspectCmd)
 }

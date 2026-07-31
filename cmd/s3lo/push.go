@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
 	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
@@ -27,7 +26,7 @@ var pushCmd = &cobra.Command{
 		if err := requireTag(args[1]); err != nil {
 			return err
 		}
-		fmt.Printf("Pushing %s to %s\n", args[0], args[1])
+		status("Pushing %s to %s\n", args[0], args[1])
 		var bar *progressbar.ProgressBar
 		var transferred chunkstore.Stats
 		opts := image.PushOptions{
@@ -35,7 +34,7 @@ var pushCmd = &cobra.Command{
 			Force:      pushForce,
 			Platform:   pushPlatform,
 			OnPlatformsDropped: func(pushed string, dropped []string) {
-				fmt.Printf("Note: this image holds %s locally. Pushing %s only.\n"+
+				status("Note: this image holds %s locally. Pushing %s only.\n"+
 					"      Push another with --platform, or use s3lo copy to publish every platform as an index.\n",
 					strings.Join(append([]string{pushed}, dropped...), ", "), pushed)
 			},
@@ -48,19 +47,26 @@ var pushCmd = &cobra.Command{
 				}
 			},
 		}
-		err := image.Push(cmd.Context(), args[0], args[1], opts)
+		result, err := image.Push(cmd.Context(), args[0], args[1], opts)
 		if bar != nil {
 			bar.Finish()
 		}
 		if err != nil {
 			return err
 		}
+		ok, err := writeOutput(outputFormat(cmd), result)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
 		if transferred.Bytes > 0 && transferred.Chunks > 0 {
-			fmt.Printf("Chunked: uploaded %.1f MB of %.1f MB (%.1f%% deduplicated, %d/%d chunks)\n",
+			status("Chunked: uploaded %.1f MB of %.1f MB (%.1f%% deduplicated, %d/%d chunks)\n",
 				float64(transferred.BytesUploaded)/(1<<20), float64(transferred.Bytes)/(1<<20),
 				transferred.Deduplicated()*100, transferred.ChunksUploaded, transferred.Chunks)
 		}
-		fmt.Println("Done.")
+		status("Done.\n")
 		return nil
 	},
 }
@@ -68,5 +74,6 @@ var pushCmd = &cobra.Command{
 func init() {
 	pushCmd.Flags().BoolVar(&pushForce, "force", false, "Overwrite existing tag even if bucket is immutable")
 	pushCmd.Flags().StringVar(&pushPlatform, "platform", "", "Platform to push when the local image holds several (e.g. linux/arm64)")
+	addOutputFlag(pushCmd)
 	rootCmd.AddCommand(pushCmd)
 }

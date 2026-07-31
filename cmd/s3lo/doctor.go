@@ -104,6 +104,6 @@ func printDoctorResult(r *image.DoctorResult) {
 }
 
 func init() {
-	doctorCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
+	addOutputFlag(doctorCmd)
 	rootCmd.AddCommand(doctorCmd)
 }

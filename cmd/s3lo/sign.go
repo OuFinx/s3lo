@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -45,14 +44,19 @@ and produces a CloudTrail audit entry for every signing operation.`,
 			return err
 		}
 
-		if output == "json" {
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{
-				"digest":     result.Digest,
-				"keyRef":     result.KeyRef,
-				"keyID":      result.KeyID,
-				"signedAt":   result.SignedAt.Format(time.RFC3339),
-				"storedPath": result.StoredPath,
-			})
+		ok, err := writeOutput(output, map[string]string{
+			"ref":        args[0],
+			"digest":     result.Digest,
+			"keyRef":     result.KeyRef,
+			"keyID":      result.KeyID,
+			"signedAt":   result.SignedAt.Format(time.RFC3339),
+			"storedPath": result.StoredPath,
+		})
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
 		}
 
 		// Text output: show image:tag portion only.
@@ -73,6 +77,6 @@ and produces a CloudTrail audit entry for every signing operation.`,
 func init() {
 	rootCmd.AddCommand(signCmd)
 	signCmd.Flags().String("key", "", "Signing key: file path, awskms://, or hashivault:// (required)")
-	signCmd.Flags().String("output", "text", "Output format: text or json")
+	addOutputFlag(signCmd)
 	signCmd.MarkFlagRequired("key")
 }

@@ -34,7 +34,11 @@ const gcGracePeriod = time.Hour
 // GC removes blobs in blobs/sha256/ that are not referenced by any manifest.
 // If dryRun is true, no deletions are performed (safe to run at any time).
 func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	// The ref's image-name filter is deliberately ignored here. GC only ever
+	// removes objects no manifest points at, and reachability is a bucket-wide
+	// property: narrowing the walk to one team's images would make every other
+	// team's live blob look unreferenced and delete it.
+	bucket, _, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
@@ -45,31 +49,31 @@ func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error)
 	}
 
 	// Step 1: collect all blob digests referenced by any manifest.
-	referenced, err := collectReferencedDigests(ctx, client, bucket, prefix)
+	referenced, err := collectReferencedDigests(ctx, client, bucket)
 	if err != nil {
 		return nil, fmt.Errorf("collect referenced digests: %w", err)
 	}
 
 	// Step 2: list every object class GC owns.
-	blobsPrefix := prefix + "blobs/sha256/"
+	blobsPrefix := "blobs/sha256/"
 	blobs, err := client.ListObjectsWithMeta(ctx, bucket, blobsPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list blobs: %w", err)
 	}
 
-	recipesPrefix := prefix + chunkstore.RecipesPrefix
+	recipesPrefix := chunkstore.RecipesPrefix
 	recipes, err := client.ListObjectsWithMeta(ctx, bucket, recipesPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list recipes: %w", err)
 	}
 
-	chunksPrefix := prefix + chunkstore.ChunksPrefix
+	chunksPrefix := chunkstore.ChunksPrefix
 	chunks, err := client.ListObjectsWithMeta(ctx, bucket, chunksPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list chunks: %w", err)
 	}
 
-	indexesPrefix := prefix + chunkstore.IndexesPrefix
+	indexesPrefix := chunkstore.IndexesPrefix
 	indexes, err := client.ListObjectsWithMeta(ctx, bucket, indexesPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list indexes: %w", err)
@@ -190,11 +194,12 @@ func collectChunkReferences(ctx context.Context, client storage.Backend, bucket,
 	return referencedChunks, nil
 }
 
-// collectReferencedDigests fetches all manifests in parallel and returns the set
-// of blob digests (without sha256: prefix) they reference.
-func collectReferencedDigests(ctx context.Context, client storage.Backend, bucket, prefix string) (map[string]bool, error) {
-	manifestsPrefix := prefix + "manifests/"
-	manifestKeys, err := client.ListKeys(ctx, bucket, manifestsPrefix)
+// collectReferencedDigests fetches every manifest in the bucket in parallel and
+// returns the set of blob digests (without sha256: prefix) they reference.
+// It is never scoped to a name filter: a partial reference set would make GC
+// delete blobs that are still in use.
+func collectReferencedDigests(ctx context.Context, client storage.Backend, bucket string) (map[string]bool, error) {
+	manifestKeys, err := client.ListKeys(ctx, bucket, manifestsRoot)
 	if err != nil {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}

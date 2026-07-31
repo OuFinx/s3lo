@@ -118,25 +118,16 @@ var configGetCmd = &cobra.Command{
 			return err
 		}
 
-		if outputFmt != "" && outputFmt != "table" {
-			if imageName != "" {
-				eff := cfg.EffectiveConfig(imageName)
-				ok, err := writeOutput(outputFmt, eff)
-				if err != nil {
-					return err
-				}
-				if ok {
-					return nil
-				}
-			} else {
-				ok, err := writeOutput(outputFmt, cfg)
-				if err != nil {
-					return err
-				}
-				if ok {
-					return nil
-				}
-			}
+		var payload any = cfg
+		if imageName != "" {
+			payload = cfg.EffectiveConfig(imageName)
+		}
+		ok, err := writeOutput(outputFmt, payload)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
 		}
 
 		scheme := refScheme(args[0])
@@ -355,7 +346,7 @@ func refScheme(rawRef string) string {
 }
 
 func init() {
-	configGetCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
+	addOutputFlag(configGetCmd)
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
 	rootCmd.AddCommand(configCmd)

@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"strings"
@@ -40,7 +39,7 @@ Exit codes:
 		result, err := image.Verify(cmd.Context(), args[0], keyRef)
 		if err != nil {
 			// Infrastructure failure → exit 2.
-			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			status("Error: %v\n", err)
 			os.Exit(2)
 		}
 
@@ -50,10 +49,11 @@ Exit codes:
 			display = display[idx+1:]
 		}
 
-		if output == "json" {
-			enc := json.NewEncoder(cmd.OutOrStdout())
-			enc.SetIndent("", "  ")
-			enc.Encode(result) //nolint:errcheck
+		ok, err := writeOutput(output, result)
+		if err != nil {
+			return err
+		}
+		if ok {
 			if !result.Verified {
 				os.Exit(1)
 			}
@@ -61,8 +61,8 @@ Exit codes:
 		}
 
 		if !result.Verified {
-			fmt.Fprintf(os.Stderr, "✗ Verification FAILED for %s\n", display)
-			fmt.Fprintf(os.Stderr, "  %s\n", result.Reason)
+			status("✗ Verification FAILED for %s\n", display)
+			status("  %s\n", result.Reason)
 			os.Exit(1)
 		}
 
@@ -77,6 +77,6 @@ Exit codes:
 func init() {
 	rootCmd.AddCommand(verifyCmd)
 	verifyCmd.Flags().String("key", "", "Verification key: .pub file, awskms://, or hashivault:// (required)")
-	verifyCmd.Flags().String("output", "text", "Output format: text or json")
+	addOutputFlag(verifyCmd)
 	verifyCmd.MarkFlagRequired("key")
 }

@@ -9,15 +9,17 @@ import (
 	"testing"
 )
 
-// setupSharingStore builds a prefixed bucket with three tags:
+// setupSharingStore builds a bucket addressed through a team/ name filter, with
+// three tags:
 //
-//	myapp:v1     -> layers L1, L2          (plain manifest)
-//	myapp:v2     -> layers L1, L2          (image index -> one platform manifest)
-//	other:latest -> layers L1, L3          (plain manifest)
+//	team/myapp:v1     -> layers L1, L2     (plain manifest)
+//	team/myapp:v2     -> layers L1, L2     (image index -> one platform manifest)
+//	team/other:latest -> layers L1, L3     (plain manifest)
 //
-// myapp:v2 is multi-arch on purpose: its platform manifest lives at
-// <prefix>blobs/sha256/<digest>, so a scan that ignores the bucket prefix loses
-// both of its layers and every sharing count below goes wrong.
+// myapp:v2 is multi-arch on purpose: its platform manifest is a blob, and blobs
+// live at the bucket root no matter which images the ref selects. A scan that
+// treated the filter as a key prefix would look for it under team/ and lose both
+// of that tag's layers.
 func setupSharingStore(t *testing.T) string {
 	t.Helper()
 
@@ -31,7 +33,7 @@ func setupSharingStore(t *testing.T) string {
 	}
 	t.Cleanup(func() { _ = os.Chdir(oldCwd) })
 
-	root := filepath.Join(parentDir, "sharestore", "team")
+	root := filepath.Join(parentDir, "sharestore")
 	l1, l2, l3 := digestOf("a"), digestOf("b"), digestOf("c")
 	child := digestOf("d")
 
@@ -48,9 +50,9 @@ func setupSharingStore(t *testing.T) string {
 				`"layers":[%s]}`, digestOf("f"), strings.Join(entries, ","))
 	}
 
-	writeTestFile(t, filepath.Join(root, "manifests", "myapp", "v1", "manifest.json"),
+	writeTestFile(t, filepath.Join(root, "manifests", "team", "myapp", "v1", "manifest.json"),
 		manifest([2]any{l1, 100}, [2]any{l2, 200}))
-	writeTestFile(t, filepath.Join(root, "manifests", "other", "latest", "manifest.json"),
+	writeTestFile(t, filepath.Join(root, "manifests", "team", "other", "latest", "manifest.json"),
 		manifest([2]any{l1, 100}, [2]any{l3, 50}))
 
 	index := fmt.Appendf(nil,
@@ -59,7 +61,7 @@ func setupSharingStore(t *testing.T) string {
 			`"platform":{"os":"linux","architecture":"amd64"}},`+
 			`{"mediaType":"application/vnd.oci.image.manifest.v1+json","digest":"sha256:%s","size":99,`+
 			`"platform":{"os":"unknown","architecture":"unknown"}}]}`, child, digestOf("e"))
-	writeTestFile(t, filepath.Join(root, "manifests", "myapp", "v2", "manifest.json"), index)
+	writeTestFile(t, filepath.Join(root, "manifests", "team", "myapp", "v2", "manifest.json"), index)
 	writeTestFile(t, filepath.Join(root, "blobs", "sha256", child), manifest([2]any{l1, 100}, [2]any{l2, 200}))
 
 	return "local://./sharestore/team/"
@@ -71,7 +73,7 @@ func TestLayerSharing_CountsSharedLayersAcrossTags(t *testing.T) {
 		t.Fatalf("LayerSharing: %v", err)
 	}
 
-	wantTags := []string{"myapp:v1", "myapp:v2", "other:latest"}
+	wantTags := []string{"team/myapp:v1", "team/myapp:v2", "team/other:latest"}
 	if strings.Join(result.Tags, ",") != strings.Join(wantTags, ",") {
 		t.Errorf("Tags = %v, want %v", result.Tags, wantTags)
 	}
@@ -87,9 +89,9 @@ func TestLayerSharing_CountsSharedLayersAcrossTags(t *testing.T) {
 		wantSize int64
 		wantTags []string
 	}{
-		{"shared by every tag", digestOf("a"), 100, []string{"myapp:v1", "myapp:v2", "other:latest"}},
-		{"shared by both myapp tags", digestOf("b"), 200, []string{"myapp:v1", "myapp:v2"}},
-		{"unique to one tag", digestOf("c"), 50, []string{"other:latest"}},
+		{"shared by every tag", digestOf("a"), 100, []string{"team/myapp:v1", "team/myapp:v2", "team/other:latest"}},
+		{"shared by both myapp tags", digestOf("b"), 200, []string{"team/myapp:v1", "team/myapp:v2"}},
+		{"unique to one tag", digestOf("c"), 50, []string{"team/other:latest"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

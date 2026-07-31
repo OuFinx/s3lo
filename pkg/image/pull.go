@@ -30,9 +30,28 @@ type PullOptions struct {
 	OnBlob func(digest string, size int64)
 }
 
+// PullResult reports what a pull imported. Digest and Bytes are empty/zero for
+// an image found only in the legacy v1.0.0 layout, which has no single manifest
+// object to describe.
+type PullResult struct {
+	Ref      string `json:"ref" yaml:"ref"`
+	ImageTag string `json:"image_tag" yaml:"image_tag"`
+	Digest   string `json:"digest,omitempty" yaml:"digest,omitempty"`
+	Bytes    int64  `json:"bytes" yaml:"bytes"`
+}
+
 // Pull downloads an OCI image from S3 and imports it into the local Docker daemon.
 // Supports both v1.1.0 (global blobs/sha256/ + manifests/) and v1.0.0 (per-tag) layouts.
-func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
+func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) (*PullResult, error) {
+	var res PullResult
+	if err := pull(ctx, s3Ref, imageTag, opts, &res); err != nil {
+		return nil, err
+	}
+	res.Ref = s3Ref
+	return &res, nil
+}
+
+func pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions, res *PullResult) error {
 	parsed, err := ref.Parse(s3Ref)
 	if err != nil {
 		return fmt.Errorf("invalid S3 reference: %w", err)
@@ -76,9 +95,12 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 				return err
 			}
 		}
-		if err := pullV110(ctx, client, parsed, manifestData, tmpDir, opts.OnBlob, opts.OnStart); err != nil {
+		bytes, err := pullV110(ctx, client, parsed, manifestData, tmpDir, opts.OnBlob, opts.OnStart)
+		if err != nil {
 			return err
 		}
+		res.Digest = digest.FromBytes(manifestData).String()
+		res.Bytes = bytes
 	}
 
 	if imageTag == "" {
@@ -89,6 +111,7 @@ func Pull(ctx context.Context, s3Ref, imageTag string, opts PullOptions) error {
 		return fmt.Errorf("import into Docker: %w", err)
 	}
 
+	res.ImageTag = imageTag
 	return nil
 }
 
@@ -124,38 +147,37 @@ func resolvePlatformManifest(ctx context.Context, client storage.Backend, bucket
 
 // pullV110 downloads a v1.1.0 image into tmpDir, reconstructing the local OCI layout
 // that oci.ImportImage expects: tmpDir/manifest.json + tmpDir/blobs/sha256/<digest>.
-func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64), onStart func(int64)) error {
+// It returns the total blob bytes the manifest describes.
+func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64), onStart func(int64)) (int64, error) {
 	manifest, err := oci.ParseManifest(manifestData)
 	if err != nil {
-		return fmt.Errorf("parse manifest: %w", err)
+		return 0, fmt.Errorf("parse manifest: %w", err)
 	}
 
+	totalBytes := manifest.Config.Size
+	for _, layer := range manifest.Layers {
+		totalBytes += layer.Size
+	}
 	// Report total download size for deterministic progress bar.
-	if onStart != nil {
-		totalBytes := manifest.Config.Size
-		for _, layer := range manifest.Layers {
-			totalBytes += layer.Size
-		}
-		if totalBytes > 0 {
-			onStart(totalBytes)
-		}
+	if onStart != nil && totalBytes > 0 {
+		onStart(totalBytes)
 	}
 
 	blobsDir := filepath.Join(tmpDir, "blobs", "sha256")
 	if err := os.MkdirAll(blobsDir, 0o755); err != nil {
-		return fmt.Errorf("create blobs dir: %w", err)
+		return 0, fmt.Errorf("create blobs dir: %w", err)
 	}
 
 	// Download config blob.
 	configDigest := manifest.Config.Digest.Encoded()
 	configPath := filepath.Join(blobsDir, configDigest)
 	if err := client.DownloadObjectToFile(ctx, parsed.Bucket, "blobs/sha256/"+configDigest, configPath); err != nil {
-		return fmt.Errorf("download config blob: %w", err)
+		return 0, fmt.Errorf("download config blob: %w", err)
 	}
 	// Verify content against its digest — the store is content-addressable, so a
 	// corrupted or tampered blob must never be handed to the Docker daemon.
 	if err := verifyFileDigest(configPath, configDigest); err != nil {
-		return fmt.Errorf("verify config blob: %w", err)
+		return 0, fmt.Errorf("verify config blob: %w", err)
 	}
 	if onBlob != nil {
 		onBlob(configDigest, manifest.Config.Size)
@@ -190,7 +212,7 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 		})
 	}
 	if err := g.Wait(); err != nil {
-		return err
+		return 0, err
 	}
 
 	// The local layout describes the raw layers that were just written, which is
@@ -200,10 +222,10 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 	local.Layers = raw
 	localData, err := json.Marshal(local)
 	if err != nil {
-		return fmt.Errorf("marshal local manifest: %w", err)
+		return 0, fmt.Errorf("marshal local manifest: %w", err)
 	}
 	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), localData, 0o644); err != nil {
-		return fmt.Errorf("write manifest: %w", err)
+		return 0, fmt.Errorf("write manifest: %w", err)
 	}
-	return nil
+	return totalBytes, nil
 }

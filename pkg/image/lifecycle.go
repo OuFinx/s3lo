@@ -63,7 +63,7 @@ func LoadBucketConfigFromFile(data []byte) (*BucketConfig, error) {
 // and deletes manifest files for tags that should be purged.
 // If dryRun is true, no deletions are performed.
 func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, dryRun bool) (*LifecycleResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	bucket, nameFilter, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
@@ -73,9 +73,8 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, 
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
-	// Collect all tags with their LastModified time.
-	manifestsPrefix := prefix + "manifests/"
-	objects, err := client.ListObjectsWithMeta(ctx, bucket, manifestsPrefix)
+	// Collect the tags the ref selects, with their LastModified time.
+	objects, err := client.ListObjectsWithMeta(ctx, bucket, scopedManifests(nameFilter))
 	if err != nil {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
@@ -86,7 +85,7 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, 
 		if !strings.HasSuffix(obj.Key, "/manifest.json") {
 			continue
 		}
-		rel := strings.TrimPrefix(obj.Key, manifestsPrefix)
+		rel := strings.TrimPrefix(obj.Key, manifestsRoot)
 		rel = strings.TrimSuffix(rel, "/manifest.json")
 		lastSlash := strings.LastIndex(rel, "/")
 		if lastSlash < 0 {

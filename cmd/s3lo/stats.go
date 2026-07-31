@@ -121,6 +121,6 @@ func printLayerSharing(bucketRef string, r *image.LayerSharingResult) {
 
 func init() {
 	statsCmd.Flags().Bool("layers", false, "List unique layers and the tags that share them")
-	statsCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
+	addOutputFlag(statsCmd)
 	rootCmd.AddCommand(statsCmd)
 }

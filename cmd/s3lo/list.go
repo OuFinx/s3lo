@@ -41,6 +41,6 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	listCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
+	addOutputFlag(listCmd)
 	rootCmd.AddCommand(listCmd)
 }

@@ -31,6 +31,9 @@ Storage, a local directory, or any S3-compatible service via --endpoint.`,
 	SilenceErrors: true,
 	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		if err := checkOutputFormat(cmd); err != nil {
+			return err
+		}
 		if verbose {
 			slog.SetDefault(slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{
 				Level: slog.LevelDebug,

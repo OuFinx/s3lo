@@ -1,8 +1,6 @@
 package main
 
 import (
-	"fmt"
-
 	"github.com/OuFinx/s3lo/v2/pkg/image"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
@@ -26,7 +24,7 @@ var pullCmd = &cobra.Command{
 		if len(args) > 1 {
 			imageTag = args[1]
 		}
-		fmt.Printf("Pulling %s\n", args[0])
+		status("Pulling %s\n", args[0])
 		var bar *progressbar.ProgressBar
 		opts := image.PullOptions{
 			Platform: platform,
@@ -39,19 +37,26 @@ var pullCmd = &cobra.Command{
 				}
 			},
 		}
-		err := image.Pull(cmd.Context(), args[0], imageTag, opts)
+		result, err := image.Pull(cmd.Context(), args[0], imageTag, opts)
 		if bar != nil {
 			bar.Finish()
 		}
 		if err != nil {
 			return err
 		}
-		fmt.Println("Done. Image imported into Docker.")
+		ok, err := writeOutput(outputFormat(cmd), result)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			status("Done. Image imported into Docker.\n")
+		}
 		return nil
 	},
 }
 
 func init() {
+	addOutputFlag(pullCmd)
 	rootCmd.AddCommand(pullCmd)
 	pullCmd.Flags().String("platform", "", `Platform to pull from a multi-arch image (e.g. "linux/amd64"). Default: auto-detect host platform.`)
 }

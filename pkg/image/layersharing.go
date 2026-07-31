@@ -40,7 +40,7 @@ func (r *LayerSharingResult) DedupPercent() float64 {
 // LayerSharing collects every tag's layer set and reports which layers are
 // shared across which tags.
 func LayerSharing(ctx context.Context, s3BucketRef string) (*LayerSharingResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	bucket, nameFilter, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
@@ -50,8 +50,7 @@ func LayerSharing(ctx context.Context, s3BucketRef string) (*LayerSharingResult,
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
-	manifestsPrefix := prefix + "manifests/"
-	manifestKeys, err := client.ListKeys(ctx, bucket, manifestsPrefix)
+	manifestKeys, err := client.ListKeys(ctx, bucket, scopedManifests(nameFilter))
 	if err != nil {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
@@ -65,8 +64,8 @@ func LayerSharing(ctx context.Context, s3BucketRef string) (*LayerSharingResult,
 		if !strings.HasSuffix(key, "/manifest.json") {
 			continue
 		}
-		// key = <prefix>manifests/<image...>/<tag>/manifest.json
-		rel := strings.TrimSuffix(strings.TrimPrefix(key, manifestsPrefix), "/manifest.json")
+		// key = manifests/<image...>/<tag>/manifest.json
+		rel := strings.TrimSuffix(strings.TrimPrefix(key, manifestsRoot), "/manifest.json")
 		lastSlash := strings.LastIndex(rel, "/")
 		if lastSlash < 0 {
 			continue
@@ -90,7 +89,7 @@ func LayerSharing(ctx context.Context, s3BucketRef string) (*LayerSharingResult,
 			if err != nil {
 				return nil // skip unreadable manifests, same as Stats
 			}
-			perTag[i] = collectLayerSizes(gCtx, client, bucket, prefix, data)
+			perTag[i] = collectLayerSizes(gCtx, client, bucket, data)
 			return nil
 		})
 	}
@@ -137,7 +136,7 @@ func LayerSharing(ctx context.Context, s3BucketRef string) (*LayerSharingResult,
 // references. Image indexes are resolved to their platform manifests, whose
 // layers are merged (a layer shared by amd64 and arm64 is counted once).
 // Unreadable or unparseable children are skipped rather than failing the scan.
-func collectLayerSizes(ctx context.Context, client storage.Backend, bucket, prefix string, data []byte) map[string]int64 {
+func collectLayerSizes(ctx context.Context, client storage.Backend, bucket string, data []byte) map[string]int64 {
 	sizes := make(map[string]int64)
 	visited := make(map[string]struct{})
 
@@ -166,7 +165,7 @@ func collectLayerSizes(ctx context.Context, client storage.Backend, bucket, pref
 					continue
 				}
 				g.Go(func() error {
-					childData, err := client.GetObject(gCtx, bucket, prefix+"blobs/sha256/"+digest)
+					childData, err := client.GetObject(gCtx, bucket, "blobs/sha256/"+digest)
 					if err != nil {
 						return nil
 					}

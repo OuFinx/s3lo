@@ -56,10 +56,31 @@ type PushOptions struct {
 	OnPlatformsDropped func(pushed string, dropped []string)
 }
 
+// PushResult reports what a push published. Every field is something the push
+// already had to compute; nothing here costs an extra request.
+type PushResult struct {
+	Ref    string `json:"ref" yaml:"ref"`
+	Digest string `json:"digest" yaml:"digest"`
+	Bytes  int64  `json:"bytes" yaml:"bytes"`
+	// Chunk fields are zero unless the bucket has chunking enabled.
+	Chunks         int   `json:"chunks" yaml:"chunks"`
+	ChunksUploaded int   `json:"chunks_uploaded" yaml:"chunks_uploaded"`
+	BytesUploaded  int64 `json:"bytes_uploaded" yaml:"bytes_uploaded"`
+}
+
 // Push exports a local Docker image and uploads it to S3 using the v1.1.0 layout:
 //   - blobs -> blobs/sha256/<digest>  (global, Intelligent-Tiering, cross-image dedup)
 //   - manifests -> manifests/<image>/<tag>/  (Standard storage class)
-func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
+func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) (*PushResult, error) {
+	var res PushResult
+	if err := push(ctx, imageRef, s3Ref, opts, &res); err != nil {
+		return nil, err
+	}
+	res.Ref = s3Ref
+	return &res, nil
+}
+
+func push(ctx context.Context, imageRef, s3Ref string, opts PushOptions, res *PushResult) error {
 	parsed, err := ref.Parse(s3Ref)
 	if err != nil {
 		return fmt.Errorf("invalid S3 reference: %w", err)
@@ -225,7 +246,6 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return fmt.Errorf("publish tag: %w", err)
 	}
 
-	// Record push history (best-effort — don't fail the push on history errors).
 	var totalSize int64
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -235,6 +255,11 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		}
 	}
 
+	res.Digest = digest.FromBytes(published).String()
+	res.Bytes = totalSize
+	res.Chunks = total.Chunks
+	res.ChunksUploaded = total.ChunksUploaded
+	res.BytesUploaded = total.BytesUploaded
 	return nil
 }
 
