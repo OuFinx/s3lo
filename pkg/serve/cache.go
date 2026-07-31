@@ -21,7 +21,7 @@ import (
 type Cache struct {
 	mu      sync.RWMutex
 	entries map[string]cacheEntry
-	order   []string // insertion order, for FIFO eviction
+	nextSeq uint64 // insertion counter, for FIFO eviction
 	max     int
 	ttl     time.Duration
 	dir     string
@@ -30,6 +30,12 @@ type Cache struct {
 type cacheEntry struct {
 	data      []byte
 	expiresAt time.Time
+	// seq is the entry's place in insertion order. It lives on the entry rather
+	// than in a parallel slice because the slice went out of sync: TTL expiry
+	// deleted from the map only, the next Put re-appended the same key, and
+	// eviction (which measured the slice) started dropping live entries. The
+	// cache's effective capacity decayed silently below max.
+	seq uint64
 }
 
 // NewCache returns an in-memory cache holding at most max manifests for ttl
@@ -118,20 +124,30 @@ func (c *Cache) PutManifest(key string, data []byte) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if _, exists := c.entries[key]; !exists {
-		c.order = append(c.order, key)
-		for c.max > 0 && len(c.order) > c.max {
-			oldest := c.order[0]
-			c.order = c.order[1:]
-			delete(c.entries, oldest)
-		}
+	seq := c.nextSeq
+	if old, exists := c.entries[key]; exists {
+		seq = old.seq // a refresh keeps its place in the queue
+	} else {
+		c.nextSeq++
 	}
 
 	var expires time.Time
 	if c.ttl > 0 {
 		expires = time.Now().Add(c.ttl)
 	}
-	c.entries[key] = cacheEntry{data: data, expiresAt: expires}
+	c.entries[key] = cacheEntry{data: data, expiresAt: expires, seq: seq}
+
+	// ponytail: linear scan for the oldest entry, bounded by max (1000 by
+	// default) and only on a full cache. Swap in a heap if max ever gets large.
+	for c.max > 0 && len(c.entries) > c.max {
+		oldestKey, oldestSeq := "", uint64(0)
+		for k, e := range c.entries {
+			if oldestKey == "" || e.seq < oldestSeq {
+				oldestKey, oldestSeq = k, e.seq
+			}
+		}
+		delete(c.entries, oldestKey)
+	}
 
 	if c.dir != "" {
 		c.writeDisk(key, data)
