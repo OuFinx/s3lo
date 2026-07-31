@@ -42,7 +42,7 @@ Get s3lo running and push your first image in under 5 minutes.
 === "Go"
 
     ```bash
-    go install github.com/OuFinx/s3lo/cmd/s3lo@latest
+    go install github.com/OuFinx/s3lo/v2/cmd/s3lo@latest
     ```
 
 Verify the install:
