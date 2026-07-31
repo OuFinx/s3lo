@@ -1,0 +1,7 @@
+# s3lo local storage configuration
+# See: https://oufinx.github.io/s3lo/commands/config/
+
+default:
+  lifecycle:
+    keep_last: 10
+    max_age: 90d

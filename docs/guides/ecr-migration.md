@@ -7,7 +7,7 @@ Migrate your container images from ECR to S3 with a single command per image.
 | | ECR | s3lo + S3 |
 |---|---|---|
 | Storage cost | $0.10/GB/month | $0.023/GB/month |
-| Pull speed (EC2) | ~1–5 Gbps | Up to 100 Gbps |
+| Deduplication | Whole layers only | Content-defined chunks |
 | Auth | ECR token (expires in 12h) | Standard AWS credentials |
 | Deduplication | None | Bucket-wide |
 | Multi-region | Replicate per region | S3 Cross-Region Replication |

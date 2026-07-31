@@ -10,10 +10,10 @@ import (
 )
 
 var (
-	cleanConfirm   bool
-	cleanTags  bool
-	cleanBlobs bool
-	cleanConfig    string
+	cleanConfirm bool
+	cleanTags    bool
+	cleanBlobs   bool
+	cleanConfig  string
 )
 
 var cleanCmd = &cobra.Command{

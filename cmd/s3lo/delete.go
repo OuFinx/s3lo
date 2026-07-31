@@ -10,8 +10,8 @@ import (
 var deleteForce bool
 
 var deleteCmd = &cobra.Command{
-	Use:     "delete <s3-ref>",
-	Short:   "Delete an image tag from S3",
+	Use:   "delete <s3-ref>",
+	Short: "Delete an image tag from S3",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/delete/
 
   s3lo delete s3://my-bucket/myapp:v1.0`,

@@ -3,8 +3,6 @@ package tui
 import (
 	"context"
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/spinner"
@@ -23,7 +21,7 @@ type RootModel struct {
 	prefix    string
 	leftPane  leftPane
 	right     StatsPanel
-	overlay   tea.Model // nil when no overlay is active
+	overlay   tea.Model           // nil when no overlay is active
 	tagCache  map[string]TagStats // keyed by "imageName:tagName"
 	status    string
 	statusErr bool
@@ -94,9 +92,9 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if m.overlay != nil {
 		var cmd tea.Cmd
 		m.overlay, cmd = m.overlay.Update(msg)
-		// Also pass data messages (inspect results, scan results, clean preview) to overlay.
+		// Also pass data messages (inspect results, clean preview) to overlay.
 		switch msg.(type) {
-		case inspectResultMsg, scanResultMsg, cleanPreviewFetchedMsg:
+		case inspectResultMsg, cleanPreviewFetchedMsg:
 			// Already handled above via overlay.Update(msg)
 		}
 		return m, cmd
@@ -161,30 +159,6 @@ func (m RootModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case cleanPreviewFetchedMsg:
-		if m.overlay != nil {
-			m.overlay, _ = m.overlay.Update(msg)
-		}
-		return m, nil
-
-	case scanPreparedMsg:
-		if msg.err != nil {
-			m.overlay = nil
-			m = m.setStatus("scan failed: "+msg.err.Error(), true)
-			return m, clearStatusCmd()
-		}
-		if m.overlay == nil {
-			// User cancelled while preparing; clean up without running Trivy.
-			os.RemoveAll(msg.tmpDir)
-			return m, nil
-		}
-		trivyCmd := exec.Command(msg.trivyPath, "image", "--input", msg.tmpDir)
-		tmpDir := msg.tmpDir
-		return m, tea.ExecProcess(trivyCmd, func(err error) tea.Msg {
-			os.RemoveAll(tmpDir)
-			return scanResultMsg{err: err}
-		})
-
-	case scanResultMsg:
 		if m.overlay != nil {
 			m.overlay, _ = m.overlay.Update(msg)
 		}
@@ -303,16 +277,6 @@ func (m RootModel) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		m.overlay = newInspectView()
 		return m, inspectTagCmd(m.ctx, tagRef)
 
-	case "s":
-		imgName := m.leftPane.SelectedImageName()
-		tagName := m.leftPane.SelectedTagName()
-		if imgName == "" || tagName == "" {
-			return m, nil
-		}
-		tagRef := strings.TrimSuffix(m.s3Ref, "/") + "/" + imgName + ":" + tagName
-		m.overlay = newScanResultsView()
-		return m, prepareScanCmd(m.ctx, tagRef)
-
 	case "g":
 		// Open layer-sharing matrix for the current image (tag list mode only).
 		imgName := m.leftPane.SelectedImageName()
@@ -417,7 +381,7 @@ func (m RootModel) renderStatusBar() string {
 	}
 	tagName := m.leftPane.SelectedTagName()
 	if tagName != "" {
-		return dimStyle.Render("  [↑↓] navigate  [esc] back  [d] delete  [i] inspect  [s] scan  [g] layers  [c] clean  [r] refresh  [q] quit")
+		return dimStyle.Render("  [↑↓] navigate  [esc] back  [d] delete  [i] inspect  [g] layers  [c] clean  [r] refresh  [q] quit")
 	}
 	return dimStyle.Render("  [↑↓] navigate  [enter] open  [d] delete  [c] clean  [r] refresh  [q] quit")
 }

@@ -64,6 +64,21 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			slog.Debug("blob already exists, skipping", "digest", digest[:12])
 			return nil
 		}
+		// A chunked source has no whole-layer blob to copy, so the layer has to be
+		// moved as its recipe plus chunks instead.
+		copied, err := copyChunkedLayer(ctx, srcClient, destClient, srcParsed.Bucket, destParsed.Bucket, digest)
+		if err != nil {
+			return err
+		}
+		if copied {
+			blobsCopied.Add(1)
+			if platform != "" && opts.OnBlob != nil {
+				opts.OnBlob(platform, digest, size, false)
+			}
+			slog.Debug("chunked layer copied", "digest", digest[:12], "size", size)
+			return nil
+		}
+
 		if sameBucket {
 			if err := destClient.CopyObject(ctx, destParsed.Bucket, srcKey, destKey); err != nil {
 				return fmt.Errorf("copy blob %s: %w", digest[:12], err)
@@ -119,7 +134,6 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 	}
 
 	destPrefix := destParsed.ManifestsPrefix()
-	ociLayout := []byte(`{"imageLayoutVersion":"1.0.0"}`)
 
 	if isImageIndex(manifestData) {
 		idx, err := parseIndex(manifestData)
@@ -221,11 +235,6 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 		if err := destClient.PutObject(ctx, destParsed.Bucket, destPrefix+"manifest.json", writeManifestData); err != nil {
 			return nil, fmt.Errorf("write manifest.json: %w", err)
 		}
-		if err := destClient.PutObject(ctx, destParsed.Bucket, destPrefix+"oci-layout", ociLayout); err != nil {
-			return nil, fmt.Errorf("write oci-layout: %w", err)
-		}
-
-		_ = recordHistory(ctx, destClient, destParsed, writeManifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, writeManifestData))
 
 		return &CopyResult{
 			Platforms:    len(selected),
@@ -284,7 +293,6 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			}
 		}
 	}
-	_ = recordHistory(ctx, destClient, destParsed, manifestData, manifestLogicalSize(ctx, destClient, destParsed.Bucket, manifestData))
 
 	return &CopyResult{
 		Platforms:    1,

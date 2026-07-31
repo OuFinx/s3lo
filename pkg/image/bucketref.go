@@ -27,8 +27,8 @@ func ParseBucketRef(s3Ref string) (bucket, prefix string, err error) {
 
 	if isLocal && (strings.HasPrefix(rest, "./") || strings.HasPrefix(rest, "../")) {
 		// Consume the relative prefix + first directory component as the bucket.
-		firstSlash := strings.Index(rest, "/")                   // slash in "./"
-		after := rest[firstSlash+1:]                             // e.g. "store/" or "store/prefix/"
+		firstSlash := strings.Index(rest, "/") // slash in "./"
+		after := rest[firstSlash+1:]           // e.g. "store/" or "store/prefix/"
 		secondSlash := strings.Index(after, "/")
 		if secondSlash < 0 {
 			// e.g. "local://./store" with no trailing slash → whole thing is bucket

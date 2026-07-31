@@ -8,10 +8,14 @@ import (
 	"path/filepath"
 	"strings"
 
+	"encoding/json"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
+	"sync"
 )
 
 // PullOptions controls pull behavior.
@@ -121,10 +125,6 @@ func resolvePlatformManifest(ctx context.Context, client storage.Backend, bucket
 // pullV110 downloads a v1.1.0 image into tmpDir, reconstructing the local OCI layout
 // that oci.ImportImage expects: tmpDir/manifest.json + tmpDir/blobs/sha256/<digest>.
 func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference, manifestData []byte, tmpDir string, onBlob func(string, int64), onStart func(int64)) error {
-	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), manifestData, 0o644); err != nil {
-		return fmt.Errorf("write manifest: %w", err)
-	}
-
 	manifest, err := oci.ParseManifest(manifestData)
 	if err != nil {
 		return fmt.Errorf("parse manifest: %w", err)
@@ -162,24 +162,48 @@ func pullV110(ctx context.Context, client storage.Backend, parsed ref.Reference,
 	}
 
 	// Download layer blobs in parallel.
+	var mu sync.Mutex
+	raw := make([]ocispec.Descriptor, len(manifest.Layers))
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(blobConcurrency)
-	for _, layer := range manifest.Layers {
-		layer := layer
+	for i, layer := range manifest.Layers {
+		i, layer := i, layer
 		g.Go(func() error {
 			d := layer.Digest.Encoded()
-			layerPath := filepath.Join(blobsDir, d)
-			if err := client.DownloadObjectToFile(gCtx, parsed.Bucket, "blobs/sha256/"+d, layerPath); err != nil {
-				return err
+			// Resolves the layer whether the bucket stores it whole or as chunks,
+			// and verifies it against its digest either way.
+			rawDigest, rawSize, err := fetchLayer(gCtx, client, parsed.Bucket, d, blobsDir)
+			if err != nil {
+				return fmt.Errorf("fetch layer %s: %w", short(d), err)
 			}
-			if err := verifyFileDigest(layerPath, d); err != nil {
-				return fmt.Errorf("verify layer blob: %w", err)
+			mu.Lock()
+			raw[i] = ocispec.Descriptor{
+				MediaType: ocispec.MediaTypeImageLayer,
+				Digest:    digest.Digest("sha256:" + rawDigest),
+				Size:      rawSize,
 			}
+			mu.Unlock()
 			if onBlob != nil {
 				onBlob(d, layer.Size)
 			}
 			return nil
 		})
 	}
-	return g.Wait()
+	if err := g.Wait(); err != nil {
+		return err
+	}
+
+	// The local layout describes the raw layers that were just written, which is
+	// what the Docker daemon is given. A chunked bucket advertises the compressed
+	// form; on disk here it is always the plain tar.
+	local := manifest
+	local.Layers = raw
+	localData, err := json.Marshal(local)
+	if err != nil {
+		return fmt.Errorf("marshal local manifest: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(tmpDir, "manifest.json"), localData, 0o644); err != nil {
+		return fmt.Errorf("write manifest: %w", err)
+	}
+	return nil
 }

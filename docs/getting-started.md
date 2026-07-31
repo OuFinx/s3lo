@@ -150,7 +150,6 @@ s3lo bucket init --local ./local-s3
 s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
 s3lo pull local://./local-s3/myapp:v1.0
 s3lo list local://./local-s3/
-s3lo history local://./local-s3/
 ```
 
 Local storage uses the same OCI layout as S3 storage — it's a great way to learn s3lo or run it in development.
@@ -161,7 +160,7 @@ Local storage uses the same OCI layout as S3 storage — it's a great way to lea
 s3lo tui s3://my-bucket/
 ```
 
-The TUI shows all images and tags with sizes, deduplication stats, and cost estimates. From inside a tag list, press `i` to inspect metadata, `s` to scan for vulnerabilities, `g` to view the layer sharing matrix, or `d` to delete. Press `q` to quit.
+The TUI shows all images and tags with sizes, deduplication stats, and cost estimates. From inside a tag list, press `i` to inspect metadata, `g` to view the layer sharing matrix, or `d` to delete. Press `q` to quit.
 
 ---
 

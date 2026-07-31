@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/OuFinx/s3lo/pkg/chunkstore"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"golang.org/x/sync/errgroup"
 )
@@ -59,11 +60,24 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	}
 	result.LayoutOK = len(manifestKeys) > 0 || len(blobMeta) > 0
 
-	// Build set of all stored blob digests.
-	storedBlobs := make(map[string]int64, len(blobMeta))
+	// A layer counts as present if the bucket holds it whole OR holds a recipe
+	// that rebuilds it from chunks. Without the second source every chunked layer
+	// looks missing and doctor tells the operator to delete healthy images.
+	recipeMeta, err := client.ListObjectsWithMeta(ctx, bucket, prefix+chunkstore.RecipesPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("list recipes: %w", err)
+	}
+
+	storedBlobs := make(map[string]int64, len(blobMeta)+len(recipeMeta))
 	for _, b := range blobMeta {
 		digest := b.Key[strings.LastIndex(b.Key, "/")+1:]
 		storedBlobs[digest] = b.Size
+	}
+	for _, r := range recipeMeta {
+		digest := r.Key[strings.LastIndex(r.Key, "/")+1:]
+		if _, ok := storedBlobs[digest]; !ok {
+			storedBlobs[digest] = r.Size
+		}
 	}
 
 	// --- Config check ---

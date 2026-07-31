@@ -116,35 +116,6 @@ fmt.Printf("images: %d, tags: %d, size: %d bytes\n", stats.Images, stats.Tags, s
 fmt.Printf("dedup savings: %d bytes\n", stats.LogicalBytes-stats.ActualBytes)
 ```
 
-## Scan
-
-```go
-import "github.com/OuFinx/s3lo/pkg/image"
-
-// Scan an image — Trivy must be installed.
-exitCode, err := image.Scan(ctx, "s3://my-bucket/myapp:v1.0", image.ScanOptions{
-    TrivyPath: "/usr/local/bin/trivy",
-    Severity:  "HIGH,CRITICAL",
-})
-if exitCode != 0 {
-    fmt.Println("vulnerabilities found")
-}
-```
-
-With progress callback and platform selection:
-
-```go
-exitCode, err := image.Scan(ctx, "s3://my-bucket/alpine:latest", image.ScanOptions{
-    TrivyPath: trivyPath,
-    Platform:  "linux/amd64",
-    Severity:  "HIGH,CRITICAL",
-    Format:    "json",
-    OnBlob: func(digest string, size int64) {
-        fmt.Printf("downloaded %s (%d bytes)\n", digest[:12], size)
-    },
-})
-```
-
 ## Parse a reference
 
 ```go
@@ -176,3 +147,27 @@ import "github.com/OuFinx/s3lo/pkg/storage"
 ctx = storage.WithEndpoint(ctx, "http://localhost:9000")
 err := image.Push(ctx, "myapp:v1.0", "s3://my-bucket/myapp:v1.0", image.PushOptions{})
 ```
+
+## Chunked layers
+
+`pkg/chunkstore` stores a layer as content-defined chunks and rebuilds it, in
+either of the two forms a chunked layer has:
+
+```go
+import "github.com/OuFinx/s3lo/pkg/chunkstore"
+
+// Split a layer into chunks, uploading only the ones the bucket lacks.
+recipe, stats, err := chunkstore.Store(ctx, client, "my-bucket", "/tmp/layer.tar", rawDigest)
+fmt.Printf("uploaded %d of %d chunks (%.1f%% deduplicated)\n",
+    stats.ChunksUploaded, stats.Chunks, stats.Deduplicated()*100)
+
+// Rebuild the raw tar, verifying it against the layer digest.
+err = chunkstore.Fetch(ctx, client, "my-bucket", recipe, "/tmp/out.tar")
+
+// Or stream the stored chunks as-is: a valid zstd stream matching
+// recipe.CompressedDigest, which is what an image manifest references.
+err = chunkstore.StreamCompressed(ctx, client, "my-bucket", recipe, w)
+```
+
+`recipe.Layer` is the raw digest (the config's `diff_id`, unchanged by
+chunking); `recipe.CompressedDigest` identifies the compressed stream.

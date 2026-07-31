@@ -2,20 +2,38 @@ package image
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
+	"syscall"
 
+	"encoding/json"
+
+	"github.com/OuFinx/s3lo/pkg/chunkstore"
 	"github.com/OuFinx/s3lo/pkg/oci"
 	"github.com/OuFinx/s3lo/pkg/ref"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/opencontainers/go-digest"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
 
-// manifestFiles are the per-tag metadata files uploaded to manifests/<image>/<tag>/.
-var manifestFiles = []string{"manifest.json", "config.json", "index.json", "oci-layout"}
+// tagManifestFile is the single object that constitutes a tag.
+//
+// A tag used to be four objects (manifest.json, config.json, index.json,
+// oci-layout) written in a loop, which made every tag update non-atomic: a
+// reader could observe a new manifest against a stale config, and a push that
+// died halfway left the tag permanently inconsistent. Nothing ever read the
+// other three — every reader in this package resolves a tag through
+// manifest.json and then fetches blobs by digest — and the per-tag directory was
+// not a valid OCI layout anyway, because blobs/ lives at the bucket root rather
+// than beside it. Collapsing a tag to one object makes the write atomic by
+// construction: S3 PutObject either lands or it does not.
+const tagManifestFile = "manifest.json"
 
 // PushOptions controls push behavior.
 type PushOptions struct {
@@ -26,6 +44,10 @@ type PushOptions struct {
 	// OnBlob is called for each blob after it is processed (uploaded or skipped).
 	// digest is the sha256 digest (without "sha256:" prefix), size in bytes, skipped=true if already existed.
 	OnBlob func(digest string, size int64, skipped bool)
+	// OnTransfer is called once after all blobs are stored, with how much of the
+	// image had to be uploaded versus reused. On a chunked bucket this is where
+	// sub-layer deduplication becomes visible.
+	OnTransfer func(stats chunkstore.Stats)
 }
 
 // Push exports a local Docker image and uploads it to S3 using the v1.1.0 layout:
@@ -45,6 +67,14 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 
 	_, manifestData, configData, err := oci.ExportImage(ctx, imageRef, tmpDir)
 	if err != nil {
+		// Push stages the whole image on disk before uploading, so a large image
+		// can exhaust a small temp filesystem while the destination has room to
+		// spare. Say so, because "no space left on device" points at the wrong disk.
+		if errors.Is(err, syscall.ENOSPC) || strings.Contains(err.Error(), "no space left on device") {
+			return fmt.Errorf("export image: ran out of space staging the image under %s. "+
+				"Set TMPDIR to a filesystem with room for the uncompressed image and retry: %w",
+				os.TempDir(), err)
+		}
 		return fmt.Errorf("export image: %w", err)
 	}
 
@@ -68,6 +98,18 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		return fmt.Errorf("read blobs dir: %w", err)
 	}
 
+	// Chunking is a property of the bucket, read once per push.
+	cfg, err := GetBucketConfig(ctx, client, parsed.Bucket)
+	if err != nil {
+		return fmt.Errorf("read bucket config: %w", err)
+	}
+	chunked := cfg.ChunkedEnabled()
+	if chunked {
+		if err := ensureChunkFormat(ctx, client, parsed.Bucket, cfg); err != nil {
+			return err
+		}
+	}
+
 	// Sum blob sizes for deterministic progress reporting.
 	if opts.OnStart != nil {
 		var totalBytes int64
@@ -86,7 +128,13 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 
 	g, gCtx := errgroup.WithContext(ctx)
 	g.SetLimit(blobConcurrency)
-	var onBlobMu sync.Mutex
+	var (
+		onBlobMu sync.Mutex
+		total    chunkstore.Stats
+		// Layers that ended up chunked, keyed by their raw digest, so the manifest
+		// can be pointed at the compressed form afterwards.
+		compressed = map[string]chunkstore.Recipe{}
+	)
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -95,57 +143,55 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 		entry := entry
 		g.Go(func() error {
 			localPath := filepath.Join(blobsDir, entry.Name())
-			key := "blobs/sha256/" + entry.Name()
 
 			info, err := os.Stat(localPath)
 			if err != nil {
 				return fmt.Errorf("stat blob %s: %w", entry.Name(), err)
 			}
 
-			// Single dedup check — UploadFile skips internally when the object exists,
-			// but we need to know the outcome for OnBlob reporting.
-			exists, err := client.HeadObjectExists(gCtx, parsed.Bucket, key)
+			recipe, stats, skipped, err := storeLayer(gCtx, client, parsed.Bucket, localPath,
+				entry.Name(), info.Size(), chunked)
 			if err != nil {
-				return fmt.Errorf("check blob %s: %w", entry.Name(), err)
+				return err
 			}
-			if !exists {
-				slog.Debug("uploading blob", "digest", entry.Name()[:12], "size", info.Size())
-				if err := client.UploadFile(gCtx, localPath, parsed.Bucket, key, storage.StorageClassIntelligentTiering); err != nil {
-					return fmt.Errorf("upload blob %s: %w", entry.Name(), err)
-				}
-			} else {
-				slog.Debug("blob already exists, skipping", "digest", entry.Name()[:12])
-				// Refresh the existing blob's timestamp so it stays inside the GC
-				// grace window while this push writes its manifest (avoids a concurrent
-				// GC reaping a dedup-shared blob as "unreferenced"). Best-effort.
-				if err := client.TouchObject(gCtx, parsed.Bucket, key); err != nil {
-					slog.Debug("touch existing blob failed", "digest", entry.Name()[:12], "err", err)
-				}
-			}
+			slog.Debug("stored blob", "digest", entry.Name()[:12], "size", info.Size(),
+				"chunks", stats.Chunks, "uploaded", stats.BytesUploaded, "skipped", skipped)
 
-			if opts.OnBlob != nil {
-				onBlobMu.Lock()
-				opts.OnBlob(entry.Name(), info.Size(), exists)
-				onBlobMu.Unlock()
+			onBlobMu.Lock()
+			if recipe.CompressedDigest != "" {
+				compressed[entry.Name()] = recipe
 			}
+			total.Chunks += stats.Chunks
+			total.ChunksUploaded += stats.ChunksUploaded
+			total.Bytes += stats.Bytes
+			total.BytesUploaded += stats.BytesUploaded
+			if opts.OnBlob != nil {
+				opts.OnBlob(entry.Name(), info.Size(), skipped)
+			}
+			onBlobMu.Unlock()
 			return nil
 		})
 	}
 	if err := g.Wait(); err != nil {
 		return err
 	}
+	if opts.OnTransfer != nil {
+		opts.OnTransfer(total)
+	}
 
-	// Upload manifest files to manifests/<image>/<tag>/ with Standard storage class.
+	// Point the manifest at the compressed form of every chunked layer. The image
+	// config is untouched — its diff_ids are the raw digests, which is exactly what
+	// the spec wants — so the image ID does not change.
+	published, err := retargetManifest(manifestData, compressed)
+	if err != nil {
+		return err
+	}
+
+	// Publish the tag last: every blob it references is already in the bucket, so
+	// this single write is what makes the image visible, all at once.
 	manifestPrefix := parsed.ManifestsPrefix()
-	for _, name := range manifestFiles {
-		localPath := filepath.Join(tmpDir, name)
-		if _, statErr := os.Stat(localPath); os.IsNotExist(statErr) {
-			continue
-		}
-		key := manifestPrefix + name
-		if err := client.UploadFile(ctx, localPath, parsed.Bucket, key, ""); err != nil {
-			return fmt.Errorf("upload %s: %w", name, err)
-		}
+	if err := client.PutObject(ctx, parsed.Bucket, manifestPrefix+tagManifestFile, published); err != nil {
+		return fmt.Errorf("publish tag: %w", err)
 	}
 
 	// Record push history (best-effort — don't fail the push on history errors).
@@ -157,9 +203,42 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 			}
 		}
 	}
-	if err := recordHistory(ctx, client, parsed, manifestData, totalSize); err != nil {
-		slog.Debug("record history failed (non-fatal)", "error", err)
-	}
 
 	return nil
+}
+
+// retargetManifest rewrites layer descriptors for layers stored as chunks so they
+// advertise the compressed stream a client should fetch. Layers stored whole are
+// left alone, which is what keeps a mixed bucket readable.
+func retargetManifest(manifestData []byte, compressed map[string]chunkstore.Recipe) ([]byte, error) {
+	if len(compressed) == 0 {
+		return manifestData, nil
+	}
+	var m ocispec.Manifest
+	if err := json.Unmarshal(manifestData, &m); err != nil {
+		// An image index carries no layers of its own; nothing to retarget.
+		return manifestData, nil
+	}
+	if len(m.Layers) == 0 {
+		return manifestData, nil
+	}
+	changed := false
+	for i, l := range m.Layers {
+		r, ok := compressed[l.Digest.Encoded()]
+		if !ok {
+			continue
+		}
+		m.Layers[i].Digest = digest.Digest("sha256:" + r.CompressedDigest)
+		m.Layers[i].Size = r.CompressedSize
+		m.Layers[i].MediaType = ocispec.MediaTypeImageLayerZstd
+		changed = true
+	}
+	if !changed {
+		return manifestData, nil
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return nil, fmt.Errorf("marshal retargeted manifest: %w", err)
+	}
+	return out, nil
 }

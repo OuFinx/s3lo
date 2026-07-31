@@ -63,18 +63,16 @@ func (c *Client) UploadFile(ctx context.Context, localPath, bucket, key string, 
 	if err != nil {
 		return err
 	}
+	// Storage classes are an AWS S3 concept. MinIO, Ceph and R2 reject
+	// INTELLIGENT_TIERING outright with InvalidStorageClass, so against a custom
+	// endpoint the class is dropped and the service's own default applies.
+	if c.endpoint != "" {
+		return uploadFile(ctx, s3Client, bucket, key, localPath, "")
+	}
 	return uploadFile(ctx, s3Client, bucket, key, localPath, toAWSStorageClass(sc))
 }
 
 func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath string, storageClass s3types.StorageClass) error {
-	info, err := os.Stat(localPath)
-	if err != nil {
-		return err
-	}
-	if info.Size() > multipartThreshold {
-		return uploadFileMultipart(ctx, client, bucket, key, localPath, storageClass)
-	}
-
 	f, err := os.Open(localPath)
 	if err != nil {
 		return err
@@ -91,7 +89,7 @@ func uploadFile(ctx context.Context, client *s3.Client, bucket, key, localPath s
 	if storageClass != "" {
 		input.StorageClass = storageClass
 	}
-	_, err = client.PutObject(ctx, input)
+	_, err = newUploader(client).Upload(ctx, input)
 	return err
 }
 

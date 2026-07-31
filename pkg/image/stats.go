@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/OuFinx/s3lo/pkg/chunkstore"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"golang.org/x/sync/errgroup"
 )
@@ -13,6 +14,16 @@ import (
 const (
 	s3PricePerGBMonth  = 0.023 // US East (N. Virginia) standard
 	ecrPricePerGBMonth = 0.10
+
+	// ecrCompressionRatio converts this bucket's logical (uncompressed) bytes
+	// into the number of bytes ECR would bill for.
+	//
+	// It is not 1. `docker save` produces uncompressed layer tars and s3lo stores
+	// them verbatim, while a registry stores the gzip-compressed layer. Comparing
+	// our stored bytes against ECR's price per *logical* byte would credit s3lo
+	// with a saving it has not earned. Measured at 3.3-3.5x across the layers of
+	// python:3.12-slim; 3.4 is the middle of that range.
+	ecrCompressionRatio = 3.4
 )
 
 // CostEstimate holds projected monthly cost figures for a bucket.
@@ -26,9 +37,13 @@ type CostEstimate struct {
 
 // StatsResult holds storage statistics for a bucket.
 type StatsResult struct {
-	Images         int              `json:"images" yaml:"images"`
-	Tags           int              `json:"tags" yaml:"tags"`
-	UniqueBlobs    int              `json:"unique_blobs" yaml:"unique_blobs"`
+	Images      int `json:"images" yaml:"images"`
+	Tags        int `json:"tags" yaml:"tags"`
+	UniqueBlobs int `json:"unique_blobs" yaml:"unique_blobs"`
+	// Chunks and ChunkBytes cover chunked layers; both are zero on a bucket that
+	// has never had a chunked push. ChunkBytes is already included in BlobBytes.
+	Chunks         int              `json:"chunks" yaml:"chunks"`
+	ChunkBytes     int64            `json:"chunk_bytes" yaml:"chunk_bytes"`
 	BlobBytes      int64            `json:"blob_bytes" yaml:"blob_bytes"`
 	LogicalBytes   int64            `json:"logical_bytes" yaml:"logical_bytes"`
 	StorageByClass map[string]int64 `json:"storage_by_class" yaml:"storage_by_class"`
@@ -126,7 +141,9 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 	}
 	result.LogicalBytes = logicalBytes
 
-	// List actual stored blobs with storage class info.
+	// List actual stored objects with storage class info. On a chunked bucket
+	// most of the payload lives under chunks/, so counting only blobs/ would
+	// report a physical size several times smaller than reality.
 	blobsPrefix := prefix + "blobs/sha256/"
 	blobs, err := client.ListObjectsWithMeta(ctx, bucket, blobsPrefix)
 	if err != nil {
@@ -143,12 +160,27 @@ func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
 		result.StorageByClass[sc] += blob.Size
 	}
 
+	chunks, err := client.ListObjectsWithMeta(ctx, bucket, prefix+chunkstore.ChunksPrefix)
+	if err != nil {
+		return nil, fmt.Errorf("list chunks: %w", err)
+	}
+	result.Chunks = len(chunks)
+	for _, c := range chunks {
+		result.ChunkBytes += c.Size
+		sc := c.StorageClass
+		if sc == "" {
+			sc = "STANDARD"
+		}
+		result.StorageByClass[sc] += c.Size
+	}
+	result.BlobBytes += result.ChunkBytes
+
 	// Compute cost projections.
 	actualGB := float64(result.BlobBytes) / (1 << 30)
 	logicalGB := float64(result.LogicalBytes) / (1 << 30)
 	s3Cost := actualGB * s3PricePerGBMonth
 	s3NoDedupCost := logicalGB * s3PricePerGBMonth
-	ecrCost := logicalGB * ecrPricePerGBMonth
+	ecrCost := logicalGB / ecrCompressionRatio * ecrPricePerGBMonth
 	savingsVsECR := ecrCost - s3Cost
 	savingsPct := 0.0
 	if ecrCost > 0 {

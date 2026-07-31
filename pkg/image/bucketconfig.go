@@ -2,11 +2,13 @@ package image
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"path"
 	"sort"
 	"strings"
 
+	"github.com/OuFinx/s3lo/pkg/chunk"
 	storage "github.com/OuFinx/s3lo/pkg/storage"
 	"gopkg.in/yaml.v3"
 )
@@ -30,34 +32,31 @@ type ImageConfig struct {
 // BucketConfig holds the full s3lo configuration for a bucket, stored at s3://bucket/s3lo.yaml.
 // Default applies to all images. Images contains per-image overrides keyed by name or glob pattern.
 type BucketConfig struct {
-	Default  ImageConfig            `yaml:"default,omitempty" json:"default,omitempty"`
-	Images   map[string]ImageConfig `yaml:"images,omitempty" json:"images,omitempty"`
-	Policies []PolicyRule           `yaml:"policies,omitempty" json:"policies,omitempty"`
+	Default ImageConfig            `yaml:"default,omitempty" json:"default,omitempty"`
+	Images  map[string]ImageConfig `yaml:"images,omitempty" json:"images,omitempty"`
+
+	// Chunked makes push store layers as content-defined chunks shared across
+	// every image in the bucket, instead of one object per layer.
+	//
+	// It is deliberately bucket-wide rather than per-image: the chunk store is
+	// shared, so a per-image switch would only make reasoning about garbage
+	// collection harder without making anything more useful. Turning it on or
+	// off is safe at any time — reads resolve a layer through its recipe when one
+	// exists and fall back to a whole-layer blob when it does not, so a bucket
+	// may hold both without migration.
+	Chunked *bool `yaml:"chunked,omitempty" json:"chunked,omitempty"`
+
+	// ChunkFormat records the chunking parameters this bucket's chunks were
+	// written with. It is stamped on the first chunked push and never changes
+	// afterwards, so a build of s3lo whose parameters differ is rejected instead
+	// of quietly filling the bucket with chunks that cannot match the existing
+	// ones. Zero means no chunked push has happened yet.
+	ChunkFormat int `yaml:"chunk_format,omitempty" json:"chunk_format,omitempty"`
 }
 
-// PolicyCheck identifies the kind of check a policy performs.
-type PolicyCheck string
-
-const (
-	PolicyCheckScan   PolicyCheck = "scan"
-	PolicyCheckAge    PolicyCheck = "age"
-	PolicyCheckSigned PolicyCheck = "signed"
-	PolicyCheckSize   PolicyCheck = "size"
-)
-
-// PolicyRule is a single policy check stored in s3lo.yaml under the `policies` key.
-type PolicyRule struct {
-	Name  string      `yaml:"name" json:"name"`
-	Check PolicyCheck `yaml:"check" json:"check"`
-	// MaxSeverity is used by PolicyCheckScan: fail if vulnerabilities meet or exceed this level.
-	// Valid values: LOW, MEDIUM, HIGH, CRITICAL.
-	MaxSeverity string `yaml:"max_severity,omitempty" json:"max_severity,omitempty"`
-	// MaxDays is used by PolicyCheckAge: fail if image is older than this many days.
-	MaxDays int `yaml:"max_days,omitempty" json:"max_days,omitempty"`
-	// MaxBytes is used by PolicyCheckSize: fail if total image size exceeds this many bytes.
-	MaxBytes int64 `yaml:"max_bytes,omitempty" json:"max_bytes,omitempty"`
-	// KeyRef is used by PolicyCheckSigned: required verification key reference.
-	KeyRef string `yaml:"key_ref,omitempty" json:"key_ref,omitempty"`
+// ChunkedEnabled reports whether push should store layers as chunks.
+func (c *BucketConfig) ChunkedEnabled() bool {
+	return c != nil && c.Chunked != nil && *c.Chunked
 }
 
 // EffectiveConfig returns the resolved configuration for imageName by merging
@@ -193,4 +192,31 @@ func ParseConfigRef(s3Ref string) (bucket, image string, err error) {
 		return "", "", fmt.Errorf("invalid reference %q: empty bucket", s3Ref)
 	}
 	return bucket, image, nil
+}
+
+// ErrChunkFormatMismatch is returned when a bucket's chunks were written with
+// chunking parameters this build does not produce.
+var ErrChunkFormatMismatch = errors.New("bucket chunk format mismatch")
+
+// ensureChunkFormat stamps the bucket with the chunker version on first use and
+// refuses to write into a bucket built by an incompatible one.
+//
+// Silently proceeding would be the worst outcome: every push would store a full
+// second copy of content that looks identical, deduplication would read as
+// broken, and nothing would say why.
+func ensureChunkFormat(ctx context.Context, client storage.Backend, bucket string, cfg *BucketConfig) error {
+	switch cfg.ChunkFormat {
+	case chunk.FormatVersion:
+		return nil
+	case 0:
+		cfg.ChunkFormat = chunk.FormatVersion
+		if err := SetBucketConfig(ctx, client, bucket, cfg); err != nil {
+			return fmt.Errorf("record chunk format: %w", err)
+		}
+		return nil
+	default:
+		return fmt.Errorf("%w: bucket was chunked with format %d, this build writes format %d; "+
+			"chunks from the two do not deduplicate against each other",
+			ErrChunkFormatMismatch, cfg.ChunkFormat, chunk.FormatVersion)
+	}
 }

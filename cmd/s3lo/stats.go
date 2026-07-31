@@ -8,8 +8,8 @@ import (
 )
 
 var statsCmd = &cobra.Command{
-	Use:     "stats <s3-bucket-ref>",
-	Short:   "Show storage usage and deduplication savings",
+	Use:   "stats <s3-bucket-ref>",
+	Short: "Show storage usage and deduplication savings",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/stats/
 
   s3lo bucket stats s3://my-bucket/
@@ -36,7 +36,14 @@ func printStats(bucketRef string, r *image.StatsResult) {
 	fmt.Printf("Bucket: %s\n\n", bucketRef)
 	fmt.Printf("Images:       %d\n", r.Images)
 	fmt.Printf("Tags:         %d\n", r.Tags)
-	fmt.Printf("Storage:      %s across %d unique blobs\n", formatBytes(r.BlobBytes), r.UniqueBlobs)
+	if r.Chunks > 0 {
+		// On a chunked bucket most bytes live in chunks, so reporting only the
+		// blob count next to the total size would misattribute the storage.
+		fmt.Printf("Storage:      %s across %d blobs and %d chunks (%s chunked)\n",
+			formatBytes(r.BlobBytes), r.UniqueBlobs, r.Chunks, formatBytes(r.ChunkBytes))
+	} else {
+		fmt.Printf("Storage:      %s across %d unique blobs\n", formatBytes(r.BlobBytes), r.UniqueBlobs)
+	}
 
 	savings := r.DedupSavings()
 	if savings > 0 {

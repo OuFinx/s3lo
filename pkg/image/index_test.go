@@ -73,10 +73,10 @@ func TestHostPlatform(t *testing.T) {
 
 func TestParsePlatform(t *testing.T) {
 	tests := []struct {
-		input           string
-		wantOS          string
-		wantArch        string
-		wantVariant     string
+		input       string
+		wantOS      string
+		wantArch    string
+		wantVariant string
 	}{
 		{"linux/amd64", "linux", "amd64", ""},
 		{"linux/arm64", "linux", "arm64", ""},
@@ -138,4 +138,3 @@ func TestPlatformString(t *testing.T) {
 		}
 	}
 }
-

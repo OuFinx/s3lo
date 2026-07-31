@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 
@@ -28,6 +27,7 @@ Use s3://bucket/image or s3://bucket/dev/* to set per-image overrides.
 
 Available keys:
   immutable              true/false
+  chunked                true|false (bucket-wide: store layers as shared chunks)
   lifecycle.keep_last    number (e.g. 10)
   lifecycle.max_age      duration (e.g. 30d, 7d, 168h)
   lifecycle.keep_tags    comma-separated tags (e.g. latest,stable)`,
@@ -217,6 +217,19 @@ Valid keys to remove: immutable, lifecycle`,
 // applyConfigKV applies a single key=value pair to the config for the given image name
 // (empty imageName = bucket default).
 func applyConfigKV(cfg *image.BucketConfig, imageName, key, val string) error {
+	// Chunking applies to the whole bucket: the chunk store is shared, so there is
+	// no coherent meaning to enabling it for one image only.
+	if key == "chunked" {
+		if imageName != "" {
+			return fmt.Errorf("chunked is a bucket-wide setting: set it on the bucket reference, not on image %q", imageName)
+		}
+		b, err := strconv.ParseBool(val)
+		if err != nil {
+			return fmt.Errorf("chunked must be true or false, got %q", val)
+		}
+		cfg.Chunked = &b
+		return nil
+	}
 	if imageName == "" {
 		return applyToImageConfig(&cfg.Default, key, val)
 	}
@@ -266,7 +279,7 @@ func applyToImageConfig(img *image.ImageConfig, key, val string) error {
 		}
 		img.Lifecycle.KeepTags = tags
 	default:
-		return fmt.Errorf("unknown key %q (valid keys: immutable, lifecycle.keep_last, lifecycle.max_age, lifecycle.keep_tags)", key)
+		return fmt.Errorf("unknown key %q (valid keys: chunked, immutable, lifecycle.keep_last, lifecycle.max_age, lifecycle.keep_tags)", key)
 	}
 	return nil
 }
@@ -351,122 +364,6 @@ func printImageConfigFields(img image.ImageConfig, indent string) {
 	}
 }
 
-var configRecommendCmd = &cobra.Command{
-	Use:     "recommend <s3-bucket-ref>",
-	Short:   "Show S3 bucket configuration recommendations",
-	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
-
-  s3lo config recommend s3://my-bucket/`,
-	Args:    cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		result, err := image.Recommend(cmd.Context(), args[0])
-		if err != nil {
-			return err
-		}
-
-		fmt.Printf("Analysis for s3://%s/:\n\n", result.Bucket)
-		for _, f := range result.Findings {
-			status := "[good]"
-			if !f.OK {
-				status = "[bad] "
-			}
-			fmt.Printf("  %s %s\n", status, f.Label)
-		}
-
-		if len(result.Recommendations) == 0 {
-			fmt.Println("\nNo recommendations — bucket looks good.")
-			return nil
-		}
-
-		fmt.Printf("\nRecommendations:\n\n")
-		for i, rec := range result.Recommendations {
-			fmt.Printf("%d. %s\n", i+1, rec.Title)
-			for _, line := range strings.Split(rec.Description, "\n") {
-				fmt.Printf("   %s\n", line)
-			}
-			fmt.Println()
-		}
-		return nil
-	},
-}
-
-
-var configValidateCmd = &cobra.Command{
-	Use:   "validate <s3-ref>",
-	Short: "Run policy checks against an image",
-	Long: `Run all policies defined in s3lo.yaml against the given image tag.
-
-Exits 0 when all policies pass, 1 when one or more policies fail.`,
-	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
-
-  s3lo config validate s3://my-bucket/myapp:v1.0`,
-	Args: cobra.ExactArgs(1),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		if err := requireTag(args[0]); err != nil {
-			return err
-		}
-
-		client, err := storage.NewBackendFromRef(cmd.Context(), args[0])
-		if err != nil {
-			return err
-		}
-		bucket, _, err := image.ParseConfigRef(args[0])
-		if err != nil {
-			return err
-		}
-		cfg, err := image.GetBucketConfig(cmd.Context(), client, bucket)
-		if err != nil {
-			return err
-		}
-
-		if len(cfg.Policies) == 0 {
-			fmt.Println("No policies configured.")
-			return nil
-		}
-
-		var trivyPath string
-		for _, p := range cfg.Policies {
-			if p.Check == image.PolicyCheckScan {
-				installFlag, _ := cmd.Flags().GetBool("install-trivy")
-				trivyPath, err = ensureTrivy(cmd.Context(), installFlag)
-				if err != nil {
-					return err
-				}
-				break
-			}
-		}
-
-		result, err := image.Validate(cmd.Context(), args[0], image.ValidateOptions{
-			TrivyPath: trivyPath,
-		})
-		if err != nil {
-			return err
-		}
-
-		failCount := 0
-		for _, r := range result.Results {
-			if r.Passed {
-				if r.Message != "" {
-					fmt.Printf("✓ %-25s passed (%s)\n", r.Name, r.Message)
-				} else {
-					fmt.Printf("✓ %-25s passed\n", r.Name)
-				}
-			} else {
-				fmt.Printf("✗ %-25s FAILED (%s)\n", r.Name, r.Message)
-				failCount++
-			}
-		}
-		fmt.Println()
-		if failCount > 0 {
-			fmt.Printf("%d policy failed.\n", failCount)
-			os.Exit(1)
-		}
-		fmt.Println("All policies passed.")
-		return nil
-	},
-}
-
-// refScheme returns the scheme prefix (e.g. "s3://", "gs://", "az://", or "local://") from a raw reference.
 func refScheme(rawRef string) string {
 	switch {
 	case strings.HasPrefix(rawRef, "gs://"):
@@ -482,11 +379,8 @@ func refScheme(rawRef string) string {
 
 func init() {
 	configGetCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
-	configValidateCmd.Flags().Bool("install-trivy", false, "Install Trivy automatically without prompting (for scan policies)")
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
 	configCmd.AddCommand(configRemoveCmd)
-	configCmd.AddCommand(configRecommendCmd)
-	configCmd.AddCommand(configValidateCmd)
 	rootCmd.AddCommand(configCmd)
 }

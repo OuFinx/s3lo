@@ -110,16 +110,6 @@ type inspectResultMsg struct {
 	err     error
 }
 
-type scanResultMsg struct {
-	err error
-}
-
-type scanPreparedMsg struct {
-	tmpDir    string
-	trivyPath string
-	err       error
-}
-
 // statusClearMsg is sent 4 seconds after a status message to clear it.
 type statusClearMsg struct{}
 

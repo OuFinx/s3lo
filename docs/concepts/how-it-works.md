@@ -53,7 +53,7 @@ s3lo pull
     └─ docker load (imports into Docker daemon)
 ```
 
-Blobs are downloaded concurrently. On EC2 with enhanced networking, this can saturate the network link — S3 has no per-connection limit, and instances like `c5n.18xlarge` support 100 Gbps.
+Blobs are downloaded concurrently, and S3 imposes no per-connection limit the way a registry's layer endpoint does. On a chunked bucket the chunks of a single layer are fetched concurrently too, which a registry cannot do for one layer.
 
 ## Copy (registry → S3)
 

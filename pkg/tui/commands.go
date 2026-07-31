@@ -228,17 +228,6 @@ func inspectTagCmd(ctx context.Context, tagRef string) tea.Cmd {
 	}
 }
 
-// prepareScanCmd downloads the image to a temp OCI layout directory for Trivy.
-func prepareScanCmd(ctx context.Context, tagRef string) tea.Cmd {
-	return func() tea.Msg {
-		trivyPath, tmpDir, err := image.PullToOCILayout(ctx, tagRef, image.ScanOptions{})
-		if err != nil {
-			return scanPreparedMsg{err: err}
-		}
-		return scanPreparedMsg{tmpDir: tmpDir, trivyPath: trivyPath}
-	}
-}
-
 // fetchCleanPreviewCmd dry-runs lifecycle + GC and returns a summary.
 func fetchCleanPreviewCmd(ctx context.Context, st storage.Backend, bucket, s3Ref string) tea.Cmd {
 	return func() tea.Msg {
@@ -499,7 +488,7 @@ func collectTagLayers(ctx context.Context, st storage.Backend, bucket string, da
 		size    int64
 	}
 	var (
-		mu          sync.Mutex
+		mu             sync.Mutex
 		allChildLayers []layerEntry
 	)
 	g, gCtx := errgroup.WithContext(ctx)
