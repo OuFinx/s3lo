@@ -33,16 +33,30 @@ Bucket layout is created on first push, so there is nothing to initialise.
 
 ## Next
 
-- [ ] `push` handles multi-architecture images ([#101](https://github.com/OuFinx/s3lo/issues/101)).
-      `copy` already does; `push` exports only what the local daemon holds.
-- [ ] `copy` from a registry stores chunked, so copied images deduplicate and
-      support `cat` ([#102](https://github.com/OuFinx/s3lo/issues/102)). Today a
-      bucket behaves one way for `push` and another for `copy`.
-- [ ] Bucket-level commands honour a prefixed reference instead of silently
-      scanning nothing ([#100](https://github.com/OuFinx/s3lo/issues/100)).
-- [ ] `--output json` on the remaining commands
-      ([#95](https://github.com/OuFinx/s3lo/issues/95)).
 - [ ] Raise coverage on `pkg/storage` and `pkg/oci` — the code that actually
       moves bytes is the least tested in the repo.
 - [ ] Stream blobs in `serve` rather than buffering them, so concurrent pulls of
       large layers do not scale memory with request count.
+
+## Known limitations
+
+Current behaviour, deliberately, rather than defects awaiting a fix.
+
+**`push` publishes one platform.** It exports what the local Docker daemon
+holds. Use `copy` for multi-architecture images — it handles a full OCI image
+index and copies every platform by default.
+
+**`copy` from a registry stores whole layers, not chunks.** Registry layers
+arrive gzip-compressed, and chunking them would mean republishing each layer
+under a new digest, changing the image's manifest digest. So an image onboarded
+with `copy` does not deduplicate against pushed images, and `s3lo cat` cannot
+read individual files out of it — `cat` reports that the layer is stored
+compressed rather than claiming the file is absent.
+
+If you want chunking and per-file reads for an image that lives in a registry,
+pull it and `push` it.
+
+**Immutability is advisory.** It is enforced by this client, not by the bucket:
+anyone with `s3:PutObject` can rewrite `s3lo.yaml` to turn it off, and `--force`
+bypasses it. For enforcement that survives a hostile client, use S3 Object Lock
+or a bucket policy.

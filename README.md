@@ -297,7 +297,11 @@ For the background story behind the project, read [How I Built an Alternative to
 
 Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
-Looking for somewhere to start? Issues labelled [good first issue](https://github.com/OuFinx/s3lo/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are small and self-contained.
+Looking for somewhere to start? The [open issues](https://github.com/OuFinx/s3lo/issues)
+are the shortlist; anything labelled `good first issue` is small and
+self-contained. If the tracker is empty, the two most useful things are raising
+test coverage on `pkg/storage` and `pkg/oci` — the packages that move the bytes
+and are the least tested — and the items under "Next" in [ROADMAP.md](ROADMAP.md).
 
 ## License
 
