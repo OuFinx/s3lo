@@ -6,9 +6,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/spf13/cobra"
 
-	"github.com/OuFinx/s3lo/pkg/image"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
-	"github.com/OuFinx/s3lo/pkg/tui"
+	"github.com/OuFinx/s3lo/v2/pkg/image"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/tui"
 )
 
 var tuiCmd = &cobra.Command{

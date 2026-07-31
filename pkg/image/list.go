@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 // ImageEntry represents an image and its available tags in the registry.

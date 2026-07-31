@@ -9,7 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 // RootModel is the top-level bubbletea model.

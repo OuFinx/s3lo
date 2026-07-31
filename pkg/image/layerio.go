@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/OuFinx/s3lo/pkg/chunk"
-	"github.com/OuFinx/s3lo/pkg/chunkstore"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/chunk"
+	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 // blobKey is where whole-layer blobs live, shared across every image in the bucket.

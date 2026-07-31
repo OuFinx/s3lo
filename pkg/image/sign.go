@@ -18,8 +18,8 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/cosign"
 	cosignsig "github.com/sigstore/cosign/v2/pkg/signature"
 
-	"github.com/OuFinx/s3lo/pkg/ref"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 // SignatureRecord is the JSON stored at manifests/<image>/<tag>/signatures/<slug>.json.

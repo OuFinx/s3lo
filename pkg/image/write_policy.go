@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OuFinx/s3lo/pkg/ref"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 func enforceTagWritePolicy(ctx context.Context, client storage.Backend, parsed ref.Reference, force bool) error {

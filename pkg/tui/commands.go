@@ -12,9 +12,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/OuFinx/s3lo/pkg/image"
-	"github.com/OuFinx/s3lo/pkg/oci"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v2/pkg/oci"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 const tuiS3PricePerGBMonth = 0.023

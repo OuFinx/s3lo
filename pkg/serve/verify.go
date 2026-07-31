@@ -18,7 +18,7 @@ import (
 	sigsig "github.com/sigstore/sigstore/pkg/signature"
 	_ "github.com/sigstore/sigstore/pkg/signature/kms/aws" // register AWS KMS provider
 
-	"github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 // signatureRecord mirrors the JSON stored by s3lo sign at

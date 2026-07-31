@@ -13,10 +13,10 @@ import (
 
 	"encoding/json"
 
-	"github.com/OuFinx/s3lo/pkg/chunkstore"
-	"github.com/OuFinx/s3lo/pkg/oci"
-	"github.com/OuFinx/s3lo/pkg/ref"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
+	"github.com/OuFinx/s3lo/v2/pkg/oci"
+	"github.com/OuFinx/s3lo/v2/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/yaml.v3"
 )

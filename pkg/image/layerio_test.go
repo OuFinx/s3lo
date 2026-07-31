@@ -10,8 +10,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/OuFinx/s3lo/pkg/chunk"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/chunk"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 func writeLayerFile(t *testing.T, dir, name string, size int, seed int64) (string, string, []byte) {

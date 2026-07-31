@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 

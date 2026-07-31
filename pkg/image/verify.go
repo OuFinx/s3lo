@@ -11,8 +11,8 @@ import (
 
 	cosignsig "github.com/sigstore/cosign/v2/pkg/signature"
 
-	"github.com/OuFinx/s3lo/pkg/ref"
-	storage "github.com/OuFinx/s3lo/pkg/storage"
+	"github.com/OuFinx/s3lo/v2/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
 )
 
 // VerifyResult is returned by Verify.

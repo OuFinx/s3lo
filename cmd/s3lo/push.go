@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 
-	"github.com/OuFinx/s3lo/pkg/chunkstore"
-	"github.com/OuFinx/s3lo/pkg/image"
+	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
+	"github.com/OuFinx/s3lo/v2/pkg/image"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
