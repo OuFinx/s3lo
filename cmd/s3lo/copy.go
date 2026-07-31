@@ -79,6 +79,13 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 			fmt.Printf("Done. %d blob(s) copied, %d skipped (already exist).\n",
 				result.BlobsCopied, result.BlobsSkipped)
 		}
+		// Never let an image quietly lose its signature. Filtering platforms
+		// rewrites the manifest, and a signature is over the manifest's digest.
+		if result.SignaturesDropped > 0 {
+			fmt.Printf("Warning: %d signature(s) not copied — filtering platforms rewrites the manifest, "+
+				"so the old signature cannot verify against it. Re-sign the copy:\n  s3lo security sign %s --key <key>\n",
+				result.SignaturesDropped, dest)
+		}
 		return nil
 	},
 }

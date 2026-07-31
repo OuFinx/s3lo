@@ -1,6 +1,7 @@
 package image
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -236,10 +237,27 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			return nil, fmt.Errorf("write manifest.json: %w", err)
 		}
 
+		// Everything else under the tag prefix — signatures above all — has to
+		// travel too. This branch used to write manifest.json and nothing else,
+		// so copying a signed multi-arch image produced an unsigned one and said
+		// nothing about it.
+		//
+		// A rewritten manifest is the exception: a signature covers the digest of
+		// the bytes at manifests/<image>/<tag>/manifest.json, so once --platform
+		// filters the index those bytes are different and the old signature
+		// cannot verify against them. Dropping it is right; dropping it silently
+		// is not, so it is counted and reported.
+		rewritten := !bytes.Equal(writeManifestData, manifestData)
+		dropped, err := copyManifestSidecars(ctx, srcClient, destClient, srcParsed, destParsed, sameBucket, rewritten)
+		if err != nil {
+			return nil, err
+		}
+
 		return &CopyResult{
-			Platforms:    len(selected),
-			BlobsCopied:  int(blobsCopied.Load()),
-			BlobsSkipped: int(blobsSkipped.Load()),
+			Platforms:         len(selected),
+			BlobsCopied:       int(blobsCopied.Load()),
+			BlobsSkipped:      int(blobsSkipped.Load()),
+			SignaturesDropped: dropped,
 		}, nil
 	}
 
@@ -270,28 +288,13 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 		return nil, err
 	}
 
-	// Copy manifest files.
-	srcManifestPrefix := srcParsed.ManifestsPrefix()
-	manifestKeys, err := srcClient.ListKeys(ctx, srcParsed.Bucket, srcManifestPrefix)
-	if err != nil {
-		return nil, fmt.Errorf("list source manifest files: %w", err)
+	// The single-arch manifest is copied byte for byte, so its digest is
+	// unchanged and any signature over it still verifies.
+	if err := destClient.PutObject(ctx, destParsed.Bucket, destPrefix+"manifest.json", manifestData); err != nil {
+		return nil, fmt.Errorf("write manifest.json: %w", err)
 	}
-	for _, key := range manifestKeys {
-		rel := strings.TrimPrefix(key, srcManifestPrefix)
-		destKey := destPrefix + rel
-		if sameBucket {
-			if err := destClient.CopyObject(ctx, destParsed.Bucket, key, destKey); err != nil {
-				return nil, fmt.Errorf("copy manifest file %s: %w", rel, err)
-			}
-		} else {
-			data, err := srcClient.GetObject(ctx, srcParsed.Bucket, key)
-			if err != nil {
-				return nil, fmt.Errorf("download manifest file %s: %w", rel, err)
-			}
-			if err := destClient.PutObject(ctx, destParsed.Bucket, destKey, data); err != nil {
-				return nil, fmt.Errorf("upload manifest file %s: %w", rel, err)
-			}
-		}
+	if _, err := copyManifestSidecars(ctx, srcClient, destClient, srcParsed, destParsed, sameBucket, false); err != nil {
+		return nil, err
 	}
 
 	return &CopyResult{
@@ -299,4 +302,51 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 		BlobsCopied:  int(blobsCopied.Load()),
 		BlobsSkipped: int(blobsSkipped.Load()),
 	}, nil
+}
+
+// copyManifestSidecars copies every object under the source tag prefix except
+// manifest.json, which each caller has already written in whatever form it
+// publishes. It returns how many signature records were deliberately left
+// behind.
+//
+// dropSignatures is set when the destination manifest differs from the source's:
+// a signature covers the digest of the manifest bytes, so carrying it across a
+// rewrite would produce an image that claims to be signed and fails to verify —
+// worse than one that is plainly unsigned.
+func copyManifestSidecars(ctx context.Context, srcClient, destClient storage.Backend,
+	srcParsed, destParsed ref.Reference, sameBucket, dropSignatures bool) (int, error) {
+
+	srcPrefix := srcParsed.ManifestsPrefix()
+	destPrefix := destParsed.ManifestsPrefix()
+	keys, err := srcClient.ListKeys(ctx, srcParsed.Bucket, srcPrefix)
+	if err != nil {
+		return 0, fmt.Errorf("list source manifest files: %w", err)
+	}
+
+	dropped := 0
+	for _, key := range keys {
+		rel := strings.TrimPrefix(key, srcPrefix)
+		if rel == "manifest.json" {
+			continue
+		}
+		if dropSignatures && strings.HasPrefix(rel, "signatures/") {
+			dropped++
+			continue
+		}
+		destKey := destPrefix + rel
+		if sameBucket {
+			if err := destClient.CopyObject(ctx, destParsed.Bucket, key, destKey); err != nil {
+				return dropped, fmt.Errorf("copy manifest file %s: %w", rel, err)
+			}
+			continue
+		}
+		data, err := srcClient.GetObject(ctx, srcParsed.Bucket, key)
+		if err != nil {
+			return dropped, fmt.Errorf("download manifest file %s: %w", rel, err)
+		}
+		if err := destClient.PutObject(ctx, destParsed.Bucket, destKey, data); err != nil {
+			return dropped, fmt.Errorf("upload manifest file %s: %w", rel, err)
+		}
+	}
+	return dropped, nil
 }
