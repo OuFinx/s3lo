@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -415,9 +416,39 @@ func ImportImage(ctx context.Context, srcDir string, imageRef string) error {
 		return fmt.Errorf("docker load: %w", err)
 	}
 	defer resp.Body.Close()
-	io.Copy(io.Discard, resp.Body)
+	return checkLoadResponse(resp.Body)
+}
 
-	return nil
+// checkLoadResponse reads the JSON-lines progress stream docker returns from an
+// image load and surfaces the first error it reports.
+//
+// The daemon signals a failed load in the body, not in the HTTP status, so
+// discarding the body — as this did — made every failure look like a success:
+// `s3lo pull` printed "Done. Image imported into Docker." and exited 0 having
+// imported nothing.
+func checkLoadResponse(body io.Reader) error {
+	dec := json.NewDecoder(body)
+	for {
+		var msg struct {
+			Error       string `json:"error"`
+			ErrorDetail *struct {
+				Message string `json:"message"`
+			} `json:"errorDetail"`
+		}
+		if err := dec.Decode(&msg); err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			// A body we cannot parse is not evidence of success.
+			return fmt.Errorf("docker load: reading daemon response: %w", err)
+		}
+		if msg.ErrorDetail != nil && msg.ErrorDetail.Message != "" {
+			return fmt.Errorf("docker load: %s", msg.ErrorDetail.Message)
+		}
+		if msg.Error != "" {
+			return fmt.Errorf("docker load: %s", msg.Error)
+		}
+	}
 }
 
 func tarWriteFile(tw *tar.Writer, name string, data []byte) error {

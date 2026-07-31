@@ -59,8 +59,6 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 
 **Copy:** s3lo pulls directly from any OCI registry (Docker Hub, ECR, GHCR) and uploads to S3 — without going through the local Docker daemon.
 
-**TUI:** `s3lo tui s3://my-bucket/` opens an interactive terminal UI to browse images, inspect tags, view layer sharing across tags, and run lifecycle clean — all without leaving the terminal.
-
 ---
 
 ## Quick install
@@ -80,7 +78,7 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 === "Go"
 
     ```bash
-    go install github.com/OuFinx/s3lo/v2/cmd/s3lo@latest
+    go install github.com/OuFinx/s3lo/v3/cmd/s3lo@latest
     ```
 
 ---
@@ -100,7 +98,6 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 No cloud account? Use `local://` to store images on your filesystem:
 
 ```bash
-s3lo bucket init --local ./local-s3
 s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
 s3lo pull local://./local-s3/myapp:v1.0
 ```

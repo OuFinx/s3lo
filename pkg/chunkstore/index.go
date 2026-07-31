@@ -10,7 +10,7 @@ import (
 	"sort"
 	"strings"
 
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 	"golang.org/x/sync/errgroup"
 )
 

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"sync/atomic"
 
-	"github.com/OuFinx/s3lo/v2/pkg/ref"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/sync/errgroup"
 )
@@ -55,14 +55,14 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 		destKey := "blobs/sha256/" + digest
 		exists, err := destClient.HeadObjectExists(ctx, destParsed.Bucket, destKey)
 		if err != nil {
-			return fmt.Errorf("check destination blob %s: %w", digest[:12], err)
+			return fmt.Errorf("check destination blob %s: %w", short(digest), err)
 		}
 		if exists {
 			blobsSkipped.Add(1)
 			if platform != "" && opts.OnBlob != nil {
 				opts.OnBlob(platform, digest, size, true)
 			}
-			slog.Debug("blob already exists, skipping", "digest", digest[:12])
+			slog.Debug("blob already exists, skipping", "digest", short(digest))
 			return nil
 		}
 		// A chunked source has no whole-layer blob to copy, so the layer has to be
@@ -76,39 +76,39 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 			if platform != "" && opts.OnBlob != nil {
 				opts.OnBlob(platform, digest, size, false)
 			}
-			slog.Debug("chunked layer copied", "digest", digest[:12], "size", size)
+			slog.Debug("chunked layer copied", "digest", short(digest), "size", size)
 			return nil
 		}
 
 		if sameBucket {
 			if err := destClient.CopyObject(ctx, destParsed.Bucket, srcKey, destKey); err != nil {
-				return fmt.Errorf("copy blob %s: %w", digest[:12], err)
+				return fmt.Errorf("copy blob %s: %w", short(digest), err)
 			}
 		} else {
 			tmp, err := os.CreateTemp("", "s3lo-copy-blob-*")
 			if err != nil {
-				return fmt.Errorf("create temp file for blob %s: %w", digest[:12], err)
+				return fmt.Errorf("create temp file for blob %s: %w", short(digest), err)
 			}
 			tmpName := tmp.Name()
 			tmp.Close()
 			defer os.Remove(tmpName)
 			if err := srcClient.DownloadObjectToFile(ctx, srcParsed.Bucket, srcKey, tmpName); err != nil {
-				return fmt.Errorf("download blob %s: %w", digest[:12], err)
+				return fmt.Errorf("download blob %s: %w", short(digest), err)
 			}
 			// Verify content against its digest before writing it to the destination
 			// under the content-addressable key (guards against corruption in transit).
 			if err := verifyFileDigest(tmpName, digest); err != nil {
-				return fmt.Errorf("verify blob %s: %w", digest[:12], err)
+				return fmt.Errorf("verify blob %s: %w", short(digest), err)
 			}
 			if err := destClient.UploadFile(ctx, tmpName, destParsed.Bucket, destKey, storage.StorageClassIntelligentTiering); err != nil {
-				return fmt.Errorf("upload blob %s: %w", digest[:12], err)
+				return fmt.Errorf("upload blob %s: %w", short(digest), err)
 			}
 		}
 		blobsCopied.Add(1)
 		if platform != "" && opts.OnBlob != nil {
 			opts.OnBlob(platform, digest, size, false)
 		}
-		slog.Debug("blob copied", "digest", digest[:12], "size", size)
+		slog.Debug("blob copied", "digest", short(digest), "size", size)
 		return nil
 	}
 
@@ -309,12 +309,19 @@ func copyBetweenBackends(ctx context.Context, srcRef, destRef string, opts CopyO
 // publishes. It returns how many signature records were deliberately left
 // behind.
 //
-// dropSignatures is set when the destination manifest differs from the source's:
-// a signature covers the digest of the manifest bytes, so carrying it across a
-// rewrite would produce an image that claims to be signed and fails to verify —
-// worse than one that is plainly unsigned.
+// A signature covers the manifest bytes *and* the bucket/image:tag they are
+// published under, so it can only travel with a copy that changes neither.
+// manifestRewritten reports the first; the destination reference tells us the
+// second. Either way the signature is left behind and counted, because an image
+// that claims to be signed and fails to verify is worse than one that is plainly
+// unsigned.
 func copyManifestSidecars(ctx context.Context, srcClient, destClient storage.Backend,
-	srcParsed, destParsed ref.Reference, sameBucket, dropSignatures bool) (int, error) {
+	srcParsed, destParsed ref.Reference, sameBucket, manifestRewritten bool) (int, error) {
+
+	dropSignatures := manifestRewritten ||
+		srcParsed.Bucket != destParsed.Bucket ||
+		srcParsed.Image != destParsed.Image ||
+		srcParsed.Tag != destParsed.Tag
 
 	srcPrefix := srcParsed.ManifestsPrefix()
 	destPrefix := destParsed.ManifestsPrefix()

@@ -171,6 +171,33 @@ func TestCacheExpiresByTTL(t *testing.T) {
 	}
 }
 
+// TestCacheExpiryKeepsCapacity: expiry deleted the entry from the map but left
+// the key in the insertion-order slice, so re-caching that key appended a
+// duplicate, the slice outgrew the map, and the next eviction dropped a live
+// entry. The cache then held fewer manifests than --cache-entries asked for,
+// silently, for the rest of the process's life.
+func TestCacheExpiryKeepsCapacity(t *testing.T) {
+	c := NewCache(2, 20*time.Millisecond)
+
+	c.PutManifest("a", []byte("1"))
+	time.Sleep(30 * time.Millisecond)
+	if _, ok := c.Manifest("a"); ok {
+		t.Fatal("entry outlived its TTL")
+	}
+
+	c.PutManifest("a", []byte("1")) // refill the same key after it expired
+	c.PutManifest("b", []byte("2"))
+
+	if c.Len() != 2 {
+		t.Errorf("Len = %d, want 2 (capacity decayed after an expiry)", c.Len())
+	}
+	for _, k := range []string{"a", "b"} {
+		if _, ok := c.Manifest(k); !ok {
+			t.Errorf("live entry %q was evicted while the cache was at capacity", k)
+		}
+	}
+}
+
 func TestHealthAndReady(t *testing.T) {
 	b := newFakeBackend()
 	ts := httptest.NewServer(&Server{Client: b, Bucket: "testbucket"})

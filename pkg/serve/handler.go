@@ -10,8 +10,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
-	"github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/chunkstore"
+	"github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // isNoSuchBucket reports whether err is an object-storage "bucket does not exist"

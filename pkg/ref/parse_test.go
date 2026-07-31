@@ -28,8 +28,8 @@ func TestParse(t *testing.T) {
 		},
 		{
 			name:  "sha256 digest",
-			input: "s3://my-bucket/myapp@sha256:abc123",
-			want:  Reference{Scheme: "s3", Bucket: "my-bucket", Image: "myapp", Digest: "sha256:abc123"},
+			input: "s3://my-bucket/myapp@sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			want:  Reference{Scheme: "s3", Bucket: "my-bucket", Image: "myapp", Digest: "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
 		},
 		{
 			name:  "local reference",
@@ -151,4 +151,61 @@ func TestReference_StringLocal(t *testing.T) {
 	if got := ref.String(); got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
+}
+
+// TestParse_RejectsTraversal locks down the guard behind the confirmed
+// data-loss bug: a tag or image component of ".." escaped the manifests
+// prefix, so "s3lo delete local://./store/app:.." deleted every image in
+// the store and reported success.
+func TestParse_RejectsTraversal(t *testing.T) {
+	for _, raw := range []string{
+		"s3://bucket/app:..",
+		"s3://bucket/app:.",
+		"s3://bucket/../app:v1",
+		"s3://bucket/..:v1",
+		"s3://bucket/org/../app:v1",
+		"s3://bucket/org/./app:v1",
+		"local://./store/app:..",
+		"local://./store/../app:v1",
+		"s3://bucket/app:v1/../../etc",
+		"s3://bucket/app:.wh.x/..",
+	} {
+		if got, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) = %+v, want error", raw, got)
+		}
+	}
+}
+
+func TestParse_RejectsMalformedDigest(t *testing.T) {
+	// pull.go called Digest.Encoded() on these, which panics without a colon.
+	for _, raw := range []string{
+		"s3://bucket/app@deadbeef",
+		"s3://bucket/app@sha256:",
+		"s3://bucket/app@sha256:xyz",
+		"s3://bucket/app@:abc",
+		"s3://bucket/app@sha256:../../etc/passwd",
+	} {
+		if got, err := Parse(raw); err == nil {
+			t.Errorf("Parse(%q) = %+v, want error", raw, got)
+		}
+	}
+}
+
+func TestParse_AcceptsLegitimate(t *testing.T) {
+	// The guard must not reject ordinary references.
+	for _, raw := range []string{
+		"s3://bucket/app:v1.0",
+		"s3://bucket/org/team/app:v1.0-rc.1_build",
+		"s3://bucket/app@sha256:" + strings70hex(),
+		"local://./store/app:latest",
+		"s3://bucket/app.with.dots:tag.with.dots",
+	} {
+		if _, err := Parse(raw); err != nil {
+			t.Errorf("Parse(%q) unexpected error: %v", raw, err)
+		}
+	}
+}
+
+func strings70hex() string {
+	return "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 }

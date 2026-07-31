@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 	"github.com/spf13/cobra"
 )
 
 var listCmd = &cobra.Command{
 	Use:   "list <s3-bucket-path>",
-	Short: "List images in an S3 bucket",
+	Short: "List images in a bucket or local store",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/list/
 
   s3lo list s3://my-bucket/
@@ -41,6 +41,6 @@ var listCmd = &cobra.Command{
 }
 
 func init() {
-	listCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
+	addOutputFlag(listCmd)
 	rootCmd.AddCommand(listCmd)
 }

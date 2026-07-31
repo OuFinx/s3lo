@@ -18,7 +18,8 @@ import (
 	sigsig "github.com/sigstore/sigstore/pkg/signature"
 	_ "github.com/sigstore/sigstore/pkg/signature/kms/aws" // register AWS KMS provider
 
-	"github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/ref"
+	"github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // signatureRecord mirrors the JSON stored by s3lo sign at
@@ -27,8 +28,12 @@ type signatureRecord struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	Digest        string `json:"digest"`
 	Signature     string `json:"signature"`
-	Payload       string `json:"payload"`
 }
+
+// signatureSchemaVersion must track image.SignatureSchemaVersion. Records from
+// an older schema are rejected rather than verified: version 1 signed only the
+// manifest digest, so its signatures were transplantable between tags.
+const signatureSchemaVersion = 2
 
 // ErrNotSigned is returned when no signature file exists for the image.
 var ErrNotSigned = errors.New("image has no signature")
@@ -87,14 +92,14 @@ type objectGetter interface {
 // Returns nil when the signature is valid.
 // Returns ErrNotSigned, ErrDigestMismatch, or ErrInvalidSignature for policy failures.
 // Returns a wrapped infrastructure error for storage or parse failures.
-func (v *Verifier) Check(ctx context.Context, s objectGetter, bucket, image, ref string, manifestData []byte) error {
+func (v *Verifier) Check(ctx context.Context, s objectGetter, bucket, image, refName string, manifestData []byte) error {
 	digest := fmt.Sprintf("sha256:%x", sha256.Sum256(manifestData))
 
 	if _, ok := v.cache.Load(digest); ok {
 		return nil
 	}
 
-	sigKey := "manifests/" + image + "/" + ref + "/signatures/" + v.slug + ".json"
+	sigKey := "manifests/" + image + "/" + refName + "/signatures/" + v.slug + ".json"
 	sigData, err := s.GetObject(ctx, bucket, sigKey)
 	if err != nil {
 		if storage.IsNotFound(err) {
@@ -103,9 +108,16 @@ func (v *Verifier) Check(ctx context.Context, s objectGetter, bucket, image, ref
 		return fmt.Errorf("read signature: %w", err)
 	}
 
+	// The record is attacker-writable, so a record that cannot be understood is
+	// an invalid signature, not an infrastructure fault.
 	var rec signatureRecord
 	if err := json.Unmarshal(sigData, &rec); err != nil {
-		return fmt.Errorf("parse signature record: %w", err)
+		return fmt.Errorf("%w: malformed signature record: %v", ErrInvalidSignature, err)
+	}
+
+	if rec.SchemaVersion != signatureSchemaVersion {
+		return fmt.Errorf("%w: unsupported signature schema version %d (want %d); re-sign the image",
+			ErrInvalidSignature, rec.SchemaVersion, signatureSchemaVersion)
 	}
 
 	if rec.Digest != digest {
@@ -114,12 +126,14 @@ func (v *Verifier) Check(ctx context.Context, s objectGetter, bucket, image, ref
 
 	sigBytes, err := base64.StdEncoding.DecodeString(rec.Signature)
 	if err != nil {
-		return fmt.Errorf("decode signature bytes: %w", err)
+		return fmt.Errorf("%w: malformed signature encoding: %v", ErrInvalidSignature, err)
 	}
-	payload, err := base64.StdEncoding.DecodeString(rec.Payload)
-	if err != nil {
-		return fmt.Errorf("decode payload bytes: %w", err)
-	}
+
+	// Rebuild the signed bytes from what is being served. Reading them back out
+	// of the record instead — as this did — meant the attacker chose both the
+	// message and the signature, so any genuine signature over any bytes could
+	// be relabelled onto any manifest and would pass.
+	payload := ref.SigningPayload(bucket, image, refName, digest)
 
 	if err := v.verifier.VerifySignature(bytes.NewReader(sigBytes), bytes.NewReader(payload)); err != nil {
 		return fmt.Errorf("%w: %v", ErrInvalidSignature, err)

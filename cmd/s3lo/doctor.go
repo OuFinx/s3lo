@@ -3,17 +3,22 @@ package main
 import (
 	"fmt"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 	"github.com/spf13/cobra"
 )
 
 var doctorCmd = &cobra.Command{
 	Use:   "doctor <s3-bucket-ref>",
-	Short: "Check bucket health and report integrity issues",
+	Short: "Check bucket reachability, layout, and integrity",
+	Long: `Check that the bucket is reachable with the current credentials, that it
+holds an s3lo layout, and that every manifest's blobs are present.
+
+Exits non-zero when the bucket cannot be reached, holds no s3lo layout, or has
+corrupted manifests. Orphaned blobs are reported but are not a failure.`,
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/doctor/
 
-  s3lo bucket doctor s3://my-bucket/
-  s3lo bucket doctor s3://my-bucket/ --output json`,
+  s3lo doctor s3://my-bucket/
+  s3lo doctor s3://my-bucket/ --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		outputFmt, _ := cmd.Flags().GetString("output")
@@ -28,7 +33,15 @@ var doctorCmd = &cobra.Command{
 		if !ok {
 			printDoctorResult(result)
 		}
-		if len(result.ManifestIssues) > 0 {
+		// Anything printed as "issues found" has to reach the exit code too —
+		// a health check that always exits 0 gates nothing in CI.
+		switch {
+		case !result.LayoutOK:
+			return fmt.Errorf("no s3lo layout found in %s%s — the bucket is empty or holds no images; push one to create it",
+				result.Scheme, result.Bucket)
+		case !result.ConfigOK:
+			return fmt.Errorf("s3lo.yaml exists but could not be read")
+		case len(result.ManifestIssues) > 0:
 			return fmt.Errorf("bucket has %d manifest issue(s)", len(result.ManifestIssues))
 		}
 		return nil
@@ -45,6 +58,7 @@ func printDoctorResult(r *image.DoctorResult) {
 		return "issues found"
 	}
 
+	fmt.Printf("Checking access and credentials... OK\n")
 	fmt.Printf("Checking layout structure...    %s\n", okStr(r.LayoutOK))
 	if r.ConfigOK && !r.ConfigPresent {
 		fmt.Printf("Checking config (s3lo.yaml)...  not configured (optional)\n")
@@ -68,6 +82,13 @@ func printDoctorResult(r *image.DoctorResult) {
 		fmt.Printf("  Note: clean skips blobs uploaded within the last hour (grace period).\n")
 	}
 
+	if r.IntelligentTiering != "" {
+		fmt.Printf("Checking Intelligent-Tiering... %s\n", r.IntelligentTiering)
+		if r.IntelligentTiering == image.TieringNotConfigured {
+			fmt.Printf("  Note: enable S3 Intelligent-Tiering for automatic cost optimization on cold blobs.\n")
+		}
+	}
+
 	if len(r.ManifestIssues) > 0 || r.OrphanedBlobs > 0 {
 		fmt.Println()
 		if len(r.ManifestIssues) > 0 {
@@ -77,12 +98,12 @@ func printDoctorResult(r *image.DoctorResult) {
 			}
 		}
 		if r.OrphanedBlobs > 0 {
-			fmt.Printf("  s3lo bucket clean %s%s/ --blobs --confirm\n", r.Scheme, r.Bucket)
+			fmt.Printf("  s3lo clean %s%s/ --blobs --confirm\n", r.Scheme, r.Bucket)
 		}
 	}
 }
 
 func init() {
-	doctorCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
-	bucketCmd.AddCommand(doctorCmd)
+	addOutputFlag(doctorCmd)
+	rootCmd.AddCommand(doctorCmd)
 }

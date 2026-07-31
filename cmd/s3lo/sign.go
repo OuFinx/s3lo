@@ -1,7 +1,6 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -10,7 +9,7 @@ import (
 	_ "github.com/sigstore/sigstore/pkg/signature/kms/aws"
 	_ "github.com/sigstore/sigstore/pkg/signature/kms/hashivault"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 	"github.com/spf13/cobra"
 )
 
@@ -25,13 +24,13 @@ and produces a CloudTrail audit entry for every signing operation.`,
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/sign/
 
   # Sign with AWS KMS (recommended for production / FedRAMP)
-  s3lo security sign s3://my-bucket/myapp:v1.0 --key awskms://alias/release-signer
+  s3lo sign s3://my-bucket/myapp:v1.0 --key awskms://alias/release-signer
 
   # Sign with ARN
-  s3lo security sign s3://my-bucket/myapp:v1.0 --key "awskms:///arn:aws:kms:us-east-1:123456789012:key/mrk-abc"
+  s3lo sign s3://my-bucket/myapp:v1.0 --key "awskms:///arn:aws:kms:us-east-1:123456789012:key/mrk-abc"
 
   # Sign with a local key file (dev / CI)
-  COSIGN_PASSWORD=secret s3lo security sign s3://my-bucket/myapp:v1.0 --key cosign.key`,
+  COSIGN_PASSWORD=secret s3lo sign s3://my-bucket/myapp:v1.0 --key cosign.key`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireTag(args[0]); err != nil {
@@ -45,14 +44,19 @@ and produces a CloudTrail audit entry for every signing operation.`,
 			return err
 		}
 
-		if output == "json" {
-			return json.NewEncoder(cmd.OutOrStdout()).Encode(map[string]string{
-				"digest":     result.Digest,
-				"keyRef":     result.KeyRef,
-				"keyID":      result.KeyID,
-				"signedAt":   result.SignedAt.Format(time.RFC3339),
-				"storedPath": result.StoredPath,
-			})
+		ok, err := writeOutput(output, map[string]string{
+			"ref":        args[0],
+			"digest":     result.Digest,
+			"keyRef":     result.KeyRef,
+			"keyID":      result.KeyID,
+			"signedAt":   result.SignedAt.Format(time.RFC3339),
+			"storedPath": result.StoredPath,
+		})
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
 		}
 
 		// Text output: show image:tag portion only.
@@ -71,8 +75,8 @@ and produces a CloudTrail audit entry for every signing operation.`,
 }
 
 func init() {
-	securityCmd.AddCommand(signCmd)
+	rootCmd.AddCommand(signCmd)
 	signCmd.Flags().String("key", "", "Signing key: file path, awskms://, or hashivault:// (required)")
-	signCmd.Flags().String("output", "text", "Output format: text or json")
+	addOutputFlag(signCmd)
 	signCmd.MarkFlagRequired("key")
 }

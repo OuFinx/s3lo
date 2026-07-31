@@ -5,6 +5,7 @@ import (
 )
 
 func main() {
+	addDeprecatedAliases()
 	propagateSilenceErrors(rootCmd)
 	cmd, err := rootCmd.ExecuteC()
 	if err != nil {

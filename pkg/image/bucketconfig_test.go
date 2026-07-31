@@ -3,8 +3,8 @@ package image
 import (
 	"context"
 	"errors"
-	"github.com/OuFinx/s3lo/v2/pkg/chunk"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/chunk"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 	"testing"
 )
 

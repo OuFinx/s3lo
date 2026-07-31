@@ -4,11 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
-	"github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // Observer receives one call per served request so a deployment can export
@@ -153,21 +155,39 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	rest := strings.TrimPrefix(path, "/v2/")
 
 	if i := strings.LastIndex(rest, "/manifests/"); i >= 0 {
-		bucket, name, err := s.resolve(rest[:i])
+		name, ref := rest[:i], rest[i+len("/manifests/"):]
+		if !validName(name) {
+			writeOCIError(w, http.StatusBadRequest, "NAME_INVALID", "invalid repository name")
+			return
+		}
+		if !validReference(ref) {
+			writeOCIError(w, http.StatusBadRequest, "TAG_INVALID", "invalid tag or digest")
+			return
+		}
+		bucket, name, err := s.resolve(name)
 		if err != nil {
 			writeOCIError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name must include a bucket")
 			return
 		}
-		s.handleManifest(w, r, bucket, name, rest[i+len("/manifests/"):])
+		s.handleManifest(w, r, bucket, name, ref)
 		return
 	}
 	if i := strings.LastIndex(rest, "/blobs/"); i >= 0 {
-		bucket, _, err := s.resolve(rest[:i])
+		name, digest := rest[:i], rest[i+len("/blobs/"):]
+		if !validName(name) {
+			writeOCIError(w, http.StatusBadRequest, "NAME_INVALID", "invalid repository name")
+			return
+		}
+		if !ociDigestRe.MatchString(digest) {
+			writeOCIError(w, http.StatusBadRequest, "DIGEST_INVALID", "invalid digest")
+			return
+		}
+		bucket, _, err := s.resolve(name)
 		if err != nil {
 			writeOCIError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name must include a bucket")
 			return
 		}
-		s.handleBlob(w, r, bucket, rest[i+len("/blobs/"):])
+		s.handleBlob(w, r, bucket, digest)
 		return
 	}
 
@@ -192,6 +212,68 @@ func (s *Server) handleReady(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write([]byte("ok"))
+}
+
+// OCI Distribution Spec grammars for the two things this server takes off the
+// wire. Neither used to be checked, and both are spliced straight into storage
+// keys and cache keys: "/v2/x/../secret/manifests/v1" read outside the image's
+// prefix on a filesystem-backed store, and "v1", "v1/", "./v1" and "x/../v1"
+// were four cache entries for one tag, which with --cache-entries 0 is
+// unbounded memory from a single tag pulled in a loop.
+var (
+	ociNameRe   = regexp.MustCompile(`^[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*(?:/[a-z0-9]+(?:(?:\.|_|__|-+)[a-z0-9]+)*)*$`)
+	ociTagRe    = regexp.MustCompile(`^[a-zA-Z0-9_][a-zA-Z0-9._-]{0,127}$`)
+	ociDigestRe = regexp.MustCompile(`^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-fA-F0-9]{32,128}$`)
+)
+
+func validName(name string) bool {
+	return len(name) <= 255 && ociNameRe.MatchString(name)
+}
+
+// validReference accepts a tag or a digest. A tag cannot contain ":", so the
+// separator is what tells the two apart.
+func validReference(ref string) bool {
+	if strings.Contains(ref, ":") {
+		return ociDigestRe.MatchString(ref)
+	}
+	return ociTagRe.MatchString(ref)
+}
+
+// LogRequests wraps h in an access log. Only the method, path, status, response
+// size and client address are recorded: query strings and headers are left out
+// because that is where presigned URL signatures and any client credentials
+// live, and an access log is the last place they should be durable.
+func LogRequests(h http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rec := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		start := time.Now()
+		h.ServeHTTP(rec, r)
+		slog.Info("request",
+			"method", r.Method,
+			"path", r.URL.Path,
+			"status", rec.status,
+			"bytes", rec.bytes,
+			"remote", r.RemoteAddr,
+			"duration", time.Since(start).Round(time.Millisecond),
+		)
+	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+}
+
+func (rec *statusRecorder) WriteHeader(status int) {
+	rec.status = status
+	rec.ResponseWriter.WriteHeader(status)
+}
+
+func (rec *statusRecorder) Write(b []byte) (int, error) {
+	n, err := rec.ResponseWriter.Write(b)
+	rec.bytes += n
+	return n, err
 }
 
 type ociErrorBody struct {

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 	"github.com/spf13/cobra"
 )
 
@@ -28,11 +28,11 @@ with a local file.
 Use --tags to only prune tags, or --blobs to only collect blobs.`,
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/clean/
 
-  s3lo bucket clean s3://my-bucket/                  # dry run
-  s3lo bucket clean s3://my-bucket/ --confirm         # prune tags + gc blobs
-  s3lo bucket clean s3://my-bucket/ --tags       # dry run, tags only
-  s3lo bucket clean s3://my-bucket/ --blobs      # dry run, blobs only
-  s3lo bucket clean s3://my-bucket/ --confirm --tags`,
+  s3lo clean s3://my-bucket/                  # dry run
+  s3lo clean s3://my-bucket/ --confirm        # prune tags + gc blobs
+  s3lo clean s3://my-bucket/ --tags           # dry run, tags only
+  s3lo clean s3://my-bucket/ --blobs          # dry run, blobs only
+  s3lo clean s3://my-bucket/ --confirm --tags`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if cleanTags && cleanBlobs {
@@ -41,6 +41,7 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 
 		dryRun := !cleanConfirm
 		s3Ref := args[0]
+		result := cleanResult{Ref: s3Ref, DryRun: dryRun}
 
 		if !cleanBlobs {
 			cfg, err := loadCleanConfig(cmd, s3Ref)
@@ -52,14 +53,8 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 			if err != nil {
 				return err
 			}
-
-			if dryRun {
-				fmt.Printf("Tags:  %d would be deleted (out of %d evaluated)\n",
-					lcResult.Deleted, lcResult.Evaluated)
-			} else {
-				fmt.Printf("Tags:  %d deleted (out of %d evaluated)\n",
-					lcResult.Deleted, lcResult.Evaluated)
-			}
+			result.TagsEvaluated = lcResult.Evaluated
+			result.TagsDeleted = lcResult.Deleted
 		}
 
 		if !cleanTags {
@@ -67,25 +62,55 @@ Use --tags to only prune tags, or --blobs to only collect blobs.`,
 			if err != nil {
 				return err
 			}
+			result.BlobsDeleted = gcResult.Deleted
+			result.FreedBytes = gcResult.FreedBytes
+		}
 
+		ok, err := writeOutput(outputFormat(cmd), result)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
+
+		if !cleanBlobs {
+			verb := "deleted"
 			if dryRun {
-				fmt.Printf("Blobs: %d unreferenced (%.2f MB would be freed)\n",
-					gcResult.Deleted, float64(gcResult.FreedBytes)/1024/1024)
+				verb = "would be deleted"
+			}
+			status("Tags:  %d %s (out of %d evaluated)\n", result.TagsDeleted, verb, result.TagsEvaluated)
+		}
+		if !cleanTags {
+			if dryRun {
+				status("Blobs: %d unreferenced (%.2f MB would be freed)\n",
+					result.BlobsDeleted, float64(result.FreedBytes)/1024/1024)
 			} else {
-				fmt.Printf("Blobs: %d deleted (%.2f MB freed)\n",
-					gcResult.Deleted, float64(gcResult.FreedBytes)/1024/1024)
+				status("Blobs: %d deleted (%.2f MB freed)\n",
+					result.BlobsDeleted, float64(result.FreedBytes)/1024/1024)
 			}
 		}
 
 		if dryRun {
-			fmt.Println("\nRun with --confirm to apply changes.")
+			status("\nRun with --confirm to apply changes.\n")
 		} else if cleanTags {
-			fmt.Println("\nNote: orphaned blobs from deleted tags remain until GC runs.")
-			fmt.Printf("      Run: s3lo bucket clean %s --blobs --confirm\n", s3Ref)
+			status("\nNote: orphaned blobs from deleted tags remain until GC runs.\n")
+			status("      Run: s3lo clean %s --blobs --confirm\n", s3Ref)
 		}
 
 		return nil
 	},
+}
+
+// cleanResult is what a clean run did, in one object, because a caller piping
+// --output json wants both halves of the run rather than two separate lines.
+type cleanResult struct {
+	Ref           string `json:"ref" yaml:"ref"`
+	DryRun        bool   `json:"dry_run" yaml:"dry_run"`
+	TagsEvaluated int    `json:"tags_evaluated" yaml:"tags_evaluated"`
+	TagsDeleted   int    `json:"tags_deleted" yaml:"tags_deleted"`
+	BlobsDeleted  int    `json:"blobs_deleted" yaml:"blobs_deleted"`
+	FreedBytes    int64  `json:"freed_bytes" yaml:"freed_bytes"`
 }
 
 func loadCleanConfig(cmd *cobra.Command, s3Ref string) (*image.BucketConfig, error) {
@@ -112,5 +137,6 @@ func init() {
 	cleanCmd.Flags().BoolVar(&cleanTags, "tags", false, "Only prune old tags, skip blob GC (orphaned blobs remain until --blobs is run)")
 	cleanCmd.Flags().BoolVar(&cleanBlobs, "blobs", false, "Only gc unreferenced blobs, skip tag pruning")
 	cleanCmd.Flags().StringVar(&cleanConfig, "config", "", "Path to BucketConfig YAML file (optional; defaults to bucket's s3lo.yaml)")
-	bucketCmd.AddCommand(cleanCmd)
+	addOutputFlag(cleanCmd)
+	rootCmd.AddCommand(cleanCmd)
 }

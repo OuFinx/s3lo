@@ -41,7 +41,7 @@ brews:
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
     homepage: "https://github.com/OuFinx/s3lo"
-    description: "Use AWS S3 as a container image registry"
+    description: "Use S3, GCS, Azure Blob, or local storage as a container image registry"
     license: "MIT"
     test: |
       system "#{bin}/s3lo", "version"

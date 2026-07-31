@@ -3,12 +3,20 @@ package image
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
-	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/chunkstore"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/sync/errgroup"
+)
+
+// Intelligent-Tiering advisory states reported by Doctor for s3:// buckets.
+const (
+	TieringEnabled       = "enabled"
+	TieringNotConfigured = "not configured"
 )
 
 // DoctorIssue describes a single problem found during a bucket health check.
@@ -27,13 +35,15 @@ type DoctorResult struct {
 	ManifestIssues []DoctorIssue `json:"manifest_issues,omitempty"`
 	OrphanedBlobs  int           `json:"orphaned_blobs"`
 	OrphanedBytes  int64         `json:"orphaned_bytes"`
+	// IntelligentTiering is only meaningful for s3:// buckets; empty elsewhere.
+	IntelligentTiering string `json:"intelligent_tiering,omitempty"`
 }
 
 // Doctor performs a health check on the given S3 bucket and returns findings.
 // It checks layout structure, manifest integrity (all referenced blobs exist),
 // orphaned blobs, and config validity.
 func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	bucket, nameFilter, err := ParseBucketRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
@@ -43,18 +53,53 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
-	scheme := "s3://"
-	if strings.HasPrefix(s3BucketRef, "local://") {
-		scheme = "local://"
-	}
+	scheme := schemeOf(s3BucketRef)
 	result := &DoctorResult{Bucket: bucket, Scheme: scheme}
 
+	// --- Reachability check ---
+	// A local directory that does not exist lists as empty rather than failing,
+	// so without this probe doctor would report "no layout" for a typo'd path.
+	if scheme == "local://" {
+		if _, err := os.Stat(bucket); err != nil {
+			return nil, fmt.Errorf("cannot reach %s%s: %w", scheme, bucket, err)
+		}
+	} else {
+		// Probe through the backend the caller actually configured, with a prefix
+		// that matches nothing: cheap on every backend, and still fails when the
+		// bucket is missing or the credentials are wrong.
+		//
+		// This used to call GetBucketLocation on a freshly built AWS client, which
+		// was wrong twice over: it ignored --endpoint, and GetBucketLocation is an
+		// AWS-only API. MinIO, R2 and Ceph answer it with 403 — the very backends
+		// --endpoint exists to reach — so doctor failed on a bucket that push,
+		// list, cat and stats were all using happily.
+		if _, err := client.ListKeys(ctx, bucket, reachabilityProbePrefix); err != nil {
+			return nil, fmt.Errorf("cannot reach %s%s — check the bucket name, region, and credentials: %w", scheme, bucket, err)
+		}
+	}
+
+	// Intelligent-Tiering is an AWS-only advisory. It must never decide whether a
+	// bucket is healthy, so every failure here is silent.
+	if scheme == "s3://" {
+		result.IntelligentTiering, _ = checkS3Tiering(ctx, bucket)
+	}
+
 	// --- Layout check ---
-	manifestKeys, err := client.ListKeys(ctx, bucket, prefix+"manifests/")
+	// The integrity check honours the ref's image-name filter; the orphan check
+	// below cannot, because a blob is only an orphan when *no* image in the
+	// bucket references it.
+	manifestKeys, err := client.ListKeys(ctx, bucket, scopedManifests(nameFilter))
 	if err != nil {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
-	blobMeta, err := client.ListObjectsWithMeta(ctx, bucket, prefix+"blobs/sha256/")
+	allManifestKeys := manifestKeys
+	if nameFilter != "" {
+		allManifestKeys, err = client.ListKeys(ctx, bucket, manifestsRoot)
+		if err != nil {
+			return nil, fmt.Errorf("list manifests: %w", err)
+		}
+	}
+	blobMeta, err := client.ListObjectsWithMeta(ctx, bucket, "blobs/sha256/")
 	if err != nil {
 		return nil, fmt.Errorf("list blobs: %w", err)
 	}
@@ -63,7 +108,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	// A layer counts as present if the bucket holds it whole OR holds a recipe
 	// that rebuilds it from chunks. Without the second source every chunked layer
 	// looks missing and doctor tells the operator to delete healthy images.
-	recipeMeta, err := client.ListObjectsWithMeta(ctx, bucket, prefix+chunkstore.RecipesPrefix)
+	recipeMeta, err := client.ListObjectsWithMeta(ctx, bucket, chunkstore.RecipesPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("list recipes: %w", err)
 	}
@@ -83,7 +128,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	// --- Config check ---
 	// An absent s3lo.yaml is fine (config is optional); only a config that exists
 	// but cannot be read is an actual problem.
-	_, cfgErr := client.GetObject(ctx, bucket, prefix+bucketConfigKey)
+	_, cfgErr := client.GetObject(ctx, bucket, bucketConfigKey)
 	switch {
 	case cfgErr == nil:
 		result.ConfigPresent = true
@@ -105,7 +150,6 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		}
 	}
 
-	manifestsPrefix := prefix + "manifests/"
 	var (
 		mu     sync.Mutex
 		issues []DoctorIssue
@@ -119,7 +163,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		g.Go(func() error {
 			data, err := client.GetObject(gCtx, bucket, key)
 			if err != nil {
-				rel := strings.TrimPrefix(key, manifestsPrefix)
+				rel := strings.TrimPrefix(key, manifestsRoot)
 				rel = strings.TrimSuffix(rel, "/manifest.json")
 				mu.Lock()
 				issues = append(issues, DoctorIssue{
@@ -130,7 +174,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 				return nil
 			}
 
-			rel := strings.TrimPrefix(key, manifestsPrefix)
+			rel := strings.TrimPrefix(key, manifestsRoot)
 			rel = strings.TrimSuffix(rel, "/manifest.json")
 			imageTag := imageTagFromManifestKey(rel)
 
@@ -138,7 +182,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 			var missing []string
 			for digest := range refs {
 				if _, ok := storedBlobs[digest]; !ok {
-					missing = append(missing, "sha256:"+digest[:12]+"...")
+					missing = append(missing, "sha256:"+short(digest)+"...")
 				}
 			}
 
@@ -169,9 +213,14 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	result.ManifestIssues = issues
 
 	// --- Orphaned blob check ---
-	// Collect all blob digests referenced by all parseable manifests.
+	// Collect all blob digests referenced by all parseable manifests. This walks
+	// every manifest in the bucket even when the ref narrowed the checks above:
+	// blobs are shared, so a blob is only orphaned when nothing at all wants it.
 	referenced := make(map[string]struct{})
-	for _, key := range manifestJsonKeys {
+	for _, key := range allManifestKeys {
+		if !strings.HasSuffix(key, "/manifest.json") {
+			continue
+		}
 		data, err := client.GetObject(ctx, bucket, key)
 		if err != nil {
 			continue
@@ -193,6 +242,45 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	}
 
 	return result, nil
+}
+
+// reachabilityProbePrefix matches no real key, so listing it is the cheapest
+// call that still proves the bucket exists and the credentials work.
+const reachabilityProbePrefix = ".s3lo-reachability-probe/"
+
+// schemeOf returns the ref's URL scheme. Defaulting everything non-local to
+// "s3://" made doctor label gs:// and az:// buckets as S3 in both its text and
+// its JSON output.
+func schemeOf(ref string) string {
+	for _, s := range []string{"local://", "gs://", "az://", "s3://"} {
+		if strings.HasPrefix(ref, s) {
+			return s
+		}
+	}
+	return "s3://"
+}
+
+// checkS3Tiering reports whether S3 Intelligent-Tiering is configured. It is
+// advisory only: every failure, including a missing permission or a backend
+// that does not implement the API, returns no opinion rather than an error.
+func checkS3Tiering(ctx context.Context, bucket string) (string, error) {
+	client, err := storage.NewS3Client(ctx)
+	if err != nil {
+		return "", nil
+	}
+	s3c, err := client.ClientForBucket(ctx, bucket)
+	if err != nil {
+		return "", nil
+	}
+	resp, err := s3c.ListBucketIntelligentTieringConfigurations(ctx,
+		&s3.ListBucketIntelligentTieringConfigurationsInput{Bucket: &bucket})
+	if err != nil {
+		return "", nil
+	}
+	if len(resp.IntelligentTieringConfigurationList) > 0 {
+		return TieringEnabled, nil
+	}
+	return TieringNotConfigured, nil
 }
 
 // imageTagFromManifestKey converts a relative path like "myapp/v1.0" to "myapp:v1.0".

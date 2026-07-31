@@ -7,7 +7,7 @@ import (
 	"sort"
 	"strings"
 
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // ImageEntry represents an image and its available tags in the registry.
@@ -20,7 +20,7 @@ type ImageEntry struct {
 // Supports both v1.1.0 (manifests/ prefix) and v1.0.0 (per-tag root) layouts.
 // s3Ref should be like "s3://my-bucket/" or "local:///path/to/store/".
 func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
-	bucket, prefix, err := ParseBucketRef(s3Ref)
+	bucket, nameFilter, err := ParseBucketRef(s3Ref)
 	if err != nil {
 		return nil, err
 	}
@@ -30,23 +30,22 @@ func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
-	slog.Debug("listing images", "bucket", bucket, "prefix", prefix)
+	slog.Debug("listing images", "bucket", bucket, "nameFilter", nameFilter)
 
 	// v1.1.0: scan manifests/<image>/<tag>/manifest.json
-	manifestKeys, err := client.ListKeys(ctx, bucket, prefix+"manifests/")
+	manifestKeys, err := client.ListKeys(ctx, bucket, scopedManifests(nameFilter))
 	if err != nil {
 		return nil, fmt.Errorf("list manifests: %w", err)
 	}
 	slog.Debug("found manifest keys", "count", len(manifestKeys))
 
 	imageMap := make(map[string][]string) // image → tags
-	manifestsPrefix := prefix + "manifests/"
 	for _, key := range manifestKeys {
 		if !strings.HasSuffix(key, "/manifest.json") {
 			continue
 		}
 		// key = manifests/<image>/<tag>/manifest.json
-		rel := strings.TrimPrefix(key, manifestsPrefix)
+		rel := strings.TrimPrefix(key, manifestsRoot)
 		rel = strings.TrimSuffix(rel, "/manifest.json")
 		// rel = <image>/<tag>
 		lastSlash := strings.LastIndex(rel, "/")
@@ -65,8 +64,9 @@ func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 		entries = append(entries, ImageEntry{Name: name, Tags: tags})
 	}
 
-	// v1.0.0 fallback: scan <image>/<tag>/manifest.json at root
-	allKeys, err := client.ListKeys(ctx, bucket, prefix)
+	// v1.0.0 fallback: scan <image>/<tag>/manifest.json at root. The name filter
+	// is a key prefix here too, because in that layout the image name *is* the key.
+	allKeys, err := client.ListKeys(ctx, bucket, nameFilter)
 	if err != nil {
 		return nil, fmt.Errorf("list root: %w", err)
 	}
@@ -75,12 +75,11 @@ func List(ctx context.Context, s3Ref string) ([]ImageEntry, error) {
 		if !strings.HasSuffix(key, "/manifest.json") {
 			continue
 		}
-		rel := strings.TrimPrefix(key, prefix)
 		// Skip v1.1.0 prefixes
-		if strings.HasPrefix(rel, "blobs/") || strings.HasPrefix(rel, "manifests/") {
+		if strings.HasPrefix(key, "blobs/") || strings.HasPrefix(key, "manifests/") {
 			continue
 		}
-		rel = strings.TrimSuffix(rel, "/manifest.json")
+		rel := strings.TrimSuffix(key, "/manifest.json")
 		// rel = <image>/<tag>
 		lastSlash := strings.LastIndex(rel, "/")
 		if lastSlash < 0 {

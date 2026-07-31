@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // Integration tests against a real S3-compatible endpoint (MinIO in CI).

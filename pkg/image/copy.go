@@ -7,15 +7,16 @@ import (
 
 // CopyResult summarizes a copy operation.
 type CopyResult struct {
-	BlobsCopied  int
-	BlobsSkipped int
-	Platforms    int // number of platforms copied (1 for single-arch)
+	BlobsCopied  int `json:"blobs_copied" yaml:"blobs_copied"`
+	BlobsSkipped int `json:"blobs_skipped" yaml:"blobs_skipped"`
+	// Platforms is the number of platforms copied (1 for single-arch).
+	Platforms int `json:"platforms" yaml:"platforms"`
 	// SignaturesDropped counts signature records that could not travel because
 	// the destination manifest was rewritten, which happens when --platform
 	// filters a multi-arch index. A signature covers the manifest's digest, so
 	// carrying it would produce an image that claims to be signed and fails to
 	// verify.
-	SignaturesDropped int
+	SignaturesDropped int `json:"signatures_dropped" yaml:"signatures_dropped"`
 }
 
 // CopyOptions controls copy behavior.

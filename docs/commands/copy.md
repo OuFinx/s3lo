@@ -89,7 +89,7 @@ behind and the copy tells you to re-sign:
 ```
 Warning: 1 signature(s) not copied — filtering platforms rewrites the manifest,
 so the old signature cannot verify against it. Re-sign the copy:
-  s3lo security sign s3://my-bucket/myapp:amd64 --key <key>
+  s3lo sign s3://my-bucket/myapp:amd64 --key <key>
 ```
 
 See [sign](sign.md) and [verify](verify.md).

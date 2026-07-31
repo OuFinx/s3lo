@@ -121,4 +121,5 @@ images:
 
 ## Versioning
 
-This layout is s3lo v1.1.0+. Use `s3lo migrate` to convert buckets from the v1.0.0 per-image blob layout.
+This is the layout s3lo v2 reads and writes. The v1.0.0 per-image blob layout is
+no longer supported: re-push, or `s3lo copy`, anything still stored that way.

@@ -3,13 +3,13 @@ package main
 import (
 	"fmt"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 	"github.com/spf13/cobra"
 )
 
 var inspectCmd = &cobra.Command{
 	Use:   "inspect <s3-ref>",
-	Short: "Inspect an image on S3",
+	Short: "Inspect a stored image's metadata",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/inspect/
 
   s3lo inspect s3://my-bucket/myapp:v1.0
@@ -93,6 +93,6 @@ func printInspect(info *image.ImageInfo) {
 }
 
 func init() {
-	inspectCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
+	addOutputFlag(inspectCmd)
 	rootCmd.AddCommand(inspectCmd)
 }

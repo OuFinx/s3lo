@@ -14,8 +14,8 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 | [`delete`](delete.md) | Delete an image tag |
 | [`clean`](clean.md) | Prune old tags and garbage collect unreferenced blobs |
 | [`stats`](stats.md) | Show storage usage, deduplication savings, and cost estimate |
+| [`doctor`](doctor.md) | Check bucket reachability, layout, and manifest integrity |
 | [`config`](config.md) | Manage per-image and bucket-wide configuration |
-| [`tui`](tui.md) | Interactive terminal UI for browsing images and managing lifecycle |
 | [`sign`](sign.md) | Sign an image manifest with AWS KMS or a local key |
 | [`verify`](verify.md) | Verify an image signature (exits 0/1/2 for CI gates) |
 
@@ -43,7 +43,7 @@ The scheme prefix (`s3://`, `gs://`, `az://`, or `local://`) is always required.
 a specific image (push, pull, delete, inspect, copy) require an explicit tag —
 omitting the tag is an error.
 
-Bucket-level commands (list, stats, clean, config) accept a reference without a tag:
+Bucket-level commands (list, stats, doctor, clean, config) accept a reference without a tag:
 
 ```
 s3://my-bucket/

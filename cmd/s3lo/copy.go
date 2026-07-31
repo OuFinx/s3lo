@@ -1,17 +1,16 @@
 package main
 
 import (
-	"fmt"
 	"strings"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
 
 var copyCmd = &cobra.Command{
 	Use:   "copy <src> <s3-dest>",
-	Short: "Copy an image to S3 without pulling to local Docker",
+	Short: "Copy an image between registries and object storage, without local Docker",
 	Long: `Copy an image from S3 or an OCI registry directly to an S3 destination.
 
 Sources:
@@ -51,7 +50,7 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 		}
 		platform, _ := cmd.Flags().GetString("platform")
 		force, _ := cmd.Flags().GetBool("force")
-		fmt.Printf("Copying %s to %s\n", src, dest)
+		status("Copying %s to %s\n", src, dest)
 		var bar *progressbar.ProgressBar
 		opts := image.CopyOptions{
 			Platform: platform,
@@ -72,18 +71,25 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 		if err != nil {
 			return err
 		}
+		ok, err := writeOutput(outputFormat(cmd), result)
+		if err != nil {
+			return err
+		}
+		if ok {
+			return nil
+		}
 		if result.Platforms > 1 {
-			fmt.Printf("Done. %d platform(s) copied, %d blob(s) copied, %d skipped (already exist).\n",
+			status("Done. %d platform(s) copied, %d blob(s) copied, %d skipped (already exist).\n",
 				result.Platforms, result.BlobsCopied, result.BlobsSkipped)
 		} else {
-			fmt.Printf("Done. %d blob(s) copied, %d skipped (already exist).\n",
+			status("Done. %d blob(s) copied, %d skipped (already exist).\n",
 				result.BlobsCopied, result.BlobsSkipped)
 		}
 		// Never let an image quietly lose its signature. Filtering platforms
 		// rewrites the manifest, and a signature is over the manifest's digest.
 		if result.SignaturesDropped > 0 {
-			fmt.Printf("Warning: %d signature(s) not copied — filtering platforms rewrites the manifest, "+
-				"so the old signature cannot verify against it. Re-sign the copy:\n  s3lo security sign %s --key <key>\n",
+			status("Warning: %d signature(s) not copied — filtering platforms rewrites the manifest, "+
+				"so the old signature cannot verify against it. Re-sign the copy:\n  s3lo sign %s --key <key>\n",
 				result.SignaturesDropped, dest)
 		}
 		return nil
@@ -91,6 +97,7 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 }
 
 func init() {
+	addOutputFlag(copyCmd)
 	rootCmd.AddCommand(copyCmd)
 	copyCmd.Flags().String("platform", "", `Copy a specific platform only (e.g. "linux/amd64"). Default: copy all platforms.`)
 	copyCmd.Flags().Bool("force", false, "Overwrite an existing tag even if the destination bucket is immutable")

@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // fakeBackend is a test double for storage.Backend.
@@ -266,6 +266,89 @@ func TestGetManifestByDigestMissing(t *testing.T) {
 	}
 }
 
+// TestRejectsInvalidNameAndReference covers what used to be spliced unchecked
+// into storage keys: a ".." component reached outside the image's own prefix
+// (on the local backend "/v2/x/../secret/manifests/v1" answered 200), and any
+// spelling of a tag was accepted.
+//
+// The requests go through the handler directly because an HTTP client
+// normalises "x/.." out of the path before it is ever sent, which is precisely
+// the case the server must not rely on.
+func TestRejectsInvalidNameAndReference(t *testing.T) {
+	b := newFakeBackend()
+	b.set("testbucket", "manifests/secret/v1/manifest.json", []byte(sampleManifest))
+	srv := &Server{Client: b, Bucket: "testbucket", PresignTTL: time.Hour}
+
+	cases := []struct {
+		path string
+		code string
+	}{
+		{"/v2/x/../secret/manifests/v1", "NAME_INVALID"},
+		{"/v2/../secret/manifests/v1", "NAME_INVALID"},
+		{"/v2//manifests/v1", "NAME_INVALID"},
+		{"/v2/UPPER/manifests/v1", "NAME_INVALID"},
+		{"/v2/my%20app/manifests/v1", "NAME_INVALID"},      // decoded before it is checked
+		{"/v2/%2e%2e/secret/manifests/v1", "NAME_INVALID"}, // percent-encoded traversal
+		{"/v2/myapp/manifests/./v1", "TAG_INVALID"},
+		{"/v2/myapp/manifests/x/../v1", "TAG_INVALID"},
+		{"/v2/myapp/manifests/v1/", "TAG_INVALID"},
+		{"/v2/myapp/manifests/.", "TAG_INVALID"},
+		{"/v2/myapp/manifests/-v1", "TAG_INVALID"},
+		{"/v2/myapp/manifests/sha256:notlonghexatall", "TAG_INVALID"},
+		{"/v2/myapp/blobs/../secret", "DIGEST_INVALID"},
+		{"/v2/myapp/blobs/sha256:zzzz", "DIGEST_INVALID"},
+		{"/v2/x/../secret/blobs/sha256:" + strings.Repeat("a", 64), "NAME_INVALID"},
+	}
+
+	for _, tc := range cases {
+		req := httptest.NewRequest(http.MethodGet, tc.path, nil)
+		rec := httptest.NewRecorder()
+		srv.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("GET %s = %d, want 400", tc.path, rec.Code)
+		}
+		if !strings.Contains(rec.Body.String(), tc.code) {
+			t.Errorf("GET %s body = %s, want %s", tc.path, rec.Body.String(), tc.code)
+		}
+	}
+}
+
+func TestNestedNameIsStillServed(t *testing.T) {
+	b := newFakeBackend()
+	b.set("testbucket", "manifests/org/app/v1.0/manifest.json", []byte(sampleManifest))
+	ts := newTestServer(t, b)
+	defer ts.Close()
+
+	resp, err := http.Get(ts.URL + "/v2/org/app/manifests/v1.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Errorf("GET nested name = %d, want 200", resp.StatusCode)
+	}
+}
+
+// TestOneTagIsOneCacheKey: every spelling of a single tag used to reach storage
+// as its own cache key, so pulling one tag in a loop under "v1", "v1/", "./v1"
+// and "x/../v1" grew the cache without bound when --cache-entries is 0.
+func TestOneTagIsOneCacheKey(t *testing.T) {
+	b := newFakeBackend()
+	b.set("testbucket", "manifests/myapp/v1/manifest.json", []byte(sampleManifest))
+	c := NewCache(0, time.Minute) // 0 = unlimited, the dangerous setting
+	srv := &Server{Client: b, Bucket: "testbucket", PresignTTL: time.Hour, Cache: c}
+
+	for _, ref := range []string{"v1", "v1/", "./v1", "x/../v1", ".", "..", "v1//"} {
+		req := httptest.NewRequest(http.MethodGet, "/v2/myapp/manifests/"+ref, nil)
+		srv.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	if c.Len() != 1 {
+		t.Errorf("cache holds %d entries for one tag, want 1", c.Len())
+	}
+}
+
 // presigningBackend wraps fakeBackend and implements Presigner.
 type presigningBackend struct {
 	*fakeBackend
@@ -348,7 +431,10 @@ func TestGetBlobMissing(t *testing.T) {
 	ts := newTestServer(t, b)
 	defer ts.Close()
 
-	resp, err := http.Get(ts.URL + "/v2/myapp/blobs/sha256:deadbeef1234")
+	// Well-formed digest, absent blob: a malformed digest is a 400 (see
+	// TestRejectsInvalidNameAndReference), so this must be full-length to reach
+	// the lookup at all.
+	resp, err := http.Get(ts.URL + "/v2/myapp/blobs/sha256:" + strings.Repeat("d", 64))
 	if err != nil {
 		t.Fatal(err)
 	}

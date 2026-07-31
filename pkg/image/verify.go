@@ -11,8 +11,8 @@ import (
 
 	cosignsig "github.com/sigstore/cosign/v2/pkg/signature"
 
-	"github.com/OuFinx/s3lo/v2/pkg/ref"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // VerifyResult is returned by Verify.
@@ -88,9 +88,30 @@ func Verify(ctx context.Context, s3Ref, keyRef string) (*VerifyResult, error) {
 		return nil, fmt.Errorf("read signature: %w", err)
 	}
 
+	// A record an attacker can write is untrusted input, so every failure to
+	// make sense of it is a verification failure (exit 1), never an
+	// infrastructure error (exit 2) that a CI gate might retry or ignore.
 	var rec SignatureRecord
 	if err := json.Unmarshal(sigData, &rec); err != nil {
-		return nil, fmt.Errorf("parse signature record: %w", err)
+		return &VerifyResult{
+			Verified: false,
+			Reason:   "malformed signature record: " + err.Error(),
+			Digest:   digest,
+			KeyRef:   keyRef,
+			KeyID:    slug,
+		}, nil
+	}
+
+	if rec.SchemaVersion != SignatureSchemaVersion {
+		return &VerifyResult{
+			Verified: false,
+			Reason: fmt.Sprintf("unsupported signature schema version %d (this build verifies version %d); re-sign the image",
+				rec.SchemaVersion, SignatureSchemaVersion),
+			Digest:   digest,
+			KeyRef:   keyRef,
+			KeyID:    slug,
+			SignedAt: rec.SignedAt,
+		}, nil
 	}
 
 	// Check that the signed digest matches the current manifest.
@@ -108,9 +129,16 @@ func Verify(ctx context.Context, s3Ref, keyRef string) (*VerifyResult, error) {
 	// Verify the cryptographic signature.
 	sigBytes, err := base64.StdEncoding.DecodeString(rec.Signature)
 	if err != nil {
-		return nil, fmt.Errorf("decode signature bytes: %w", err)
+		return &VerifyResult{
+			Verified: false,
+			Reason:   "malformed signature encoding: " + err.Error(),
+			Digest:   digest,
+			KeyRef:   keyRef,
+			KeyID:    slug,
+			SignedAt: rec.SignedAt,
+		}, nil
 	}
-	payload := signingPayload(digest)
+	payload := ref.SigningPayload(parsed.Bucket, parsed.Image, parsed.Tag, digest)
 	if err := verifier.VerifySignature(bytes.NewReader(sigBytes), bytes.NewReader(payload)); err != nil {
 		return &VerifyResult{
 			Verified: false,

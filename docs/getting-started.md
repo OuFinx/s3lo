@@ -42,7 +42,7 @@ Get s3lo running and push your first image in under 5 minutes.
 === "Go"
 
     ```bash
-    go install github.com/OuFinx/s3lo/v2/cmd/s3lo@latest
+    go install github.com/OuFinx/s3lo/v3/cmd/s3lo@latest
     ```
 
 Verify the install:
@@ -143,10 +143,7 @@ docker run --rm myapp:v1.0
 You can test s3lo without an AWS account using local storage:
 
 ```bash
-# Initialize a local storage directory
-s3lo bucket init --local ./local-s3
-
-# Push, pull, and list — same commands, just use local://
+# No setup step — the layout is created on the first push
 s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
 s3lo pull local://./local-s3/myapp:v1.0
 s3lo list local://./local-s3/
@@ -154,13 +151,13 @@ s3lo list local://./local-s3/
 
 Local storage uses the same OCI layout as S3 storage — it's a great way to learn s3lo or run it in development.
 
-## 7. Browse interactively
+## 7. See what the tags share
 
 ```bash
-s3lo tui s3://my-bucket/
+s3lo stats s3://my-bucket/ --layers
 ```
 
-The TUI shows all images and tags with sizes, deduplication stats, and cost estimates. From inside a tag list, press `i` to inspect metadata, `g` to view the layer sharing matrix, or `d` to delete. Press `q` to quit.
+This prints every unique layer in the bucket with its size and the tags that reference it, so you can see exactly where deduplication is paying off.
 
 ---
 
@@ -169,5 +166,5 @@ The TUI shows all images and tags with sizes, deduplication stats, and cost esti
 - **CI/CD:** [GitHub Actions integration](guides/github-actions.md) — push on every commit with OIDC auth
 - **Mirror from Docker Hub / ECR:** use [`s3lo copy`](commands/copy.md) to pull from any registry directly to S3
 - **Save money:** [configure lifecycle rules](guides/lifecycle.md) to automatically clean old tags
-- **Browse interactively:** [`s3lo tui`](commands/tui.md) — full interactive UI for managing images
+- **See layer sharing:** [`s3lo stats --layers`](commands/stats.md) — which layers are shared across which tags
 - **Understand the internals:** [How It Works](concepts/how-it-works.md)

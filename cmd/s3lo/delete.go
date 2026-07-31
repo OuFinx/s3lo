@@ -1,9 +1,7 @@
 package main
 
 import (
-	"fmt"
-
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 	"github.com/spf13/cobra"
 )
 
@@ -11,7 +9,7 @@ var deleteForce bool
 
 var deleteCmd = &cobra.Command{
 	Use:   "delete <s3-ref>",
-	Short: "Delete an image tag from S3",
+	Short: "Delete an image tag from S3, GCS, Azure Blob, or local storage",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/delete/
 
   s3lo delete s3://my-bucket/myapp:v1.0`,
@@ -23,12 +21,22 @@ var deleteCmd = &cobra.Command{
 		if err := image.Delete(cmd.Context(), args[0], deleteForce); err != nil {
 			return err
 		}
-		fmt.Printf("Deleted %s\n", args[0])
+		ok, err := writeOutput(outputFormat(cmd), struct {
+			Ref     string `json:"ref" yaml:"ref"`
+			Deleted bool   `json:"deleted" yaml:"deleted"`
+		}{args[0], true})
+		if err != nil {
+			return err
+		}
+		if !ok {
+			status("Deleted %s\n", args[0])
+		}
 		return nil
 	},
 }
 
 func init() {
 	deleteCmd.Flags().BoolVar(&deleteForce, "force", false, "Delete even if the image is configured immutable")
+	addOutputFlag(deleteCmd)
 	rootCmd.AddCommand(deleteCmd)
 }

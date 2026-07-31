@@ -18,11 +18,24 @@ import (
 	"github.com/sigstore/cosign/v2/pkg/cosign"
 	cosignsig "github.com/sigstore/cosign/v2/pkg/signature"
 
-	"github.com/OuFinx/s3lo/v2/pkg/ref"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
+// SignatureSchemaVersion is the current signature record schema.
+//
+// Version 2 binds the signed payload to the image's bucket, name and tag (see
+// ref.SigningPayload) and drops the stored payload field. Version 1 signed the
+// manifest digest alone and stored the signed bytes alongside the signature,
+// which let anyone with bucket write access transplant a valid signature onto
+// another tag. Version 1 records are rejected, not verified.
+const SignatureSchemaVersion = 2
+
 // SignatureRecord is the JSON stored at manifests/<image>/<tag>/signatures/<slug>.json.
+//
+// The record deliberately carries no copy of the signed payload: verifiers
+// rebuild it from the reference being checked, so nothing an attacker can write
+// into this file is an input to the signature check.
 type SignatureRecord struct {
 	SchemaVersion int    `json:"schemaVersion"`
 	Digest        string `json:"digest"`
@@ -30,7 +43,6 @@ type SignatureRecord struct {
 	KeyID         string `json:"keyID"`
 	Algorithm     string `json:"algorithm"`
 	Signature     string `json:"signature"`
-	Payload       string `json:"payload"`
 	SignedAt      string `json:"signedAt"`
 }
 
@@ -71,8 +83,8 @@ func Sign(ctx context.Context, s3Ref, keyRef string) (*SignResult, error) {
 		return nil, fmt.Errorf("load signing key %q: %w", keyRef, err)
 	}
 
-	// Sign the payload.
-	payload := signingPayload(digest)
+	// Sign the payload. It binds the signature to this exact bucket/image:tag.
+	payload := ref.SigningPayload(parsed.Bucket, parsed.Image, parsed.Tag, digest)
 	sigBytes, err := sv.SignMessage(bytes.NewReader(payload))
 	if err != nil {
 		return nil, fmt.Errorf("sign: %w", err)
@@ -90,13 +102,12 @@ func Sign(ctx context.Context, s3Ref, keyRef string) (*SignResult, error) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	rec := SignatureRecord{
-		SchemaVersion: 1,
+		SchemaVersion: SignatureSchemaVersion,
 		Digest:        digest,
 		KeyRef:        keyRef,
 		KeyID:         slug,
 		Algorithm:     algorithmName(pub),
 		Signature:     base64.StdEncoding.EncodeToString(sigBytes),
-		Payload:       base64.StdEncoding.EncodeToString(payload),
 		SignedAt:      now.Format(time.RFC3339),
 	}
 	recData, err := json.Marshal(rec)
@@ -116,11 +127,6 @@ func Sign(ctx context.Context, s3Ref, keyRef string) (*SignResult, error) {
 		StoredPath: parsed.Bucket + "/" + sigKey,
 		SignedAt:   now,
 	}, nil
-}
-
-// signingPayload returns the canonical bytes that are signed: "<digest>\n".
-func signingPayload(digest string) []byte {
-	return []byte(digest + "\n")
 }
 
 // keyIDSlug returns a stable, filename-safe 16-char hex identifier for a public key.

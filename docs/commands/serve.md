@@ -18,11 +18,16 @@ s3lo serve <s3-ref> [flags]
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--port` | `5000` | Port to listen on |
-| `--host` | `127.0.0.1` | Bind address |
-| `--tls-cert` | | TLS certificate file (enables HTTPS) |
-| `--tls-key` | | TLS key file |
-| `--presign-ttl` | `1h` | TTL for S3 presigned blob URLs |
+| `--port` | `5000` | Port to listen on (`0` picks a free port and prints it) |
+| `--host` | `127.0.0.1` | Bind address. Anything other than loopback requires `--allow-anonymous` |
+| `--allow-anonymous` | `false` | Confirms that unauthenticated access is intended. Required for a non-loopback `--host` |
+| `--tls-cert` | | TLS certificate file (enables HTTPS; requires `--tls-key`) |
+| `--tls-key` | | TLS key file (requires `--tls-cert`) |
+| `--verify-key` | | Verification key (`.pub`, `awskms://`, `hashivault://`): serve only images signed by it |
+| `--presign-ttl` | `15m` | TTL for S3 presigned blob URLs (max `168h`, the SigV4 limit) |
+| `--cache-entries` | `1000` | Manifests to keep cached in memory (`0` = unlimited) |
+| `--cache-ttl` | `5m` | How long a cached manifest stays valid |
+| `--max-concurrent` | `64` | Maximum concurrent object-storage operations (`0` = unlimited) |
 
 ## What it does
 
@@ -50,11 +55,14 @@ s3lo serve s3://my-bucket/ --port 5000
 # Pull from it with Docker
 docker pull localhost:5000/myapp:v1.0
 
-# Expose on all interfaces (e.g. for remote nodes)
-s3lo serve s3://my-bucket/ --host 0.0.0.0 --port 5000
+# Expose on all interfaces (e.g. for remote nodes).
+# There is no authentication, so this needs an explicit opt-in AND TLS,
+# and should still be fenced off with a firewall or security group.
+s3lo serve s3://my-bucket/ --host 0.0.0.0 --port 5000 --allow-anonymous \
+  --tls-cert cert.pem --tls-key key.pem
 
-# Enable HTTPS with a TLS certificate
-s3lo serve s3://my-bucket/ --host 0.0.0.0 --tls-cert cert.pem --tls-key key.pem
+# Refuse to serve any image that is not signed by this key
+s3lo serve s3://my-bucket/ --verify-key cosign.pub
 
 # MinIO / S3-compatible endpoint
 s3lo serve s3://my-bucket/ --endpoint http://minio:9000
@@ -81,6 +89,9 @@ Press Ctrl+C to stop.
 
 ## Notes
 
-- The server does not implement authentication. For production use, place it behind a reverse proxy (nginx, Caddy, etc.) or restrict access with `--host` and firewall rules.
+- The server does not implement authentication: anyone who can reach the port can read every image in the bucket, including the presigned URLs it hands out for blobs. It binds `127.0.0.1` by default, and a non-loopback `--host` is refused unless `--allow-anonymous` is passed. For production use, put it behind an authenticating reverse proxy (nginx, Caddy, etc.), serve it over TLS, and restrict access with firewall or security-group rules.
+- `--verify-key` makes the server refuse any manifest without a valid signature from that key, which is what `s3lo sign` exists for. A pull by bare digest is only served once the same content has been verified through its tag in this process.
+- Every request is written to the access log (method, path, status, bytes, client address). Query strings and headers are never logged, so presigned URL signatures do not end up on disk.
 - For large images on GCS, Azure, or local backends, `s3lo pull` is more efficient — the streaming path loads the entire blob into memory before forwarding.
-- The `--presign-ttl` flag controls how long presigned S3 URLs remain valid. Increase it if clients are slow to start downloading after receiving the redirect.
+- The `--presign-ttl` flag controls how long presigned S3 URLs remain valid. Increase it if clients are slow to start downloading after receiving the redirect. Values above `168h` are rejected: SigV4 will not sign for longer, and S3 would refuse the resulting URLs.
+- Repository names and tags are validated against the OCI grammar before dispatch. A malformed name or reference is answered with `400 NAME_INVALID` / `TAG_INVALID` / `DIGEST_INVALID` rather than being passed through to storage.
