@@ -11,7 +11,7 @@ import (
 
 var copyCmd = &cobra.Command{
 	Use:   "copy <src> <s3-dest>",
-	Short: "Copy an image to S3 without pulling to local Docker",
+	Short: "Copy an image between registries and object storage, without local Docker",
 	Long: `Copy an image from S3 or an OCI registry directly to an S3 destination.
 
 Sources:
@@ -83,7 +83,7 @@ For multi-arch images, all platforms are copied by default. Use --platform to co
 		// rewrites the manifest, and a signature is over the manifest's digest.
 		if result.SignaturesDropped > 0 {
 			fmt.Printf("Warning: %d signature(s) not copied — filtering platforms rewrites the manifest, "+
-				"so the old signature cannot verify against it. Re-sign the copy:\n  s3lo security sign %s --key <key>\n",
+				"so the old signature cannot verify against it. Re-sign the copy:\n  s3lo sign %s --key <key>\n",
 				result.SignaturesDropped, dest)
 		}
 		return nil

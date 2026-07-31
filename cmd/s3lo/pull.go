@@ -10,7 +10,7 @@ import (
 
 var pullCmd = &cobra.Command{
 	Use:   "pull <s3-ref> [image-tag]",
-	Short: "Pull an image from S3 into local Docker",
+	Short: "Pull an image from S3, GCS, Azure Blob, or local storage into Docker",
 	Long:  "Download an OCI image from S3 and import it into the local Docker daemon.",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/pull/
 

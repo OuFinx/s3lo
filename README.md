@@ -145,7 +145,7 @@ s3lo inspect s3://my-bucket/myapp:v1.0
 s3lo cat s3://my-bucket/myapp:v1.0 /etc/os-release
 
 # Show storage stats and deduplication savings
-s3lo bucket stats s3://my-bucket/
+s3lo stats s3://my-bucket/
 
 # Delete a tag
 s3lo delete s3://my-bucket/myapp:v1.0
@@ -154,21 +154,21 @@ s3lo delete s3://my-bucket/myapp:v1.0
 s3lo config set s3://my-bucket/ lifecycle.keep_last=10 lifecycle.max_age=90d
 
 # Clean old tags and unreferenced blobs (dry run by default)
-s3lo bucket clean s3://my-bucket/
-s3lo bucket clean s3://my-bucket/ --confirm
+s3lo clean s3://my-bucket/
+s3lo clean s3://my-bucket/ --confirm
 
 # Enable per-image tag immutability
 s3lo config set s3://my-bucket/myapp immutable=true
 
 # Sign an image with AWS KMS (FIPS 140-2, CloudTrail audit log)
-s3lo security sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+s3lo sign s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
 
 # Sign with a local key file
-COSIGN_PASSWORD=secret s3lo security sign s3://my-bucket/myapp:v1.0 --key cosign.key
+COSIGN_PASSWORD=secret s3lo sign s3://my-bucket/myapp:v1.0 --key cosign.key
 
 # Verify a signature (exit 0 = valid, 1 = invalid/missing, 2 = infra error)
-s3lo security verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
-s3lo security verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json
+s3lo verify s3://my-bucket/myapp:v1.0 --key awskms:///alias/release-signer
+s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json
 
 # --- Google Cloud Storage ---
 s3lo push myapp:v1.0 gs://my-gcs-bucket/myapp:v1.0
@@ -185,10 +185,7 @@ s3lo pull s3://my-bucket/myapp:v1.0 --endpoint http://localhost:9000
 
 # --- Local storage (no cloud account needed) ---
 
-# Initialize local storage
-s3lo bucket init --local ./local-s3
-
-# Push and pull with local://
+# No setup step — the layout is created on the first push
 s3lo push myapp:v1.0 local://./local-s3/myapp:v1.0
 s3lo pull local://./local-s3/myapp:v1.0
 s3lo list local://./local-s3/
@@ -233,6 +230,7 @@ s3lo uses the standard credential chain for each cloud:
       "Action": [
         "s3:GetObject",
         "s3:PutObject",
+        "s3:DeleteObject",
         "s3:HeadObject",
         "s3:ListBucket",
         "s3:GetBucketLocation"
@@ -246,7 +244,11 @@ s3lo uses the standard credential chain for each cloud:
 }
 ```
 
-For read-only access (pull only), remove `s3:PutObject`.
+`s3:DeleteObject` is only needed by `delete` and `clean` — without it every other
+command still works, and those two fail with `AccessDenied`. Drop it for a
+push-only CI role.
+
+For read-only access (pull only), remove `s3:PutObject` and `s3:DeleteObject`.
 
 ## CI Integration
 

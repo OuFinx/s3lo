@@ -51,7 +51,7 @@ Enter
 Sleep 300ms
 
 # The number that sells the project
-Type "s3lo bucket stats s3://s3lo-demo/"
+Type "s3lo stats s3://s3lo-demo/"
 Sleep 400ms
 Enter
 Sleep 6s
@@ -61,7 +61,7 @@ Enter
 Sleep 300ms
 
 # Layer sharing across tags
-Type "s3lo bucket stats s3://s3lo-demo/ --layers"
+Type "s3lo stats s3://s3lo-demo/ --layers"
 Sleep 400ms
 Enter
 Sleep 6s

@@ -17,7 +17,7 @@ var (
 
 var pushCmd = &cobra.Command{
 	Use:   "push <local-image> <s3-ref>",
-	Short: "Push a local Docker image to S3",
+	Short: "Push a local Docker image to S3, GCS, Azure Blob, or local storage",
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/push/
 
   s3lo push myapp:v1.0 s3://my-bucket/myapp:v1.0

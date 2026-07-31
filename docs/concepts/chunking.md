@@ -116,14 +116,14 @@ this build writes format 1; chunks from the two do not deduplicate against each 
 
 ## Garbage collection
 
-A chunked layer is reachable as manifest → recipe → chunks. `s3lo bucket clean`
+A chunked layer is reachable as manifest → recipe → chunks. `s3lo clean`
 follows that chain, so chunks still referenced by any live recipe survive, and
 chunks whose last recipe is gone are collected along with it.
 
 ## What to check
 
 ```bash
-s3lo bucket stats s3://my-bucket/
+s3lo stats s3://my-bucket/
 ```
 
 reports chunk count and how much of the bucket is chunk storage, and each push

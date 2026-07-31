@@ -137,7 +137,7 @@ func TestGC_KeepsChunksReachableThroughRecipes(t *testing.T) {
 }
 
 // TestGC_DryRunLeavesChunkedBucketIntact makes sure the chunk sweep honours the
-// dry-run contract that `bucket clean` relies on by default.
+// dry-run contract that `clean` relies on by default.
 func TestGC_DryRunLeavesChunkedBucketIntact(t *testing.T) {
 	ctx := context.Background()
 	ref, storeDir := setupChunkedStore(t)

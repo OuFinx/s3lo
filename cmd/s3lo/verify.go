@@ -22,13 +22,13 @@ Exit codes:
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/verify/
 
   # Verify with AWS KMS public key
-  s3lo security verify s3://my-bucket/myapp:v1.0 --key awskms://alias/release-signer
+  s3lo verify s3://my-bucket/myapp:v1.0 --key awskms://alias/release-signer
 
   # Verify with a local public key file
-  s3lo security verify s3://my-bucket/myapp:v1.0 --key cosign.pub
+  s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub
 
   # Machine-readable output for CI
-  s3lo security verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json`,
+  s3lo verify s3://my-bucket/myapp:v1.0 --key cosign.pub --output json`,
 	Args: cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		if err := requireTag(args[0]); err != nil {
@@ -75,7 +75,7 @@ Exit codes:
 }
 
 func init() {
-	securityCmd.AddCommand(verifyCmd)
+	rootCmd.AddCommand(verifyCmd)
 	verifyCmd.Flags().String("key", "", "Verification key: .pub file, awskms://, or hashivault:// (required)")
 	verifyCmd.Flags().String("output", "text", "Output format: text or json")
 	verifyCmd.MarkFlagRequired("key")

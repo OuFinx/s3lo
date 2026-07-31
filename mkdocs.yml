@@ -71,6 +71,7 @@ nav:
     - delete: commands/delete.md
     - clean: commands/clean.md
     - stats: commands/stats.md
+    - doctor: commands/doctor.md
     - config: commands/config.md
     - sign: commands/sign.md
     - verify: commands/verify.md

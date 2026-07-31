@@ -23,8 +23,10 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "s3lo",
-	Short: "Store and retrieve OCI container images on AWS S3",
-	Long:  "s3lo is a CLI tool for pushing, pulling, listing, and inspecting OCI container images stored on AWS S3.",
+	Short: "Store and retrieve OCI container images on object storage",
+	Long: `s3lo is a CLI tool for pushing, pulling, listing, and inspecting OCI container
+images stored on object storage: AWS S3, Google Cloud Storage, Azure Blob
+Storage, a local directory, or any S3-compatible service via --endpoint.`,
 	// Errors and usage are printed in main (red ERROR, then usage) for clearer separation.
 	SilenceErrors: true,
 	SilenceUsage:  true,

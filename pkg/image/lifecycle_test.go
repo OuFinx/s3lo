@@ -72,7 +72,7 @@ func TestEvaluateTags_KeepLastIsRetentionFloor(t *testing.T) {
 // TestApplyLifecycle_SkipsImmutableImages covers a data-loss bug: lifecycle was
 // a third deletion path that never consulted the immutable flag. With
 // `immutable: true` and `keep_last: 1`, `s3lo delete` correctly refused to
-// remove a tag while `s3lo bucket clean --confirm --tags` deleted four of them
+// remove a tag while `s3lo clean --confirm --tags` deleted four of them
 // in the same store, with no --force and no warning.
 func TestApplyLifecycle_SkipsImmutableImages(t *testing.T) {
 	storeDir := t.TempDir()

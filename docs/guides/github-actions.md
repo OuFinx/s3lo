@@ -135,7 +135,7 @@ jobs:
           aws-region: us-east-1
 
       - name: Clean old tags and blobs
-        run: s3lo bucket clean s3://my-bucket/ --confirm
+        run: s3lo clean s3://my-bucket/ --confirm
 ```
 
 !!! tip

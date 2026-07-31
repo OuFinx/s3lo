@@ -3,12 +3,20 @@ package image
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"sync"
 
 	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
 	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/sync/errgroup"
+)
+
+// Intelligent-Tiering advisory states reported by Doctor for s3:// buckets.
+const (
+	TieringEnabled       = "enabled"
+	TieringNotConfigured = "not configured"
 )
 
 // DoctorIssue describes a single problem found during a bucket health check.
@@ -27,6 +35,8 @@ type DoctorResult struct {
 	ManifestIssues []DoctorIssue `json:"manifest_issues,omitempty"`
 	OrphanedBlobs  int           `json:"orphaned_blobs"`
 	OrphanedBytes  int64         `json:"orphaned_bytes"`
+	// IntelligentTiering is only meaningful for s3:// buckets; empty elsewhere.
+	IntelligentTiering string `json:"intelligent_tiering,omitempty"`
 }
 
 // Doctor performs a health check on the given S3 bucket and returns findings.
@@ -48,6 +58,21 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		scheme = "local://"
 	}
 	result := &DoctorResult{Bucket: bucket, Scheme: scheme}
+
+	// --- Reachability check ---
+	// A local directory that does not exist lists as empty rather than failing,
+	// so without this probe doctor would report "no layout" for a typo'd path.
+	if scheme == "local://" {
+		if _, err := os.Stat(bucket); err != nil {
+			return nil, fmt.Errorf("cannot reach %s%s: %w", scheme, bucket, err)
+		}
+	} else if strings.HasPrefix(s3BucketRef, "s3://") {
+		tiering, err := checkS3Bucket(ctx, bucket)
+		if err != nil {
+			return nil, fmt.Errorf("cannot reach s3://%s — check the bucket name, region, and AWS credentials: %w", bucket, err)
+		}
+		result.IntelligentTiering = tiering
+	}
 
 	// --- Layout check ---
 	manifestKeys, err := client.ListKeys(ctx, bucket, prefix+"manifests/")
@@ -193,6 +218,30 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	}
 
 	return result, nil
+}
+
+// checkS3Bucket proves the bucket exists and the current credentials can reach
+// it (GetBucketLocation), then reports whether Intelligent-Tiering is on.
+func checkS3Bucket(ctx context.Context, bucket string) (string, error) {
+	client, err := storage.NewS3Client(ctx)
+	if err != nil {
+		return "", fmt.Errorf("create S3 client: %w", err)
+	}
+	s3c, err := client.ClientForBucket(ctx, bucket)
+	if err != nil {
+		return "", err
+	}
+	// The advisory is a nice-to-have: a missing ListBucketIntelligentTieringConfigurations
+	// permission must not fail an otherwise healthy bucket.
+	resp, err := s3c.ListBucketIntelligentTieringConfigurations(ctx,
+		&s3.ListBucketIntelligentTieringConfigurationsInput{Bucket: &bucket})
+	if err != nil {
+		return "", nil
+	}
+	if len(resp.IntelligentTieringConfigurationList) > 0 {
+		return TieringEnabled, nil
+	}
+	return TieringNotConfigured, nil
 }
 
 // imageTagFromManifestKey converts a relative path like "myapp/v1.0" to "myapp:v1.0".

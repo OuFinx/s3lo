@@ -5,8 +5,6 @@ Manage per-image and bucket-wide configuration stored in `s3lo.yaml`.
 ```
 s3lo config set <ref> <key>=<value> [<key>=<value> ...]
 s3lo config get <ref>
-s3lo config remove <ref> [key]
-s3lo config recommend <bucket-ref>
 ```
 
 Both `s3://` and `local://` references are supported.
@@ -110,15 +108,28 @@ s3lo config get s3://my-bucket/myapp
 
     The `[image]` / `[default]` labels show where each value originates.
 
-## config remove
+## Unsetting a key
+
+An empty value unsets the key, at bucket scope as well as image scope — every
+key `config set` can write, it can also remove:
 
 ```bash
-# Remove all overrides for an image (reverts to bucket defaults)
-s3lo config remove s3://my-bucket/myapp
+# Drop one image override (reverts to the bucket default)
+s3lo config set s3://my-bucket/myapp immutable=
 
-# Remove a specific key
-s3lo config remove s3://my-bucket/myapp immutable
+# Drop the whole lifecycle block for an image
+s3lo config set s3://my-bucket/myapp lifecycle=
 
-# Remove all lifecycle overrides
-s3lo config remove s3://my-bucket/myapp lifecycle
+# Drop a single lifecycle field
+s3lo config set s3://my-bucket/ lifecycle.max_age=
+
+# Drop a bucket-wide setting
+s3lo config set s3://my-bucket/ chunked=
 ```
+
+An image whose last override is removed disappears from `s3lo.yaml` entirely.
+
+!!! note "Replaces `config remove`"
+    `s3lo config remove` was removed in v2.1 — it could not touch bucket-level
+    keys, so anything set on the bucket was unremovable. `key=` covers both
+    scopes.

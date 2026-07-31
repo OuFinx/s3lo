@@ -28,9 +28,13 @@ Use s3://bucket/image or s3://bucket/dev/* to set per-image overrides.
 Available keys:
   immutable              true/false
   chunked                true|false, default true (bucket-wide: store layers as shared chunks)
+  lifecycle              the whole lifecycle block (unset only)
   lifecycle.keep_last    number (e.g. 10)
   lifecycle.max_age      duration (e.g. 30d, 7d, 168h)
-  lifecycle.keep_tags    comma-separated tags (e.g. latest,stable)`,
+  lifecycle.keep_tags    comma-separated tags (e.g. latest,stable)
+
+An empty value unsets the key, at bucket or image scope: "immutable=" removes
+the setting rather than storing a value.`,
 	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
 
   # Bucket defaults
@@ -38,7 +42,12 @@ Available keys:
 
   # Per-image
   s3lo config set s3://my-bucket/myapp immutable=true lifecycle.keep_last=5 lifecycle.keep_tags=stable,latest
-  s3lo config set s3://my-bucket/dev/* lifecycle.max_age=7d lifecycle.keep_tags=latest`,
+  s3lo config set s3://my-bucket/dev/* lifecycle.max_age=7d lifecycle.keep_tags=latest
+
+  # Unset with an empty value
+  s3lo config set s3://my-bucket/myapp immutable=          # drop the image override
+  s3lo config set s3://my-bucket/myapp lifecycle=          # drop the whole lifecycle block
+  s3lo config set s3://my-bucket/ chunked=                 # drop the bucket-wide setting`,
 	Args: cobra.MinimumNArgs(2),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		bucket, imageName, err := image.ParseConfigRef(args[0])
@@ -140,88 +149,18 @@ var configGetCmd = &cobra.Command{
 	},
 }
 
-// config remove s3://bucket/myapp
-// config remove s3://bucket/myapp immutable
-// config remove s3://bucket/myapp lifecycle
-var configRemoveCmd = &cobra.Command{
-	Use:   "remove <s3-ref> [key]",
-	Short: "Remove configuration for an image",
-	Long: `Remove per-image configuration overrides.
-
-Without a key argument, removes all overrides for the image (reverts to defaults).
-With a key, removes only that setting.
-
-Valid keys to remove: immutable, lifecycle`,
-	Example: `  Docs: https://oufinx.github.io/s3lo/commands/config/
-
-  s3lo config remove s3://my-bucket/myapp              # remove all overrides
-  s3lo config remove s3://my-bucket/myapp immutable     # remove immutable override
-  s3lo config remove s3://my-bucket/myapp lifecycle     # remove lifecycle override`,
-	Args: cobra.RangeArgs(1, 2),
-	RunE: func(cmd *cobra.Command, args []string) error {
-		bucket, imageName, err := image.ParseConfigRef(args[0])
-		if err != nil {
-			return err
-		}
-		if imageName == "" {
-			return fmt.Errorf("image name required (use s3://bucket/image, not s3://bucket/)")
-		}
-
-		client, err := storage.NewBackendFromRef(cmd.Context(), args[0])
-		if err != nil {
-			return err
-		}
-
-		cfg, err := image.GetBucketConfig(cmd.Context(), client, bucket)
-		if err != nil {
-			return err
-		}
-
-		if cfg.Images == nil {
-			fmt.Printf("No overrides found for %s\n", imageName)
-			return nil
-		}
-
-		if len(args) == 1 {
-			// Remove all overrides for this image.
-			delete(cfg.Images, imageName)
-			fmt.Printf("Removed all config overrides for %s\n", imageName)
-		} else {
-			key := args[1]
-			img, ok := cfg.Images[imageName]
-			if !ok {
-				fmt.Printf("No overrides found for %s\n", imageName)
-				return nil
-			}
-			switch key {
-			case "immutable":
-				img.Immutable = nil
-			case "lifecycle":
-				img.Lifecycle = nil
-			default:
-				return fmt.Errorf("unknown key %q (valid keys: immutable, lifecycle)", key)
-			}
-			// If no overrides remain, remove the image entry entirely.
-			if img.Immutable == nil && img.Lifecycle == nil {
-				delete(cfg.Images, imageName)
-			} else {
-				cfg.Images[imageName] = img
-			}
-			fmt.Printf("Removed %s override for %s\n", key, imageName)
-		}
-
-		return image.SetBucketConfig(cmd.Context(), client, bucket, cfg)
-	},
-}
-
 // applyConfigKV applies a single key=value pair to the config for the given image name
-// (empty imageName = bucket default).
+// (empty imageName = bucket default). An empty value unsets the key.
 func applyConfigKV(cfg *image.BucketConfig, imageName, key, val string) error {
 	// Chunking applies to the whole bucket: the chunk store is shared, so there is
 	// no coherent meaning to enabling it for one image only.
 	if key == "chunked" {
 		if imageName != "" {
 			return fmt.Errorf("chunked is a bucket-wide setting: set it on the bucket reference, not on image %q", imageName)
+		}
+		if val == "" {
+			cfg.Chunked = nil
+			return nil
 		}
 		b, err := strconv.ParseBool(val)
 		if err != nil {
@@ -240,12 +179,38 @@ func applyConfigKV(cfg *image.BucketConfig, imageName, key, val string) error {
 	if err := applyToImageConfig(&img, key, val); err != nil {
 		return err
 	}
+	// An image entry with nothing left in it is noise in s3lo.yaml.
+	if img.Immutable == nil && img.Lifecycle == nil {
+		delete(cfg.Images, imageName)
+		return nil
+	}
 	cfg.Images[imageName] = img
 	return nil
 }
 
 func applyToImageConfig(img *image.ImageConfig, key, val string) error {
+	// An empty value means "unset", so `config set` is reversible at both
+	// bucket and image scope.
+	if val == "" {
+		switch key {
+		case "immutable":
+			img.Immutable = nil
+		case "lifecycle":
+			img.Lifecycle = nil
+		case "lifecycle.keep_last":
+			clearLifecycle(img, func(lc *image.LifecycleImageConfig) { lc.KeepLast = 0 })
+		case "lifecycle.max_age":
+			clearLifecycle(img, func(lc *image.LifecycleImageConfig) { lc.MaxAge = "" })
+		case "lifecycle.keep_tags":
+			clearLifecycle(img, func(lc *image.LifecycleImageConfig) { lc.KeepTags = nil })
+		default:
+			return fmt.Errorf("unknown key %q (valid keys: chunked, immutable, lifecycle, lifecycle.keep_last, lifecycle.max_age, lifecycle.keep_tags)", key)
+		}
+		return nil
+	}
 	switch key {
+	case "lifecycle":
+		return fmt.Errorf("lifecycle is a block, not a value: use lifecycle.keep_last / lifecycle.max_age / lifecycle.keep_tags, or lifecycle= to unset it")
 	case "immutable":
 		b, err := strconv.ParseBool(val)
 		if err != nil {
@@ -282,6 +247,18 @@ func applyToImageConfig(img *image.ImageConfig, key, val string) error {
 		return fmt.Errorf("unknown key %q (valid keys: chunked, immutable, lifecycle.keep_last, lifecycle.max_age, lifecycle.keep_tags)", key)
 	}
 	return nil
+}
+
+// clearLifecycle drops one lifecycle field, and the whole block once nothing is
+// left in it — an all-zero lifecycle would otherwise linger in s3lo.yaml.
+func clearLifecycle(img *image.ImageConfig, clear func(*image.LifecycleImageConfig)) {
+	if img.Lifecycle == nil {
+		return
+	}
+	clear(img.Lifecycle)
+	if img.Lifecycle.KeepLast == 0 && img.Lifecycle.MaxAge == "" && len(img.Lifecycle.KeepTags) == 0 {
+		img.Lifecycle = nil
+	}
 }
 
 // --- output formatting ---
@@ -381,6 +358,5 @@ func init() {
 	configGetCmd.Flags().StringP("output", "o", "", "Output format: json, yaml, or table (default)")
 	configCmd.AddCommand(configSetCmd)
 	configCmd.AddCommand(configGetCmd)
-	configCmd.AddCommand(configRemoveCmd)
 	rootCmd.AddCommand(configCmd)
 }

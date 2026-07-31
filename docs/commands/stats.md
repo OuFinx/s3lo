@@ -3,16 +3,16 @@
 Show storage usage, deduplication savings, and estimated monthly cost.
 
 ```
-s3lo bucket stats <s3-bucket-ref> [--layers] [--output json|yaml]
+s3lo stats <s3-bucket-ref> [--layers] [--output json|yaml]
 ```
 
 ## Examples
 
 ```bash
-s3lo bucket stats s3://my-bucket/
-s3lo bucket stats local://./local-s3/
-s3lo bucket stats s3://my-bucket/ --layers
-s3lo bucket stats s3://my-bucket/ --layers --output json
+s3lo stats s3://my-bucket/
+s3lo stats local://./local-s3/
+s3lo stats s3://my-bucket/ --layers
+s3lo stats s3://my-bucket/ --layers --output json
 ```
 
 ## Output
