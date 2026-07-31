@@ -72,7 +72,6 @@ nav:
     - clean: commands/clean.md
     - stats: commands/stats.md
     - config: commands/config.md
-    - tui: commands/tui.md
     - sign: commands/sign.md
     - verify: commands/verify.md
   - Concepts:

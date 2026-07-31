@@ -60,30 +60,8 @@ Type "clear"
 Enter
 Sleep 300ms
 
-# TUI
-Type "s3lo tui s3://s3lo-demo/"
+# Layer sharing across tags
+Type "s3lo bucket stats s3://s3lo-demo/ --layers"
 Sleep 400ms
 Enter
-Sleep 3s
-
-# move down to myapp, which has four tags
-Down
-Sleep 1500ms
-
-# drill into it: tag list plus the live stats panel on the right
-Enter
-Sleep 3s
-
-Down
-Sleep 1s
-Down
-Sleep 1500ms
-
-# layer sharing matrix
-Type "g"
 Sleep 6s
-
-Escape
-Sleep 1500ms
-Type "q"
-Sleep 1500ms

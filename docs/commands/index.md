@@ -15,7 +15,6 @@ s3lo has a focused set of commands — one for each operation you'd do with a co
 | [`clean`](clean.md) | Prune old tags and garbage collect unreferenced blobs |
 | [`stats`](stats.md) | Show storage usage, deduplication savings, and cost estimate |
 | [`config`](config.md) | Manage per-image and bucket-wide configuration |
-| [`tui`](tui.md) | Interactive terminal UI for browsing images and managing lifecycle |
 | [`sign`](sign.md) | Sign an image manifest with AWS KMS or a local key |
 | [`verify`](verify.md) | Verify an image signature (exits 0/1/2 for CI gates) |
 
