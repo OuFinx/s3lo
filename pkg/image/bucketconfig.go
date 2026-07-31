@@ -36,7 +36,10 @@ type BucketConfig struct {
 	Images  map[string]ImageConfig `yaml:"images,omitempty" json:"images,omitempty"`
 
 	// Chunked makes push store layers as content-defined chunks shared across
-	// every image in the bucket, instead of one object per layer.
+	// every image in the bucket, instead of one object per layer. Unset means on:
+	// it is the behaviour every measured claim about s3lo describes, and a default
+	// that has to be discovered in the documentation is a default that most users
+	// never get. Set it to false to store whole layers.
 	//
 	// It is deliberately bucket-wide rather than per-image: the chunk store is
 	// shared, so a per-image switch would only make reasoning about garbage
@@ -44,6 +47,9 @@ type BucketConfig struct {
 	// off is safe at any time — reads resolve a layer through its recipe when one
 	// exists and fall back to a whole-layer blob when it does not, so a bucket
 	// may hold both without migration.
+	//
+	// The one thing it is not safe against is an s3lo older than v2.0.0, which
+	// has no notion of a recipe and cannot read a chunked layer at all.
 	Chunked *bool `yaml:"chunked,omitempty" json:"chunked,omitempty"`
 
 	// ChunkFormat records the chunking parameters this bucket's chunks were
@@ -54,9 +60,11 @@ type BucketConfig struct {
 	ChunkFormat int `yaml:"chunk_format,omitempty" json:"chunk_format,omitempty"`
 }
 
-// ChunkedEnabled reports whether push should store layers as chunks.
+// ChunkedEnabled reports whether push should store layers as chunks. Anything
+// that has not explicitly opted out gets chunking, including a bucket with no
+// config object at all.
 func (c *BucketConfig) ChunkedEnabled() bool {
-	return c != nil && c.Chunked != nil && *c.Chunked
+	return c == nil || c.Chunked == nil || *c.Chunked
 }
 
 // EffectiveConfig returns the resolved configuration for imageName by merging

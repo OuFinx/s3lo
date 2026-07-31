@@ -8,6 +8,28 @@ import (
 	"testing"
 )
 
+// TestChunkedEnabled_DefaultsOn pins the default. Every measured claim about
+// s3lo — the 4 MB re-push, the deduplication, the smaller bucket — describes a
+// chunked bucket, so a user who never touches the config must get one.
+func TestChunkedEnabled_DefaultsOn(t *testing.T) {
+	off, on := false, true
+	cases := []struct {
+		name string
+		cfg  *BucketConfig
+		want bool
+	}{
+		{"no config object at all", nil, true},
+		{"config present, key unset", &BucketConfig{}, true},
+		{"explicitly disabled", &BucketConfig{Chunked: &off}, false},
+		{"explicitly enabled", &BucketConfig{Chunked: &on}, true},
+	}
+	for _, tc := range cases {
+		if got := tc.cfg.ChunkedEnabled(); got != tc.want {
+			t.Errorf("%s: ChunkedEnabled() = %v, want %v", tc.name, got, tc.want)
+		}
+	}
+}
+
 // TestEnsureChunkFormat_RejectsMismatch guards the failure that would be almost
 // invisible: chunks written under different parameters never match, so a bucket
 // would keep a full second copy of everything while reporting 0% deduplication

@@ -8,21 +8,25 @@ addresses layers, and a layer is the smallest thing it can talk about.
 s3lo is not a registry and is not bound by that. It can split a layer and address
 the pieces.
 
-## Turning it on
+## Turning it off
 
-Chunking is a property of the bucket, not of an image:
+Chunking is on by default, and is a property of the bucket rather than of an
+image. The chunk store is shared across every image in the bucket, so images
+built on the same base share chunks even when their layers differ.
+
+To store whole layers instead:
 
 ```bash
-s3lo config set s3://my-bucket/ chunked=true
+s3lo config set s3://my-bucket/ chunked=false
 ```
 
-Every push after that stores layers as chunks. The chunk store is shared across
-every image in the bucket, so images built on the same base share chunks even
-when their layers differ.
-
-It is safe to switch on or off at any time. Reads resolve a layer through its
+It is safe to switch either way at any time. Reads resolve a layer through its
 recipe when one exists and fall back to a whole-layer blob when it does not, so
 a bucket can hold both forms with no migration step.
+
+The one incompatibility is with s3lo before v2.0.0, which has no notion of a
+recipe and cannot read a chunked layer at all. If some clients are still on v1,
+set `chunked=false` on that bucket until they are not.
 
 ## What it does to a re-push
 
