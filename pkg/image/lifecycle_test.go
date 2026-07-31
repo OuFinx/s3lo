@@ -1,6 +1,9 @@
 package image
 
 import (
+	"context"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -65,3 +68,65 @@ func TestEvaluateTags_KeepLastIsRetentionFloor(t *testing.T) {
 		}
 	})
 }
+
+// TestApplyLifecycle_SkipsImmutableImages covers a data-loss bug: lifecycle was
+// a third deletion path that never consulted the immutable flag. With
+// `immutable: true` and `keep_last: 1`, `s3lo delete` correctly refused to
+// remove a tag while `s3lo bucket clean --confirm --tags` deleted four of them
+// in the same store, with no --force and no warning.
+func TestApplyLifecycle_SkipsImmutableImages(t *testing.T) {
+	storeDir := t.TempDir()
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(storeDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldCwd)
+
+	tags := []string{"v1", "v2", "v3", "v4", "v5"}
+	for _, tag := range tags {
+		dir := filepath.Join(".", "st", "manifests", "myapp", tag)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "manifest.json"),
+			[]byte(`{"schemaVersion":2,"layers":[]}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	cfg := &BucketConfig{
+		Default: ImageConfig{Lifecycle: &LifecycleImageConfig{KeepLast: 1}},
+		Images:  map[string]ImageConfig{"myapp": {Immutable: boolPtr(true)}},
+	}
+
+	res, err := ApplyLifecycle(context.Background(), "local://./st/", cfg, false)
+	if err != nil {
+		t.Fatalf("ApplyLifecycle: %v", err)
+	}
+	if res.Deleted != 0 {
+		t.Errorf("deleted %d tag(s) of an immutable image, want 0", res.Deleted)
+	}
+	if res.SkippedImmutable != 1 {
+		t.Errorf("SkippedImmutable = %d, want 1", res.SkippedImmutable)
+	}
+	for _, tag := range tags {
+		if _, err := os.Stat(filepath.Join(".", "st", "manifests", "myapp", tag, "manifest.json")); err != nil {
+			t.Errorf("tag %s was deleted from an immutable image: %v", tag, err)
+		}
+	}
+
+	// The guard must be immutability, not a blanket refusal to prune.
+	cfg.Images["myapp"] = ImageConfig{Immutable: boolPtr(false)}
+	res, err = ApplyLifecycle(context.Background(), "local://./st/", cfg, true)
+	if err != nil {
+		t.Fatalf("ApplyLifecycle (mutable, dry run): %v", err)
+	}
+	if res.Deleted != len(tags)-1 {
+		t.Errorf("mutable image: would delete %d, want %d", res.Deleted, len(tags)-1)
+	}
+}
+
+func boolPtr(b bool) *bool { return &b }

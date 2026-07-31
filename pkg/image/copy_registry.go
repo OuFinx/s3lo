@@ -62,21 +62,21 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		destKey := "blobs/sha256/" + encoded
 		exists, err := s3c.HeadObjectExists(ctx, destParsed.Bucket, destKey)
 		if err != nil {
-			return fmt.Errorf("check destination blob %s: %w", encoded[:12], err)
+			return fmt.Errorf("check destination blob %s: %w", short(encoded), err)
 		}
 		if exists {
 			blobsSkipped.Add(1)
 			if platform != "" && opts.OnBlob != nil {
 				opts.OnBlob(platform, encoded, knownSize, true)
 			}
-			slog.Debug("registry blob already exists, skipping", "digest", encoded[:12])
+			slog.Debug("registry blob already exists, skipping", "digest", short(encoded))
 			return nil
 		}
 
 		blobURL := fmt.Sprintf("https://%s/v2/%s/blobs/%s", reg, image, digest)
 		tmpPath, err := rc.fetchBlobToFile(ctx, blobURL, reg, image)
 		if err != nil {
-			return fmt.Errorf("fetch blob %s: %w", encoded[:12], err)
+			return fmt.Errorf("fetch blob %s: %w", short(encoded), err)
 		}
 		defer os.Remove(tmpPath)
 
@@ -90,17 +90,17 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 		// content-addressable key — a buggy or compromised upstream registry must
 		// not be able to poison the bucket with mismatched content.
 		if err := verifyFileDigest(tmpPath, encoded); err != nil {
-			return fmt.Errorf("verify blob %s: %w", encoded[:12], err)
+			return fmt.Errorf("verify blob %s: %w", short(encoded), err)
 		}
 
 		if err := s3c.UploadFile(ctx, tmpPath, destParsed.Bucket, destKey, storage.StorageClassIntelligentTiering); err != nil {
-			return fmt.Errorf("upload blob %s: %w", encoded[:12], err)
+			return fmt.Errorf("upload blob %s: %w", short(encoded), err)
 		}
 		blobsCopied.Add(1)
 		if platform != "" && opts.OnBlob != nil {
 			opts.OnBlob(platform, encoded, actualSize, false)
 		}
-		slog.Debug("registry blob uploaded", "digest", encoded[:12], "size", actualSize)
+		slog.Debug("registry blob uploaded", "digest", short(encoded), "size", actualSize)
 		return nil
 	}
 
@@ -184,13 +184,13 @@ func copyRegistryToS3(ctx context.Context, srcRef, destRef string, opts CopyOpti
 					destKey := "blobs/sha256/" + encoded
 					exists, err := s3c.HeadObjectExists(gCtx, destParsed.Bucket, destKey)
 					if err != nil {
-						return fmt.Errorf("check destination manifest blob %s: %w", encoded[:12], err)
+						return fmt.Errorf("check destination manifest blob %s: %w", short(encoded), err)
 					}
 					if exists {
 						return nil
 					}
 					if err := verifyBytesDigest(pi.data, encoded); err != nil {
-						return fmt.Errorf("verify platform manifest %s: %w", encoded[:12], err)
+						return fmt.Errorf("verify platform manifest %s: %w", short(encoded), err)
 					}
 					return s3c.PutObject(gCtx, destParsed.Bucket, destKey, pi.data)
 				})

@@ -110,3 +110,96 @@ func TestVerify_TamperedManifest(t *testing.T) {
 		t.Error("expected Verified=false after tamper")
 	}
 }
+
+// TestVerify_RejectsTransplantedSignature performs the attack directly: an
+// adversary with bucket write access copies a legitimately signed manifest and
+// its signature record onto a second tag. Both tags then hold byte-identical
+// manifests and a genuine signature made by the real key.
+//
+// Under the old payload ("<digest>\n") this passed, because the signed bytes
+// said nothing about where the manifest lived. Promotion of a staging build to
+// a production tag, and rollback of a tag to an older signed release, were both
+// available to anyone who could write to the bucket.
+func TestVerify_RejectsTransplantedSignature(t *testing.T) {
+	ctx := context.Background()
+
+	pass := func(_ bool) ([]byte, error) { return []byte("testpass"), nil }
+	keys, err := cosign.GenerateKeyPair(pass)
+	if err != nil {
+		t.Fatalf("generate key pair: %v", err)
+	}
+	keyDir := t.TempDir()
+	keyFile := filepath.Join(keyDir, "cosign.key")
+	pubFile := filepath.Join(keyDir, "cosign.pub")
+	if err := os.WriteFile(keyFile, keys.PrivateBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pubFile, keys.PublicBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("COSIGN_PASSWORD", "testpass")
+
+	storeDir := t.TempDir()
+	oldCwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(storeDir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(oldCwd)
+
+	manifest := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json","layers":[]}`)
+	write := func(image, tag string) string {
+		dir := filepath.Join(".", "mystore", "manifests", image, tag)
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "manifest.json"), manifest, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+
+	// Same bytes published at a signed staging tag and an unsigned prod tag.
+	signedDir := write("staging", "v1.0")
+	victimDir := write("prod", "release")
+
+	signed := "local://./mystore/staging:v1.0"
+	victim := "local://./mystore/prod:release"
+
+	res, err := Sign(ctx, signed, keyFile)
+	if err != nil {
+		t.Fatalf("sign: %v", err)
+	}
+
+	// The attack: lift the signature record verbatim onto the victim tag.
+	sigName := res.KeyID + ".json"
+	sigBytes, err := os.ReadFile(filepath.Join(signedDir, "signatures", sigName))
+	if err != nil {
+		t.Fatalf("read signature: %v", err)
+	}
+	if err := os.MkdirAll(filepath.Join(victimDir, "signatures"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(victimDir, "signatures", sigName), sigBytes, 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// The genuine tag must still verify.
+	if got, err := Verify(ctx, signed, pubFile); err != nil {
+		t.Fatalf("verify signed: %v", err)
+	} else if !got.Verified {
+		t.Fatalf("legitimately signed image failed to verify: %s", got.Reason)
+	}
+
+	// The transplanted one must not.
+	got, err := Verify(ctx, victim, pubFile)
+	if err != nil {
+		t.Fatalf("verify victim: %v", err)
+	}
+	if got.Verified {
+		t.Fatal("SECURITY: a signature transplanted from another image verified")
+	}
+	t.Logf("transplant rejected: %s", got.Reason)
+}

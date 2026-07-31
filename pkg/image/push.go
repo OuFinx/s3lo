@@ -185,7 +185,7 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 			if err != nil {
 				return err
 			}
-			slog.Debug("stored blob", "digest", entry.Name()[:12], "size", info.Size(),
+			slog.Debug("stored blob", "digest", short(entry.Name()), "size", info.Size(),
 				"chunks", stats.Chunks, "uploaded", stats.BytesUploaded, "skipped", skipped)
 
 			onBlobMu.Lock()

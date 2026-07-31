@@ -51,9 +51,17 @@ For GCS, Azure, and local backends, blobs are streamed.`,
 		cacheEntries, _ := cmd.Flags().GetInt("cache-entries")
 		cacheTTL, _ := cmd.Flags().GetDuration("cache-ttl")
 
-		bucket, _, err := image.ParseConfigRef(args[0])
+		bucket, scoped, err := image.ParseConfigRef(args[0])
 		if err != nil {
 			return err
+		}
+		// serve exposes the whole bucket; it has no notion of a sub-scope. A ref
+		// carrying one was accepted and then discarded, so `s3lo serve
+		// s3://bucket/team-a` printed "Serving s3://bucket/team-a/" while every
+		// other image in the bucket stayed reachable.
+		if scoped != "" {
+			return fmt.Errorf("serve takes a bucket, not an image or prefix: use %s://%s/ (serving is always bucket-wide)",
+				refScheme(args[0]), bucket)
 		}
 
 		client, err := storage.NewBackendFromRef(cmd.Context(), args[0])

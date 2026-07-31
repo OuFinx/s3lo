@@ -1,15 +1,19 @@
 package image
 
 import (
+	"bytes"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/sigstore/cosign/v2/pkg/cosign"
+
+	"github.com/OuFinx/s3lo/v2/pkg/ref"
 )
 
 func TestKeyIDSlug(t *testing.T) {
@@ -37,12 +41,40 @@ func TestKeyIDSlug(t *testing.T) {
 	}
 }
 
-func TestSigningPayload(t *testing.T) {
-	digest := "sha256:abc123"
-	payload := signingPayload(digest)
-	want := []byte("sha256:abc123\n")
-	if string(payload) != string(want) {
-		t.Errorf("payload = %q, want %q", payload, want)
+// TestSigningPayload_BindsToLocation pins the property that makes a signature
+// non-transplantable. The payload used to be the digest alone, so a signature
+// lifted from one tag verified against any other tag holding the same manifest
+// — enough to promote a staging build to production, or to roll a tag back to
+// an older signed release, using only bucket write access.
+func TestSigningPayload_BindsToLocation(t *testing.T) {
+	const digest = "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+
+	base := ref.SigningPayload("prod", "app", "v1", digest)
+
+	// Every coordinate must change the signed bytes.
+	for _, tc := range []struct {
+		name                     string
+		bucket, image, tag, dgst string
+	}{
+		{"different bucket", "staging", "app", "v1", digest},
+		{"different image", "prod", "other", "v1", digest},
+		{"different tag", "prod", "app", "v2", digest},
+		{"different digest", "prod", "app", "v1", "sha256:" + strings.Repeat("a", 64)},
+	} {
+		other := ref.SigningPayload(tc.bucket, tc.image, tc.tag, tc.dgst)
+		if bytes.Equal(base, other) {
+			t.Errorf("%s: payload unchanged (%q) — signature would be transplantable", tc.name, base)
+		}
+	}
+
+	// The digest alone must not be the payload, or v1 signatures stay valid.
+	if bytes.Equal(base, []byte(digest+"\n")) {
+		t.Error("payload is the bare digest; the location binding is missing")
+	}
+
+	// Same coordinates must be stable, or nothing ever verifies.
+	if !bytes.Equal(base, ref.SigningPayload("prod", "app", "v1", digest)) {
+		t.Error("payload is not deterministic")
 	}
 }
 

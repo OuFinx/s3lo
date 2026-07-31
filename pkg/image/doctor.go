@@ -138,7 +138,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 			var missing []string
 			for digest := range refs {
 				if _, ok := storedBlobs[digest]; !ok {
-					missing = append(missing, "sha256:"+digest[:12]+"...")
+					missing = append(missing, "sha256:"+short(digest)+"...")
 				}
 			}
 

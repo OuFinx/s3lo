@@ -18,6 +18,11 @@ type LifecycleResult struct {
 	Evaluated int
 	Deleted   int
 	DryRun    bool
+	// SkippedImmutable counts images left untouched because they are configured
+	// immutable. Lifecycle has no --force equivalent: an immutable image is
+	// exempt from automated pruning, and `s3lo delete --force` is the only way
+	// to remove one of its tags.
+	SkippedImmutable int
 }
 
 // tagMeta holds metadata about a single image tag needed for lifecycle evaluation.
@@ -100,6 +105,15 @@ func ApplyLifecycle(ctx context.Context, s3BucketRef string, cfg *BucketConfig, 
 	result := &LifecycleResult{DryRun: dryRun}
 
 	for imageName, tags := range imageTagsMap {
+		// Lifecycle is the third path that deletes tags, alongside `delete` and
+		// the write policy. Both of those refuse an immutable image and require
+		// --force; this one used to ignore immutability entirely, so `bucket
+		// clean` silently deleted tags that `delete` had just refused to touch.
+		if cfg.IsImmutable(imageName) {
+			result.SkippedImmutable++
+			continue
+		}
+
 		lc := cfg.EffectiveConfig(imageName).Lifecycle
 		if lc == nil || (lc.KeepLast == 0 && lc.MaxAge == "" && len(lc.KeepTags) == 0) {
 			continue // no lifecycle policy for this image

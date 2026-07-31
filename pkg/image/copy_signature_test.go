@@ -52,7 +52,12 @@ func setupSignedMultiArchStore(t *testing.T) (bucketRelDir, keyFile, pubFile str
 // The multi-arch branch of copy used to write manifest.json and nothing else, so
 // copying a signed multi-arch image produced an unsigned one — and said nothing.
 // The image looked fine until something that enforces signatures refused it.
-func TestCopy_MultiArchCarriesSignature(t *testing.T) {
+// TestCopy_DropsSignatureOnRelocation covers a copy that leaves the manifest
+// bytes untouched but publishes them under a new tag. The signature is bound to
+// bucket/image:tag, so it cannot follow — and carrying it anyway is precisely
+// the transplant that used to let a signed staging image be promoted to a
+// production tag without the signing key.
+func TestCopy_DropsSignatureOnRelocation(t *testing.T) {
 	ctx := context.Background()
 	_, keyFile, pubFile := setupSignedMultiArchStore(t)
 
@@ -66,16 +71,26 @@ func TestCopy_MultiArchCarriesSignature(t *testing.T) {
 	if err != nil {
 		t.Fatalf("copy: %v", err)
 	}
-	if res.SignaturesDropped != 0 {
-		t.Errorf("an unfiltered copy dropped %d signature(s), want 0", res.SignaturesDropped)
+	if res.SignaturesDropped != 1 {
+		t.Errorf("relocating copy dropped %d signature(s), want 1", res.SignaturesDropped)
 	}
 
+	// The destination must be plainly unsigned, not signed-and-broken.
 	got, err := Verify(ctx, dest, pubFile)
 	if err != nil {
 		t.Fatalf("verify copy: %v", err)
 	}
-	if !got.Verified {
-		t.Errorf("the copy does not verify: %s", got.Reason)
+	if got.Verified {
+		t.Error("the relocated copy verified; the signature was transplanted")
+	}
+
+	// The source must still verify — dropping is a destination-side decision.
+	srcGot, err := Verify(ctx, src, pubFile)
+	if err != nil {
+		t.Fatalf("verify source: %v", err)
+	}
+	if !srcGot.Verified {
+		t.Errorf("source no longer verifies: %s", srcGot.Reason)
 	}
 }
 

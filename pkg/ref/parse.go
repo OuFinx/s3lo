@@ -2,6 +2,7 @@ package ref
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -52,8 +53,11 @@ func Parse(raw string) (Reference, error) {
 	if atIdx := strings.Index(imageAndTag, "@"); atIdx >= 0 {
 		ref.Image = imageAndTag[:atIdx]
 		ref.Digest = imageAndTag[atIdx+1:]
-		if ref.Digest == "" {
-			return Reference{}, fmt.Errorf("invalid reference %q: empty digest after @", raw)
+		if !digestPattern.MatchString(ref.Digest) {
+			return Reference{}, fmt.Errorf("invalid reference %q: malformed digest %q (want algo:hex, e.g. sha256:<64 hex chars>)", raw, ref.Digest)
+		}
+		if err := validateImage(ref.Image); err != nil {
+			return Reference{}, fmt.Errorf("invalid reference %q: %w", raw, err)
 		}
 		return ref, nil
 	}
@@ -70,7 +74,42 @@ func Parse(raw string) (Reference, error) {
 		ref.Tag = "latest"
 	}
 
+	if err := validateImage(ref.Image); err != nil {
+		return Reference{}, fmt.Errorf("invalid reference %q: %w", raw, err)
+	}
+	if !safeSegment(ref.Tag) {
+		return Reference{}, fmt.Errorf("invalid reference %q: illegal tag %q (a tag must be a single path segment and cannot be \".\" or \"..\")", raw, ref.Tag)
+	}
+
 	return ref, nil
+}
+
+// digestPattern matches an OCI content digest: a lowercase algorithm followed
+// by its hex encoding. Anything else is rejected at parse time so that no
+// caller can splice an unvalidated string into a storage key or a file path.
+var digestPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.+_-][a-z0-9]+)*:[a-fA-F0-9]{32,128}$`)
+
+// safeSegment reports whether s can be used as one path segment of a storage
+// key. Empty, "." and ".." are rejected because every backend joins these into
+// a key prefix, and the local backend resolves them against the filesystem.
+func safeSegment(s string) bool {
+	return s != "" && s != "." && s != ".." && !strings.ContainsAny(s, "/\\")
+}
+
+// validateImage checks every component of a (possibly nested) image name.
+// Without this, a tag or image component of ".." escapes the manifests prefix:
+// "s3lo delete local://./store/app:.." deleted every image in the store,
+// bypassing the immutability check, and reported success.
+func validateImage(image string) error {
+	if image == "" {
+		return fmt.Errorf("empty image name")
+	}
+	for _, part := range strings.Split(image, "/") {
+		if !safeSegment(part) {
+			return fmt.Errorf("illegal image name %q: component %q is not a valid path segment", image, part)
+		}
+	}
+	return nil
 }
 
 // splitBucketPath splits a path (after the scheme://) into (bucket, imageAndTag).
@@ -143,4 +182,19 @@ func (r Reference) String() string {
 		return fmt.Sprintf("%s://%s/%s@%s", scheme, r.Bucket, r.Image, r.Digest)
 	}
 	return fmt.Sprintf("%s://%s/%s:%s", scheme, r.Bucket, r.Image, r.Tag)
+}
+
+// SigningPayload returns the canonical bytes covered by an image signature.
+//
+// The payload binds the signature to the exact location it was made for, so a
+// signature cannot be transplanted onto a different tag, image or bucket. Both
+// the signer and every verifier build these bytes from the reference under
+// inspection; nothing is ever read back out of the stored signature record.
+//
+// Before this binding existed the payload was the manifest digest alone, which
+// made a valid signature freely portable: an attacker with bucket write access
+// could copy a signed staging manifest and its signature onto a production tag,
+// or roll a tag back to an older signed release, and verification still passed.
+func SigningPayload(bucket, image, tag, digest string) []byte {
+	return []byte("s3lo-signature-v2\n" + bucket + "/" + image + ":" + tag + "\n" + digest + "\n")
 }
