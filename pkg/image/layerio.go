@@ -124,6 +124,16 @@ func copyChunkedLayer(ctx context.Context, srcClient, destClient storage.Backend
 		}
 	}
 
+	// The file index travels with the layer, or the copy silently loses per-file
+	// reads. It is optional: a layer pushed before indexes existed has none.
+	if indexData, err := srcClient.GetObject(ctx, srcBucket, chunkstore.IndexKey(digest)); err == nil {
+		if err := destClient.PutObject(ctx, destBucket, chunkstore.IndexKey(digest), indexData); err != nil {
+			return true, fmt.Errorf("write index %s: %w", short(digest), err)
+		}
+	} else if !storage.IsNotFound(err) {
+		return true, fmt.Errorf("fetch index %s: %w", short(digest), err)
+	}
+
 	// The recipe is written last: until it exists the layer is not resolvable,
 	// which matches how push publishes a tag only once its blobs are in place.
 	recipeData, err := srcClient.GetObject(ctx, srcBucket, chunkstore.RecipeKey(digest))

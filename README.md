@@ -15,6 +15,7 @@ Use S3, GCS, Azure Blob, or local storage as a container image registry. Faster 
 |---|---|---|
 | **Re-push after editing one file** | whole layer again | one chunk (~4 MB) |
 | **Deduplication** | whole layers only | content-defined chunks, bucket-wide |
+| **Read one file out of an image** | pull the layer holding it | fetch the chunks holding it (`s3lo cat`) |
 | **First push, 1.8 GB image** | 58.9 s | 42.7 s |
 | **Cold pull, 1.8 GB image** | 15.65 s | 15.14 s |
 | **Storage cost** | $0.10/GB/month | $0.023/GB/month |
@@ -132,6 +133,9 @@ s3lo list s3://my-bucket/
 
 # Inspect image metadata
 s3lo inspect s3://my-bucket/myapp:v1.0
+
+# Read one file out of an image, fetching only the chunks that hold it
+s3lo cat s3://my-bucket/myapp:v1.0 /etc/os-release
 
 # Show storage stats and deduplication savings
 s3lo bucket stats s3://my-bucket/
