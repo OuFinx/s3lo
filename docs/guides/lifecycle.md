@@ -129,8 +129,9 @@ s3lo clean s3://my-bucket/ --blobs --confirm
 s3lo config get s3://my-bucket/
 ```
 
-Use `config recommend` to get analysis and suggestions based on actual bucket state:
+To see what a policy would actually remove before committing to it, run `clean`
+without `--confirm` — it is a dry run by default:
 
 ```bash
-s3lo config recommend s3://my-bucket/
+s3lo clean s3://my-bucket/
 ```

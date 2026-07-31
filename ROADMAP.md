@@ -1,98 +1,48 @@
 # s3lo Roadmap
 
-## v1.1.0 — Global Layer Deduplication ✓
+## Shipping in v2
 
-- [x] Push blobs to global bucket-level store (`bucket/blobs/sha256/`)
-- [x] Pull blobs from global bucket-level store
-- [x] Backward compatible pull (support v1.0.0 and v1.1.0 layouts)
-- [x] `s3lo migrate` — convert v1.0.0 layout to v1.1.0
-- [x] `s3lo gc` — garbage collect unreferenced blobs
-- [x] `s3lo delete` — remove image tag
-- [x] S3 Intelligent-Tiering for blob storage
-- [x] Update list and inspect for v1.1.0 layout
+The command set as it stands:
 
-## v1.2.0 — Lifecycle & Operations ✓
+| | |
+|---|---|
+| `push` `pull` `copy` `delete` | move images between Docker, registries and object storage |
+| `list` `inspect` `stats` `cat` | read what is stored, including one file out of an image |
+| `sign` `verify` | cosign signing and a CI-gateable verification exit code |
+| `doctor` `clean` `config` | bucket health, retention, per-image settings |
+| `serve` | OCI Distribution Spec endpoint, so `docker pull` works directly |
 
-- [x] `s3lo clean` — prune old tags + GC unreferenced blobs in one command
-- [x] `s3lo stats` — storage usage and deduplication savings
-- [x] `s3lo copy` — copy images between S3 buckets or from ECR/OCI registries
-- [x] Per-image immutability and lifecycle config stored in bucket (`s3lo.yaml`)
-- [x] `s3lo config set/get/remove` — manage per-image and bucket-wide config
-- [x] `s3lo config recommend` — data-driven bucket analysis and recommendations
-- [x] Progress output for push and pull
+Backends: AWS S3, GCS, Azure Blob, local directories, and anything S3-compatible
+(MinIO, Cloudflare R2, Ceph) via `--endpoint`.
 
-## v1.3.0 — Multi-Architecture Images ✓
+Layers are stored as content-defined chunks shared across every image in the
+bucket, which is what makes a re-push after editing one file cost one chunk
+rather than a whole layer, and what makes `cat` able to read a single file
+without downloading the layer holding it.
 
-- [x] `s3lo copy` copies all platforms by default for multi-arch images (OCI Image Index)
-- [x] `s3lo pull` auto-detects host platform; `--platform` flag to override
-- [x] `s3lo inspect` displays per-platform details for multi-arch images
-- [x] `s3lo copy --platform` to copy a single platform from a multi-arch image
+### Removed in v2
 
-## v1.4.0 — CI Integration & Documentation ✓
+`scan`, `sbom`, `history`, `config validate`, `config recommend`, `migrate`, the
+interactive TUI, and `bucket init`. Earlier versions of this file listed several
+of these as shipped; they are gone. The `bucket` and `security` command groups
+were flattened, and the old spellings still work for one release with a
+deprecation notice.
 
-- [x] Official GitHub Action for s3lo push ([OuFinx/s3lo-action](https://github.com/OuFinx/s3lo-action))
-- [x] Documentation website (MkDocs Material, auto-deployed to GitHub Pages)
+The layer-sharing view that lived in the TUI is now `s3lo stats --layers`.
+Bucket layout is created on first push, so there is nothing to initialise.
 
-## v1.5.0 — Vulnerability Scanning
+## Next
 
-- [x] `s3lo scan` — vulnerability scanning with Trivy
-- [x] Auto-install Trivy when not found (Y/N prompt, `--install-trivy` flag)
-- [x] Multi-arch support: `--platform` flag to select platform
-- [x] Severity filtering: `--severity HIGH,CRITICAL`
-- [x] Output format control: `--format json|sarif|cyclonedx`
-
-## v1.6.0 — Code Quality & Reliability
-
-- [x] Refactor: split copy.go into focused files (copy_s3.go, copy_registry.go, registry_auth.go, registry_ref.go)
-- [x] Performance: stream registry blobs directly to temp files (no in-memory buffer)
-- [x] Performance: cache Bearer token per registry, skip repeated 401 round-trips
-- [x] Reliability: retry registry HTTP calls on transient errors with exponential backoff
-- [x] UX: deterministic progress bar showing transferred / total bytes for push, pull, copy, scan
-- [x] Observability: `--verbose` flag with `slog` debug output for HTTP requests, auth, retries
-
-## v1.7.0 — UX & Output Formats
-
-- [x] `--output json|yaml|table` flag on `list`, `inspect`, `stats`, `config get`
-- [x] Enhanced cost comparison in `stats`: S3 current, S3 no-dedup, ECR equivalent, savings vs ECR
-
-## v1.8.0 — Reliability & Operations
-
-- [x] Multipart upload for blobs >100 MB (removes 5 GB hard limit, uses 64 MB parts with abort on failure)
-- [x] `s3lo history` — push history per tag (timestamp, digest, size; stored in `history.json`)
-- [x] `s3lo doctor` — bucket health check: layout, manifest integrity, orphaned blobs, config validity
-- [x] `s3lo init` — bucket initialization: verify access, check Intelligent-Tiering, write default `s3lo.yaml`
-- [x] `local://` storage backend — all commands work against a local directory without AWS
-
-## v1.9.0 — Security
-
-- [x] `s3lo sign` — sign images with cosign/Sigstore (AWS KMS, local key, HashiCorp Vault)
-- [x] `s3lo verify` — verify image signatures (exit 0/1/2 for CI gates)
-
-## v1.10.0 — Multi-Cloud Support ✓
-
-- [x] Google Cloud Storage backend (`gs://`)
-- [x] Azure Blob Storage backend (`az://`)
-- [x] MinIO / S3-compatible backend (`--endpoint` flag for MinIO, Cloudflare R2, Ceph, etc.)
-- [x] `pkg/s3` renamed to `pkg/storage` with decoupled `StorageClass` type
-
-## v1.11.0 — Policy & SBOM
-
-- [x] `s3lo config validate` — policy rules and compliance checks
-- [x] `s3lo sbom` — generate Software Bill of Materials
-
-## v1.12.0 — Long-Term Vision
-
-- [x] `s3lo serve` — OCI Distribution Spec proxy over S3
-
-## v1.13.0
-
-- [x] Interactive TUI for browsing images and managing lifecycle (`s3lo tui`)
-- [x] Layer sharing matrix: see which layers are shared across tags (`g` key in tag list)
-- [x] Per-tag and per-image sizes in TUI
-- [x] In-TUI vulnerability scanning (`s` key), inspect (`i`), delete (`d`), clean (`c`)
-
-## v2.0.0 — Stable Release
-
-- [ ] Final API and CLI stability review
-- [ ] Full documentation pass
-- [ ] Official stable release
+- [ ] `push` handles multi-architecture images ([#101](https://github.com/OuFinx/s3lo/issues/101)).
+      `copy` already does; `push` exports only what the local daemon holds.
+- [ ] `copy` from a registry stores chunked, so copied images deduplicate and
+      support `cat` ([#102](https://github.com/OuFinx/s3lo/issues/102)). Today a
+      bucket behaves one way for `push` and another for `copy`.
+- [ ] Bucket-level commands honour a prefixed reference instead of silently
+      scanning nothing ([#100](https://github.com/OuFinx/s3lo/issues/100)).
+- [ ] `--output json` on the remaining commands
+      ([#95](https://github.com/OuFinx/s3lo/issues/95)).
+- [ ] Raise coverage on `pkg/storage` and `pkg/oci` — the code that actually
+      moves bytes is the least tested in the repo.
+- [ ] Stream blobs in `serve` rather than buffering them, so concurrent pulls of
+      large layers do not scale memory with request count.
