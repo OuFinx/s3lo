@@ -53,10 +53,7 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		return nil, fmt.Errorf("create storage client: %w", err)
 	}
 
-	scheme := "s3://"
-	if strings.HasPrefix(s3BucketRef, "local://") {
-		scheme = "local://"
-	}
+	scheme := schemeOf(s3BucketRef)
 	result := &DoctorResult{Bucket: bucket, Scheme: scheme}
 
 	// --- Reachability check ---
@@ -66,12 +63,25 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 		if _, err := os.Stat(bucket); err != nil {
 			return nil, fmt.Errorf("cannot reach %s%s: %w", scheme, bucket, err)
 		}
-	} else if strings.HasPrefix(s3BucketRef, "s3://") {
-		tiering, err := checkS3Bucket(ctx, bucket)
-		if err != nil {
-			return nil, fmt.Errorf("cannot reach s3://%s — check the bucket name, region, and AWS credentials: %w", bucket, err)
+	} else {
+		// Probe through the backend the caller actually configured, with a prefix
+		// that matches nothing: cheap on every backend, and still fails when the
+		// bucket is missing or the credentials are wrong.
+		//
+		// This used to call GetBucketLocation on a freshly built AWS client, which
+		// was wrong twice over: it ignored --endpoint, and GetBucketLocation is an
+		// AWS-only API. MinIO, R2 and Ceph answer it with 403 — the very backends
+		// --endpoint exists to reach — so doctor failed on a bucket that push,
+		// list, cat and stats were all using happily.
+		if _, err := client.ListKeys(ctx, bucket, reachabilityProbePrefix); err != nil {
+			return nil, fmt.Errorf("cannot reach %s%s — check the bucket name, region, and credentials: %w", scheme, bucket, err)
 		}
-		result.IntelligentTiering = tiering
+	}
+
+	// Intelligent-Tiering is an AWS-only advisory. It must never decide whether a
+	// bucket is healthy, so every failure here is silent.
+	if scheme == "s3://" {
+		result.IntelligentTiering, _ = checkS3Tiering(ctx, bucket)
 	}
 
 	// --- Layout check ---
@@ -234,19 +244,34 @@ func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
 	return result, nil
 }
 
-// checkS3Bucket proves the bucket exists and the current credentials can reach
-// it (GetBucketLocation), then reports whether Intelligent-Tiering is on.
-func checkS3Bucket(ctx context.Context, bucket string) (string, error) {
+// reachabilityProbePrefix matches no real key, so listing it is the cheapest
+// call that still proves the bucket exists and the credentials work.
+const reachabilityProbePrefix = ".s3lo-reachability-probe/"
+
+// schemeOf returns the ref's URL scheme. Defaulting everything non-local to
+// "s3://" made doctor label gs:// and az:// buckets as S3 in both its text and
+// its JSON output.
+func schemeOf(ref string) string {
+	for _, s := range []string{"local://", "gs://", "az://", "s3://"} {
+		if strings.HasPrefix(ref, s) {
+			return s
+		}
+	}
+	return "s3://"
+}
+
+// checkS3Tiering reports whether S3 Intelligent-Tiering is configured. It is
+// advisory only: every failure, including a missing permission or a backend
+// that does not implement the API, returns no opinion rather than an error.
+func checkS3Tiering(ctx context.Context, bucket string) (string, error) {
 	client, err := storage.NewS3Client(ctx)
 	if err != nil {
-		return "", fmt.Errorf("create S3 client: %w", err)
+		return "", nil
 	}
 	s3c, err := client.ClientForBucket(ctx, bucket)
 	if err != nil {
-		return "", err
+		return "", nil
 	}
-	// The advisory is a nice-to-have: a missing ListBucketIntelligentTieringConfigurations
-	// permission must not fail an otherwise healthy bucket.
 	resp, err := s3c.ListBucketIntelligentTieringConfigurations(ctx,
 		&s3.ListBucketIntelligentTieringConfigurationsInput{Bucket: &bucket})
 	if err != nil {
