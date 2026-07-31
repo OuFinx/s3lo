@@ -20,15 +20,16 @@ func TestResolveLink(t *testing.T) {
 }
 
 // TestWhiteoutFor pins the marker layout: a deleted file is recorded as
-// .wh.<name> beside where it used to be.
+// .wh.<name> beside where it used to be. Ancestor and opaque markers are
+// covered in file_whiteout_test.go.
 func TestWhiteoutFor(t *testing.T) {
 	cases := map[string]string{
 		"etc/passwd": "etc/.wh.passwd",
 		"app.yaml":   ".wh.app.yaml",
 	}
 	for in, want := range cases {
-		if got := whiteoutFor(in); got != want {
-			t.Errorf("whiteoutFor(%q) = %q, want %q", in, got, want)
+		if got := whiteoutsFor(in); got[0] != want {
+			t.Errorf("whiteoutsFor(%q)[0] = %q, want %q", in, got[0], want)
 		}
 	}
 }

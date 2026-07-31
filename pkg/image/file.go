@@ -71,7 +71,7 @@ func CatFile(ctx context.Context, s3Ref, filePath, platform string) (*CatResult,
 		if hop == maxLinkHops {
 			return nil, fmt.Errorf("%s: too many links followed, giving up at %s", filePath, want)
 		}
-		whiteout := whiteoutFor(want)
+		whiteouts := whiteoutsFor(want)
 
 		// Top layer wins, and a whiteout above stops the search: that is what
 		// the running container sees.
@@ -82,7 +82,7 @@ func CatFile(ctx context.Context, s3Ref, filePath, platform string) (*CatResult,
 		)
 		for i := len(manifest.Layers) - 1; i >= 0 && res == nil && link == "" && !deleted; i-- {
 			d := manifest.Layers[i].Digest.Encoded()
-			res, link, deleted, err = catFromLayer(ctx, client, parsed.Bucket, d, want, whiteout)
+			res, link, deleted, err = catFromLayer(ctx, client, parsed.Bucket, d, want, whiteouts)
 			if err != nil {
 				return nil, fmt.Errorf("read layer %s: %w", short(d), err)
 			}
@@ -117,20 +117,41 @@ func resolveLink(from, target string) string {
 	return chunkstore.NormalisePath(path.Join(path.Dir(from), target))
 }
 
-// whiteoutFor returns the marker path a layer uses to record that it deleted p.
+// whiteoutsFor returns every marker whose presence in a layer means p is gone
+// from the layers beneath it.
 //
-// ponytail: plain whiteouts only. An opaque directory marker (.wh..wh..opq)
-// hides everything below it from lower layers, and is not checked here — a file
-// removed that way still reads. Handle it if a real image turns up that needs it.
-func whiteoutFor(p string) string {
+// A deletion is recorded beside what was deleted, and deleting a directory
+// deletes everything under it: "RUN rm -rf /data" emits a single ".wh.data"
+// entry, not one marker per file below it. Checking only the file's own marker
+// meant `s3lo cat` printed the contents of a file the running container reports
+// as missing, and exited 0 — a wrong answer given confidently.
+//
+// Opaque markers (".wh..wh..opq") hide the whole of a directory's lower-layer
+// content and are included for the same reason.
+func whiteoutsFor(p string) []string {
 	dir, base := path.Split(p)
-	return dir + ".wh." + base
+	out := []string{dir + ".wh." + base}
+	for d := path.Clean(dir); d != "." && d != "/" && d != ""; d = path.Dir(d) {
+		pd, pb := path.Split(d)
+		out = append(out, pd+".wh."+pb, d+"/.wh..wh..opq")
+	}
+	return out
+}
+
+// isWhiteout reports whether name is one of the markers in whiteouts.
+func isWhiteout(whiteouts []string, name string) bool {
+	for _, w := range whiteouts {
+		if w == name {
+			return true
+		}
+	}
+	return false
 }
 
 // catFromLayer looks for want inside one layer. It reports deleted=true when the
 // layer holds a whiteout for the path, a non-empty link when the path is a link
 // the caller must follow, and a nil result when the layer does not mention it.
-func catFromLayer(ctx context.Context, client storage.Backend, bucket, layerDigest, want, whiteout string) (*CatResult, string, bool, error) {
+func catFromLayer(ctx context.Context, client storage.Backend, bucket, layerDigest, want string, whiteouts []string) (*CatResult, string, bool, error) {
 	recipe, chunked, err := chunkstore.LoadRecipe(ctx, client, bucket, layerDigest)
 	if err != nil {
 		return nil, "", false, err
@@ -141,11 +162,16 @@ func catFromLayer(ctx context.Context, client storage.Backend, bucket, layerDige
 			return nil, "", false, err
 		}
 		if ok {
-			if _, found := ix.Find(whiteout); found {
-				return nil, "", true, nil
-			}
+			// The file is looked for before its whiteouts: a layer that removes a
+			// directory and recreates a file inside it holds both, and what the
+			// layer put there is what the container sees.
 			entry, found := ix.Find(want)
 			if !found {
+				for _, w := range whiteouts {
+					if _, hit := ix.Find(w); hit {
+						return nil, "", true, nil
+					}
+				}
 				return nil, "", false, nil
 			}
 			if entry.Link != "" {
@@ -171,12 +197,12 @@ func catFromLayer(ctx context.Context, client storage.Backend, bucket, layerDige
 	if err != nil {
 		return nil, "", false, err
 	}
-	return scanLayerTar(dir+"/"+rawDigest, want, whiteout)
+	return scanLayerTar(dir+"/"+rawDigest, want, whiteouts)
 }
 
 // scanLayerTar is the unindexed fallback: walk the layer's tar looking for the
-// path and for a whiteout of it.
-func scanLayerTar(localPath, want, whiteout string) (*CatResult, string, bool, error) {
+// path and for anything that whiteouts it.
+func scanLayerTar(localPath, want string, whiteouts []string) (*CatResult, string, bool, error) {
 	f, err := os.Open(localPath)
 	if err != nil {
 		return nil, "", false, err
@@ -184,18 +210,30 @@ func scanLayerTar(localPath, want, whiteout string) (*CatResult, string, bool, e
 	defer f.Close()
 
 	tr := tar.NewReader(f)
+	deleted := false
+	first := true
 	for {
 		h, err := tr.Next()
 		if err == io.EOF {
-			return nil, "", false, nil
+			// A whiteout only counts once the whole layer has been searched, so
+			// that a file recreated beside its own marker still wins.
+			return nil, "", deleted, nil
 		}
 		if err != nil {
-			// Not a tar. Nothing in it to find.
-			return nil, "", false, nil
+			if first {
+				// Layers copied from a registry are stored gzip-compressed, so
+				// there is no tar here to read. Reporting that as "not found"
+				// made every path in such an image answer confidently and
+				// wrongly; say what is actually wrong instead.
+				return nil, "", false, fmt.Errorf("layer is not a raw tar (stored compressed): %w", err)
+			}
+			return nil, "", false, fmt.Errorf("read layer tar: %w", err)
 		}
+		first = false
 		name := chunkstore.NormalisePath(h.Name)
-		if name == whiteout {
-			return nil, "", true, nil
+		if isWhiteout(whiteouts, name) {
+			deleted = true
+			continue
 		}
 		if name != want {
 			continue
