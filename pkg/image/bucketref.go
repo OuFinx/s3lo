@@ -53,3 +53,22 @@ func ParseBucketRef(s3Ref string) (bucket, prefix string, err error) {
 	}
 	return bucket, prefix, nil
 }
+
+// ParseBucketRootRef parses a bucket reference for operations that always
+// inspect the registry root. A prefix is rejected because pushes store image
+// paths below the bucket root rather than below an S3 key prefix.
+func ParseBucketRootRef(s3Ref string) (string, error) {
+	bucket, prefix, err := ParseBucketRef(s3Ref)
+	if err != nil {
+		return "", err
+	}
+	if prefix == "" {
+		return bucket, nil
+	}
+
+	scheme, _, _ := strings.Cut(s3Ref, "://")
+	return "", fmt.Errorf(
+		"bucket-level operations do not support prefixes in %q; use %s://%s/",
+		s3Ref, scheme, bucket,
+	)
+}

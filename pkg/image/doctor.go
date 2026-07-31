@@ -33,10 +33,11 @@ type DoctorResult struct {
 // It checks layout structure, manifest integrity (all referenced blobs exist),
 // orphaned blobs, and config validity.
 func Doctor(ctx context.Context, s3BucketRef string) (*DoctorResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	bucket, err := ParseBucketRootRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
+	prefix := ""
 
 	client, err := storage.NewBackendFromRef(ctx, s3BucketRef)
 	if err != nil {

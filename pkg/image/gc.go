@@ -34,10 +34,11 @@ const gcGracePeriod = time.Hour
 // GC removes blobs in blobs/sha256/ that are not referenced by any manifest.
 // If dryRun is true, no deletions are performed (safe to run at any time).
 func GC(ctx context.Context, s3BucketRef string, dryRun bool) (*GCResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	bucket, err := ParseBucketRootRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
+	prefix := ""
 
 	client, err := storage.NewBackendFromRef(ctx, s3BucketRef)
 	if err != nil {

@@ -68,10 +68,11 @@ func (s *StatsResult) DedupPercent() float64 {
 
 // Stats collects storage statistics for a bucket.
 func Stats(ctx context.Context, s3BucketRef string) (*StatsResult, error) {
-	bucket, prefix, err := ParseBucketRef(s3BucketRef)
+	bucket, err := ParseBucketRootRef(s3BucketRef)
 	if err != nil {
 		return nil, err
 	}
+	prefix := ""
 
 	client, err := storage.NewBackendFromRef(ctx, s3BucketRef)
 	if err != nil {
