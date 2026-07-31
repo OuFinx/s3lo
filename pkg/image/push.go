@@ -48,6 +48,12 @@ type PushOptions struct {
 	// image had to be uploaded versus reused. On a chunked bucket this is where
 	// sub-layer deduplication becomes visible.
 	OnTransfer func(stats chunkstore.Stats)
+	// Platform selects which platform to publish when the local daemon holds
+	// several. Empty means the host platform.
+	Platform string
+	// OnPlatformsDropped is called when the local image holds platforms this
+	// push is not publishing, with the one being published and the rest.
+	OnPlatformsDropped func(pushed string, dropped []string)
 }
 
 // Push exports a local Docker image and uploads it to S3 using the v1.1.0 layout:
@@ -65,7 +71,22 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 	}
 	defer os.RemoveAll(tmpDir)
 
-	_, manifestData, configData, err := oci.ExportImage(ctx, imageRef, tmpDir)
+	// A tag can hold several platforms on a containerd image store, and push
+	// publishes one. It used to pick whatever the daemon handed over and say
+	// nothing, which is the asymmetry with copy that this reports.
+	available, err := oci.LocalPlatforms(ctx, imageRef)
+	if err != nil {
+		return fmt.Errorf("read local platforms: %w", err)
+	}
+	platform, dropped, err := selectPushPlatform(available, opts.Platform, hostPlatform())
+	if err != nil {
+		return err
+	}
+	if len(dropped) > 0 && opts.OnPlatformsDropped != nil {
+		opts.OnPlatformsDropped(platform, dropped)
+	}
+
+	_, manifestData, configData, err := oci.ExportImage(ctx, imageRef, tmpDir, platform)
 	if err != nil {
 		// Push stages the whole image on disk before uploading, so a large image
 		// can exhaust a small temp filesystem while the destination has room to
@@ -76,6 +97,16 @@ func Push(ctx context.Context, imageRef, s3Ref string, opts PushOptions) error {
 				os.TempDir(), err)
 		}
 		return fmt.Errorf("export image: %w", err)
+	}
+
+	// Trust the export, not the request. A classic image store accepts a
+	// platform argument and hands back the one platform it has, so asking for
+	// linux/arm64 on an amd64-only daemon would otherwise publish amd64 content
+	// under an arm64 name and deduplicate perfectly against it.
+	if opts.Platform != "" {
+		if err := checkExportedPlatform(configData, opts.Platform); err != nil {
+			return err
+		}
 	}
 
 	if err := oci.WriteOCILayout(tmpDir, manifestData, configData); err != nil {

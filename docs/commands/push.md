@@ -18,6 +18,7 @@ s3lo push <local-image> <s3-ref> [flags]
 | Flag | Description |
 |------|-------------|
 | `--force` | Overwrite an existing tag even if immutability is enabled |
+| `--platform` | Which platform to push when the local image holds several (e.g. `linux/arm64`) |
 
 ## What it does
 
@@ -71,6 +72,21 @@ The progress bar shows bytes uploaded and elapsed time. It's hidden automaticall
     docker pull --platform linux/amd64 myapp:v1.0
     ```
     Use [`s3lo copy`](copy.md) to mirror multi-arch images directly to S3 without this concern.
+
+!!! info "One platform per push"
+    `push` publishes a single platform. On the classic Docker image store that is
+    all a tag can hold, so there is nothing to choose. On the containerd image
+    store a tag can hold several, and then `push` publishes the host platform and
+    names the ones it is leaving behind:
+
+    ```
+    Note: this image holds linux/amd64, linux/arm64 locally. Pushing linux/arm64 only.
+          Push another with --platform, or use s3lo copy to publish every platform as an index.
+    ```
+
+    Use `--platform linux/amd64` to pick a different one, or [`s3lo copy`](copy.md)
+    to publish all of them as an image index. Asking for a platform the image does
+    not hold is an error rather than a quiet fallback.
 
 !!! tip "Idempotent"
     Pushing the same image twice is safe and fast. The second push skips all blobs and only re-uploads the manifest (a few bytes).
