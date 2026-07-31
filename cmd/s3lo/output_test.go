@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 )
 
 // captureStdout runs fn with os.Stdout redirected and returns what it wrote.

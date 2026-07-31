@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // Observer receives one call per served request so a deployment can export

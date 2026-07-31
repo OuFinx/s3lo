@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OuFinx/s3lo/v2/pkg/oci"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/oci"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 	"golang.org/x/sync/errgroup"
 )
 

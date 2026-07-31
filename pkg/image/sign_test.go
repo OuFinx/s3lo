@@ -13,7 +13,7 @@ import (
 
 	"github.com/sigstore/cosign/v2/pkg/cosign"
 
-	"github.com/OuFinx/s3lo/v2/pkg/ref"
+	"github.com/OuFinx/s3lo/v3/pkg/ref"
 )
 
 func TestKeyIDSlug(t *testing.T) {

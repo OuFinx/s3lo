@@ -5,7 +5,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 	"github.com/spf13/cobra"
 )
 

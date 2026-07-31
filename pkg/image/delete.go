@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/OuFinx/s3lo/v2/pkg/ref"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // Delete removes an image tag from S3 by deleting all files under manifests/<image>/<tag>/.

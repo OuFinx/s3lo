@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // instrumentedBackend wraps a real local backend and records how many GetObject

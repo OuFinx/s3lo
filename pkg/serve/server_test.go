@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // fakeBackend is a test double for storage.Backend.

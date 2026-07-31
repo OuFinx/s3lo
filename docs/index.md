@@ -78,7 +78,7 @@ Your Docker daemon  ──push──►  s3://my-bucket/
 === "Go"
 
     ```bash
-    go install github.com/OuFinx/s3lo/v2/cmd/s3lo@latest
+    go install github.com/OuFinx/s3lo/v3/cmd/s3lo@latest
     ```
 
 ---

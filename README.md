@@ -108,7 +108,7 @@ tar xzf s3lo.tar.gz && sudo mv s3lo /usr/local/bin/
 
 **From source:**
 ```bash
-go install github.com/OuFinx/s3lo/v2/cmd/s3lo@latest
+go install github.com/OuFinx/s3lo/v3/cmd/s3lo@latest
 ```
 
 </details>
@@ -278,10 +278,10 @@ s3lo exposes its core packages for use in other tools:
 
 ```go
 import (
-    "github.com/OuFinx/s3lo/v2/pkg/ref"     // Parse s3://, gs://, az://, local:// references
-    "github.com/OuFinx/s3lo/v2/pkg/oci"     // OCI manifest parsing, Docker export/import
-    "github.com/OuFinx/s3lo/v2/pkg/storage" // Storage client (S3, GCS, Azure Blob, local)
-    "github.com/OuFinx/s3lo/v2/pkg/image"   // High-level push/pull/list/inspect
+    "github.com/OuFinx/s3lo/v3/pkg/ref"     // Parse s3://, gs://, az://, local:// references
+    "github.com/OuFinx/s3lo/v3/pkg/oci"     // OCI manifest parsing, Docker export/import
+    "github.com/OuFinx/s3lo/v3/pkg/storage" // Storage client (S3, GCS, Azure Blob, local)
+    "github.com/OuFinx/s3lo/v3/pkg/image"   // High-level push/pull/list/inspect
 )
 ```
 

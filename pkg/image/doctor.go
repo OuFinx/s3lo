@@ -7,8 +7,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/chunkstore"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"golang.org/x/sync/errgroup"
 )

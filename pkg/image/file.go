@@ -10,10 +10,10 @@ import (
 	"path"
 	"strings"
 
-	"github.com/OuFinx/s3lo/v2/pkg/chunkstore"
-	"github.com/OuFinx/s3lo/v2/pkg/oci"
-	"github.com/OuFinx/s3lo/v2/pkg/ref"
-	storage "github.com/OuFinx/s3lo/v2/pkg/storage"
+	"github.com/OuFinx/s3lo/v3/pkg/chunkstore"
+	"github.com/OuFinx/s3lo/v3/pkg/oci"
+	"github.com/OuFinx/s3lo/v3/pkg/ref"
+	storage "github.com/OuFinx/s3lo/v3/pkg/storage"
 )
 
 // ErrFileNotInImage is returned when no layer holds the requested path, or a

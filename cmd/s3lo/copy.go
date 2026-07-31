@@ -3,7 +3,7 @@ package main
 import (
 	"strings"
 
-	"github.com/OuFinx/s3lo/v2/pkg/image"
+	"github.com/OuFinx/s3lo/v3/pkg/image"
 	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 )
