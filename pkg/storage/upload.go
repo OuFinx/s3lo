@@ -5,12 +5,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	s3types "github.com/aws/aws-sdk-go-v2/service/s3/types"
+	smithy "github.com/aws/smithy-go"
+	smithyhttp "github.com/aws/smithy-go/transport/http"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -133,21 +136,51 @@ func (c *Client) HeadObjectExists(ctx context.Context, bucket, key string) (bool
 		Key:    &key,
 	})
 	if err != nil {
-		// Check if the error is a 404 (NotFound).
-		var notFound *s3types.NotFound
-		if errors.As(err, &notFound) {
-			return false, nil
-		}
-		// HeadObject returns smithy OperationError wrapping HTTP 404
-		// which may not always map to s3types.NotFound. Check for
-		// "NotFound" or "404" in the error message as a fallback.
-		errMsg := err.Error()
-		if strings.Contains(errMsg, "NotFound") || strings.Contains(errMsg, "404") {
+		if s3NotFound(err) {
 			return false, nil
 		}
 		return false, err
 	}
 	return true, nil
+}
+
+// s3NotFound reports whether err is S3 saying the object is not there, as
+// opposed to any other reason the request failed.
+//
+// This has to be decided on the typed error. It used to be decided by looking
+// for "404" or "NotFound" anywhere in the error text, and AWS puts the object
+// key into that text — so for the roughly one sha256 digest in sixty-six that
+// contains "404", a throttle, an AccessDenied or a 500 all read as "the object
+// is not there". Callers act on that answer: push skips the upload it should
+// have retried, and the immutability check concludes the tag is free.
+//
+// GCS and Azure already decide this from typed errors; S3 was the outlier.
+func s3NotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	var notFound *s3types.NotFound
+	if errors.As(err, &notFound) {
+		return true
+	}
+	var noSuchKey *s3types.NoSuchKey
+	if errors.As(err, &noSuchKey) {
+		return true
+	}
+	// HeadObject has no response body, so the SDK cannot always map it to a
+	// typed error. The status line is still authoritative.
+	var respErr *smithyhttp.ResponseError
+	if errors.As(err, &respErr) {
+		return respErr.HTTPStatusCode() == http.StatusNotFound
+	}
+	var apiErr smithy.APIError
+	if errors.As(err, &apiErr) {
+		switch apiErr.ErrorCode() {
+		case "NotFound", "NoSuchKey":
+			return true
+		}
+	}
+	return false
 }
 
 func buildS3Key(prefix, baseDir, localPath string) string {
